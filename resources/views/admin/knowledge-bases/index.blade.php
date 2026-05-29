@@ -83,7 +83,20 @@
 
         <div class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_bases.list_title') }}</h3>
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_bases.list_title') }}</h3>
+                    <form method="GET" class="flex flex-wrap items-center gap-3">
+                        <input type="text" name="tag" value="{{ $tagFilter ?? '' }}" placeholder="按标签筛选，如 行业:制造业" class="block w-64 border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm">
+                        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700">
+                            <i data-lucide="search" class="w-4 h-4 mr-2"></i>
+                            {{ __('admin.button.search') }}
+                        </button>
+                        <a href="{{ route('admin.knowledge-bases.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <i data-lucide="x" class="w-4 h-4 mr-2"></i>
+                            {{ __('admin.button.clear') }}
+                        </a>
+                    </form>
+                </div>
             </div>
             @if (empty($knowledgeBases))
                 <div class="px-6 py-8 text-center">
@@ -143,6 +156,13 @@
                                     </div>
                                     @if ($item['description'] !== '')
                                         <p class="mt-1 text-sm text-gray-600">{{ $item['description'] }}</p>
+                                    @endif
+                                    @if (! empty($item['tags']))
+                                        <div class="mt-2 flex flex-wrap gap-1">
+                                            @foreach ($item['tags'] as $tagLabel)
+                                                <span class="inline-flex rounded bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">{{ $tagLabel }}</span>
+                                            @endforeach
+                                        </div>
                                     @endif
                                     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                                         <span>
@@ -243,6 +263,15 @@
                             <textarea name="description" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}"></textarea>
                         </div>
                         <div>
+                            <label class="block text-sm font-medium text-gray-700">标签</label>
+                            @include('admin.partials.tag-selector', [
+                                'name' => 'tag_ids',
+                                'tagOptions' => $tagOptions ?? [],
+                                'selectedTagIds' => [],
+                                'tone' => 'orange',
+                            ])
+                        </div>
+                        <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.knowledge_bases.field_content') }}</label>
                             <textarea name="content" rows="15" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm font-mono" placeholder="{{ __('admin.knowledge_bases.placeholder_content') }}"></textarea>
                         </div>
@@ -277,6 +306,15 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.knowledge_bases.field_description') }}</label>
                             <textarea name="description" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm" placeholder="{{ __('admin.knowledge_bases.placeholder_upload_description') }}"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">标签</label>
+                            @include('admin.partials.tag-selector', [
+                                'name' => 'tag_ids',
+                                'tagOptions' => $tagOptions ?? [],
+                                'selectedTagIds' => [],
+                                'tone' => 'orange',
+                            ])
                         </div>
 
                         <div>

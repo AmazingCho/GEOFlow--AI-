@@ -15,9 +15,11 @@ use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\ArticleController;
 use App\Http\Controllers\Admin\AuthorController;
+use App\Http\Controllers\Admin\CaseController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DistributionController;
+use App\Http\Controllers\Admin\EntityController;
 use App\Http\Controllers\Admin\ImageLibraryController;
 use App\Http\Controllers\Admin\KeywordLibraryController;
 use App\Http\Controllers\Admin\KnowledgeBaseController;
@@ -25,6 +27,7 @@ use App\Http\Controllers\Admin\LegacyController;
 use App\Http\Controllers\Admin\MaterialsController;
 use App\Http\Controllers\Admin\SecuritySettingsController;
 use App\Http\Controllers\Admin\SiteSettingsController;
+use App\Http\Controllers\Admin\TagController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\TitleLibraryController;
 use App\Http\Controllers\Admin\UrlImportController;
@@ -152,6 +155,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{libraryId}/edit', [KeywordLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [KeywordLibraryController::class, 'detail'])->name('detail');
             Route::post('{libraryId}/keywords', [KeywordLibraryController::class, 'storeKeyword'])->name('keywords.store');
+            Route::post('{libraryId}/keywords/{keywordId}/tags', [KeywordLibraryController::class, 'updateKeywordTags'])->name('keywords.tags')->whereNumber('keywordId');
             Route::post('{libraryId}/keywords/delete', [KeywordLibraryController::class, 'destroyKeywords'])->name('keywords.delete');
             Route::post('{libraryId}/import', [KeywordLibraryController::class, 'importKeywords'])->name('import');
             Route::put('{libraryId}/detail', [KeywordLibraryController::class, 'updateFromDetail'])->name('detail.update');
@@ -183,6 +187,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{libraryId}/edit', [ImageLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [ImageLibraryController::class, 'detail'])->name('detail');
             Route::post('{libraryId}/images/upload', [ImageLibraryController::class, 'uploadImages'])->name('images.upload');
+            Route::post('{libraryId}/images/{imageId}/tags', [ImageLibraryController::class, 'updateImageTags'])->name('images.tags')->whereNumber('imageId');
             Route::post('{libraryId}/images/delete', [ImageLibraryController::class, 'destroyImages'])->name('images.delete');
             Route::put('{libraryId}/detail', [ImageLibraryController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{libraryId}', [ImageLibraryController::class, 'update'])->name('update');
@@ -198,13 +203,39 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{knowledgeBaseId}/detail', [KnowledgeBaseController::class, 'detail'])->name('detail');
             Route::post('upload', [KnowledgeBaseController::class, 'uploadFile'])->name('upload');
             Route::post('{knowledgeBaseId}/chunks/refresh', [KnowledgeBaseController::class, 'refreshChunks'])->name('chunks.refresh');
+            Route::post('{knowledgeBaseId}/tags', [KnowledgeBaseController::class, 'updateTags'])->name('tags')->whereNumber('knowledgeBaseId');
             Route::put('{knowledgeBaseId}/detail', [KnowledgeBaseController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{knowledgeBaseId}', [KnowledgeBaseController::class, 'update'])->name('update');
             Route::post('{knowledgeBaseId}/delete', [KnowledgeBaseController::class, 'destroy'])->name('delete');
         });
 
+        // 素材管理：Entity DB
+        Route::prefix('entities')->name('entities.')->group(function () {
+            Route::get('/', [EntityController::class, 'index'])->name('index');
+            Route::get('create', [EntityController::class, 'create'])->name('create');
+            Route::post('create', [EntityController::class, 'store'])->name('store');
+            Route::get('{entityId}/edit', [EntityController::class, 'edit'])->name('edit')->whereNumber('entityId');
+            Route::put('{entityId}', [EntityController::class, 'update'])->name('update')->whereNumber('entityId');
+            Route::post('{entityId}/delete', [EntityController::class, 'destroy'])->name('delete')->whereNumber('entityId');
+        });
+
+        // 素材管理：Case DB
+        Route::prefix('cases')->name('cases.')->group(function () {
+            Route::get('/', [CaseController::class, 'index'])->name('index');
+            Route::get('create', [CaseController::class, 'create'])->name('create');
+            Route::post('create', [CaseController::class, 'store'])->name('store');
+            Route::get('{caseId}/edit', [CaseController::class, 'edit'])->name('edit')->whereNumber('caseId');
+            Route::put('{caseId}', [CaseController::class, 'update'])->name('update')->whereNumber('caseId');
+            Route::post('{caseId}/delete', [CaseController::class, 'destroy'])->name('delete')->whereNumber('caseId');
+        });
+
         // 业务页面
         Route::get('materials', [MaterialsController::class, 'index'])->name('materials.index');
+        Route::get('material-tags', [TagController::class, 'index'])->name('material-tags.index');
+        Route::post('material-tags', [TagController::class, 'store'])->name('material-tags.store');
+        Route::post('material-tags/bulk', [TagController::class, 'bulk'])->name('material-tags.bulk');
+        Route::put('material-tags/{tagId}', [TagController::class, 'update'])->name('material-tags.update')->whereNumber('tagId');
+        Route::post('material-tags/{tagId}/delete', [TagController::class, 'destroy'])->name('material-tags.delete')->whereNumber('tagId');
         Route::get('url-import', [UrlImportController::class, 'index'])->name('url-import');
         Route::post('url-import', [UrlImportController::class, 'store'])->name('url-import.store');
         Route::get('url-import/history', [UrlImportController::class, 'history'])->name('url-import.history');

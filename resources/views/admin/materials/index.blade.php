@@ -13,7 +13,7 @@
             </a>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6 mb-8">
             <div class="bg-white shadow rounded-lg p-5">
                 <div class="flex items-center">
                     <i data-lucide="key" class="h-6 w-6 text-blue-600"></i>
@@ -54,9 +54,29 @@
                     </div>
                 </div>
             </div>
+            <div class="bg-white shadow rounded-lg p-5">
+                <div class="flex items-center">
+                    <i data-lucide="boxes" class="h-6 w-6 text-blue-600"></i>
+                    <div class="ml-4">
+                        <div class="text-sm text-gray-500">{{ __('admin.materials.entity_records') }}</div>
+                        <div class="text-lg font-medium text-gray-900">{{ __('admin.materials.entity_count', ['count' => (int) $stats['entities']]) }}</div>
+                        <div class="text-sm text-gray-500">{{ __('admin.materials.case_count', ['count' => (int) $stats['cases']]) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white shadow rounded-lg p-5">
+                <div class="flex items-center">
+                    <i data-lucide="briefcase" class="h-6 w-6 text-emerald-600"></i>
+                    <div class="ml-4">
+                        <div class="text-sm text-gray-500">{{ __('admin.materials.case_records') }}</div>
+                        <div class="text-lg font-medium text-gray-900">{{ __('admin.materials.case_count', ['count' => (int) $stats['cases']]) }}</div>
+                        <div class="text-sm text-gray-500">{{ __('admin.materials.entity_count', ['count' => (int) $stats['entities']]) }}</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
             <div class="bg-white shadow rounded-lg p-6">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-medium text-gray-900 flex items-center">
@@ -164,6 +184,60 @@
                     </a>
                 </div>
             </div>
+
+            <div class="bg-white shadow rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900 flex items-center">
+                        <i data-lucide="boxes" class="w-5 h-5 text-blue-600 mr-2"></i>
+                        {{ __('admin.materials.entity_manage_title') }}
+                    </h3>
+                    <a href="{{ route('admin.entities.index') }}" class="text-sm text-blue-600 hover:text-blue-800">{{ __('admin.materials.view_all') }}</a>
+                </div>
+                <p class="mt-3 text-sm text-gray-600">{{ __('admin.materials.entities_summary') }}</p>
+                <div class="mt-4 space-y-2">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-500">{{ __('admin.materials.entity_total_count') }}</span>
+                        <span class="font-medium text-gray-900">{{ __('admin.materials.unit_items', ['count' => (int) $stats['entities']]) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-500">{{ __('admin.materials.case_total_count') }}</span>
+                        <span class="font-medium text-gray-900">{{ __('admin.materials.unit_items', ['count' => (int) $stats['cases']]) }}</span>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <a href="{{ route('admin.entities.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                        <i data-lucide="settings" class="w-4 h-4 mr-2"></i>
+                        {{ __('admin.materials.manage_entity_db') }}
+                    </a>
+                </div>
+            </div>
+
+            <div class="bg-white shadow rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900 flex items-center">
+                        <i data-lucide="briefcase" class="w-5 h-5 text-emerald-600 mr-2"></i>
+                        {{ __('admin.materials.case_manage_title') }}
+                    </h3>
+                    <a href="{{ route('admin.cases.index') }}" class="text-sm text-emerald-600 hover:text-emerald-800">{{ __('admin.materials.view_all') }}</a>
+                </div>
+                <p class="mt-3 text-sm text-gray-600">{{ __('admin.materials.cases_summary') }}</p>
+                <div class="mt-4 space-y-2">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-500">{{ __('admin.materials.case_total_count') }}</span>
+                        <span class="font-medium text-gray-900">{{ __('admin.materials.unit_items', ['count' => (int) $stats['cases']]) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-500">{{ __('admin.materials.entity_total_count') }}</span>
+                        <span class="font-medium text-gray-900">{{ __('admin.materials.unit_items', ['count' => (int) $stats['entities']]) }}</span>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <a href="{{ route('admin.cases.index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700">
+                        <i data-lucide="settings" class="w-4 h-4 mr-2"></i>
+                        {{ __('admin.materials.manage_case_db') }}
+                    </a>
+                </div>
+            </div>
         </div>
 
         <div class="bg-white shadow rounded-2xl mb-8 overflow-hidden">
@@ -240,7 +314,7 @@
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.materials.quick_actions') }}</h3>
             </div>
             <div class="px-6 py-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                     <a href="{{ route('admin.keyword-libraries.index') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                         <i data-lucide="key" class="w-8 h-8 text-blue-600 mr-3"></i>
                         <div>
@@ -267,6 +341,20 @@
                         <div>
                             <h4 class="font-medium text-gray-900">{{ __('admin.materials.knowledge_bases') }}</h4>
                             <p class="text-sm text-gray-500">{{ __('admin.materials.manage_knowledge_short') }}</p>
+                        </div>
+                    </a>
+                    <a href="{{ route('admin.entities.index') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <i data-lucide="boxes" class="w-8 h-8 text-blue-600 mr-3"></i>
+                        <div>
+                            <h4 class="font-medium text-gray-900">{{ __('admin.materials.entity_records') }}</h4>
+                            <p class="text-sm text-gray-500">{{ __('admin.materials.manage_entities_short') }}</p>
+                        </div>
+                    </a>
+                    <a href="{{ route('admin.cases.index') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <i data-lucide="briefcase" class="w-8 h-8 text-emerald-600 mr-3"></i>
+                        <div>
+                            <h4 class="font-medium text-gray-900">{{ __('admin.materials.case_records') }}</h4>
+                            <p class="text-sm text-gray-500">{{ __('admin.materials.manage_cases_short') }}</p>
                         </div>
                     </a>
                 </div>

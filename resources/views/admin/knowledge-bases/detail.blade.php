@@ -52,6 +52,22 @@
             </form>
         </div>
 
+        <div class="bg-white shadow rounded-lg mb-6">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_detail.tags_title') }}</h3>
+            </div>
+            <form method="POST" action="{{ route('admin.knowledge-bases.tags', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" class="p-6">
+                @csrf
+                @include('admin.partials.tag-selector', [
+                    'name' => 'tag_ids',
+                    'tagOptions' => $tagOptions ?? [],
+                    'selectedTagIds' => $selectedTagIds ?? [],
+                    'tone' => 'orange',
+                    'autoSubmit' => true,
+                ])
+            </form>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <div class="bg-white shadow rounded-lg p-5">
                 <div class="text-sm text-gray-500">{{ __('admin.knowledge_detail.chunk_count') }}</div>

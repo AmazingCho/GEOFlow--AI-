@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Author;
+use App\Models\CaseRecord;
+use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Keyword;
@@ -43,6 +45,8 @@ class MaterialsController extends Controller
      *     image_libraries:int,
      *     total_images:int,
      *     knowledge_bases:int,
+     *     entities:int,
+     *     cases:int,
      *     authors:int
      * }
      */
@@ -56,6 +60,8 @@ class MaterialsController extends Controller
             'image_libraries' => ImageLibrary::query()->count(),
             'total_images' => Image::query()->count(),
             'knowledge_bases' => KnowledgeBase::query()->count(),
+            'entities' => EntityRecord::query()->count(),
+            'cases' => CaseRecord::query()->count(),
             'authors' => Author::query()->count(),
         ];
     }

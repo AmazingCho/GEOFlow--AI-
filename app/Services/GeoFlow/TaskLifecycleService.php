@@ -82,6 +82,7 @@ class TaskLifecycleService
                 'title_library_id' => $normalized['title_library_id'],
                 'image_library_id' => $normalized['image_library_id'],
                 'image_count' => $normalized['image_count'],
+                'image_tag_filter' => $normalized['image_tag_filter'],
                 'prompt_id' => $normalized['prompt_id'],
                 'ai_model_id' => $normalized['ai_model_id'],
                 'need_review' => $normalized['need_review'],
@@ -96,6 +97,7 @@ class TaskLifecycleService
                 'status' => $normalized['status'],
                 'publish_scope' => $normalized['publish_scope'],
                 'knowledge_base_id' => $normalized['knowledge_base_id'],
+                'knowledge_tag_filter' => $normalized['knowledge_tag_filter'],
                 'category_mode' => $normalized['category_mode'],
                 'fixed_category_id' => $normalized['fixed_category_id'],
             ]);
@@ -576,6 +578,18 @@ class TaskLifecycleService
             }
         } elseif (! $isUpdate) {
             $output['publish_scope'] = 'local_and_distribution';
+        }
+
+        if (array_key_exists('knowledge_tag_filter', $data)) {
+            $output['knowledge_tag_filter'] = mb_substr(trim((string) $data['knowledge_tag_filter']), 0, 1000, 'UTF-8');
+        } elseif (! $isUpdate) {
+            $output['knowledge_tag_filter'] = '';
+        }
+
+        if (array_key_exists('image_tag_filter', $data)) {
+            $output['image_tag_filter'] = mb_substr(trim((string) $data['image_tag_filter']), 0, 1000, 'UTF-8');
+        } elseif (! $isUpdate) {
+            $output['image_tag_filter'] = '';
         }
 
         $effectiveCategoryMode = $output['category_mode'] ?? (($data['category_mode'] ?? 'smart') ?: 'smart');

@@ -129,32 +129,36 @@ class TitleLibraryController extends Controller
             ->whereRaw("COALESCE(NULLIF(model_type, ''), 'chat') = 'chat'")
             ->firstOrFail();
 
-        /** @var Collection<int, string> $keywords */
+        /** @var Collection<int, Keyword> $keywords */
         $keywords = Keyword::query()
+            ->with(['tags' => fn ($query) => $query->orderBy('group_name')->orderBy('name')])
             ->where('library_id', (int) $payload['keyword_library_id'])
             ->inRandomOrder()
             ->limit((int) config('geoflow.title_ai_keyword_sample_limit', 10))
-            ->pluck('keyword')
-            ->map(static fn (mixed $value): string => trim((string) $value))
-            ->filter(static fn (string $keyword): bool => $keyword !== '')
+            ->get()
+            ->filter(static fn (Keyword $keyword): bool => trim((string) $keyword->keyword) !== '')
             ->values();
         if ($keywords->isEmpty()) {
             return back()->withErrors(__('admin.title_ai_generate.error.no_keywords'));
         }
 
+        $keywordContexts = $this->buildKeywordContexts($keywords);
         $generationResult = $this->titleAiGenerationService->generateTitles(
             $aiModel,
-            $keywords->all(),
+            $keywordContexts,
             (int) $payload['title_count'],
             (string) $payload['title_style'],
             trim((string) ($payload['custom_prompt'] ?? ''))
         );
-        $generatedTitles = $generationResult['titles'];
+        $generatedItems = $generationResult['items'] ?? collect($generationResult['titles'])
+            ->map(static fn (string $title): array => ['title' => $title, 'keyword' => ''])
+            ->all();
 
         $savedCount = 0;
         $duplicateCount = 0;
-        DB::transaction(function () use ($generatedTitles, $keywords, $libraryId, &$savedCount, &$duplicateCount): void {
-            foreach ($generatedTitles as $titleText) {
+        DB::transaction(function () use ($generatedItems, $keywordContexts, $libraryId, &$savedCount, &$duplicateCount): void {
+            foreach ($generatedItems as $item) {
+                $titleText = is_array($item) ? (string) ($item['title'] ?? '') : (string) $item;
                 $title = $this->normalizeGeneratedTitle($titleText);
                 if ($title === '' || mb_strlen($title, 'UTF-8') > 500) {
                     continue;
@@ -173,7 +177,7 @@ class TitleLibraryController extends Controller
                 Title::query()->create([
                     'library_id' => $libraryId,
                     'title' => $title,
-                    'keyword' => $keywords->random(),
+                    'keyword' => $this->resolveGeneratedItemKeyword(is_array($item) ? (string) ($item['keyword'] ?? '') : '', $title, $keywordContexts),
                     'is_ai_generated' => true,
                     'used_count' => 0,
                     'usage_count' => 0,
@@ -193,6 +197,58 @@ class TitleLibraryController extends Controller
         }
 
         return redirect()->route('admin.title-libraries.detail', ['libraryId' => $libraryId])->with('message', $message);
+    }
+
+    /**
+     * @param  Collection<int, Keyword>  $keywords
+     * @return list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>
+     */
+    private function buildKeywordContexts(Collection $keywords): array
+    {
+        return $keywords
+            ->map(static function (Keyword $keyword): array {
+                $tags = [];
+                $tagLabels = [];
+                foreach ($keyword->tags as $tag) {
+                    $groupName = trim((string) ($tag->group_name ?? ''));
+                    $tagName = trim((string) ($tag->name ?? ''));
+                    if ($tagName === '') {
+                        continue;
+                    }
+                    $tagLabels[] = $groupName !== '' ? $groupName.':'.$tagName : $tagName;
+                    if ($groupName !== '') {
+                        $tags[$groupName] = $tagName;
+                    }
+                }
+
+                return [
+                    'keyword' => trim((string) $keyword->keyword),
+                    'tags' => $tags,
+                    'tag_labels' => $tagLabels,
+                ];
+            })
+            ->filter(static fn (array $context): bool => $context['keyword'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
+     */
+    private function resolveGeneratedItemKeyword(string $reportedKeyword, string $title, array $keywordContexts): string
+    {
+        foreach ($keywordContexts as $context) {
+            if ($reportedKeyword !== '' && $reportedKeyword === $context['keyword']) {
+                return $context['keyword'];
+            }
+        }
+        foreach ($keywordContexts as $context) {
+            if (mb_stripos($title, $context['keyword'], 0, 'UTF-8') !== false) {
+                return $context['keyword'];
+            }
+        }
+
+        return (string) ($keywordContexts[0]['keyword'] ?? '');
     }
 
     /**
@@ -513,51 +569,6 @@ class TitleLibraryController extends Controller
             ->filter(static fn (array $entry): bool => $entry['title'] !== '')
             ->unique(static fn (array $entry): string => $entry['title'])
             ->values();
-    }
-
-    /**
-     * @param  list<string>  $keywords
-     * @return list<string>
-     */
-    private function generateMockTitles(array $keywords, int $count, string $style): array
-    {
-        $styleTemplates = [
-            'professional' => [
-                '{keyword}的深度分析与研究',
-                '关于{keyword}的专业见解',
-                '{keyword}行业发展趋势报告',
-            ],
-            'attractive' => [
-                '你绝对不知道的{keyword}秘密',
-                '揭秘{keyword}背后的故事',
-                '{keyword}让人意想不到的用途',
-            ],
-            'seo' => [
-                '{keyword}完整指南：从入门到精通',
-                '{keyword}常见问题解答大全',
-                '如何选择最适合的{keyword}方案',
-            ],
-            'creative' => [
-                '重新定义{keyword}的可能性',
-                '如果{keyword}会说话，它会告诉你什么？',
-                '当{keyword}遇上创新思维',
-            ],
-            'question' => [
-                '{keyword}真的有用吗？',
-                '为什么{keyword}如此重要？',
-                '{keyword}的未来在哪里？',
-            ],
-        ];
-
-        $templates = $styleTemplates[$style] ?? $styleTemplates['professional'];
-        $titles = [];
-        for ($index = 0; $index < $count; $index++) {
-            $keyword = $keywords[array_rand($keywords)];
-            $template = $templates[array_rand($templates)];
-            $titles[] = str_replace('{keyword}', $keyword, $template);
-        }
-
-        return $titles;
     }
 
     /**

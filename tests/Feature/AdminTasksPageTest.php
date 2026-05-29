@@ -9,9 +9,13 @@ use App\Models\ArticleDistribution;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\DistributionChannel;
+use App\Models\Image;
+use App\Models\ImageLibrary;
+use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\TitleLibrary;
+use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -205,6 +209,168 @@ class AdminTasksPageTest extends TestCase
             'task_id' => (int) $task->id,
             'distribution_channel_id' => (int) $channel->id,
         ]);
+    }
+
+    public function test_task_form_can_select_knowledge_tags_for_cross_library_retrieval(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_knowledge_tag_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-knowledge-tag@example.com',
+            'display_name' => 'Tasks Knowledge Tag Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => '知识标签测试模型',
+            'model_id' => 'knowledge-tag-model',
+            'model_type' => 'chat',
+            'status' => 'active',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => '知识标签提示词',
+            'type' => 'content',
+            'content' => '请基于 {{Knowledge}} 写 {{title}}',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => '知识标签标题库',
+        ]);
+        $category = Category::query()->create([
+            'name' => '知识标签分类',
+            'slug' => 'knowledge-tag-category',
+        ]);
+        $knowledgeA = KnowledgeBase::query()->create([
+            'name' => '制造业售后知识库',
+            'content' => '智能客服可以降低制造业售后响应时间。',
+            'file_type' => 'markdown',
+        ]);
+        $knowledgeB = KnowledgeBase::query()->create([
+            'name' => '制造业质检知识库',
+            'content' => '视觉质检可以帮助制造业发现产线异常。',
+            'file_type' => 'markdown',
+        ]);
+        app(TagService::class)->sync($knowledgeA, '行业:制造业');
+        app(TagService::class)->sync($knowledgeB, '行业:制造业');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.create'))
+            ->assertOk()
+            ->assertSee(__('admin.task_create.field.knowledge_tags'))
+            ->assertSee('data-tag-label-selector', false)
+            ->assertSee('data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2"', false)
+            ->assertSee('data-tag-label-search autocomplete="off"', false)
+            ->assertDontSee('data-tag-label-selected class="flex min-h-[2.5rem] w-full flex-wrap items-center gap-2 rounded-md border', false)
+            ->assertSee('行业:制造业')
+            ->assertSee(__('admin.task_create.option.knowledge_tag_count', ['count' => 2]));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '跨知识库标签任务',
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $aiModel->id,
+                'fixed_category_id' => $category->id,
+                'status' => 'paused',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+                'knowledge_tag_filters' => ['行业:制造业'],
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $task = Task::query()->where('name', '跨知识库标签任务')->firstOrFail();
+        $this->assertNull($task->knowledge_base_id);
+        $this->assertSame('行业:制造业', (string) $task->knowledge_tag_filter);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.edit', ['taskId' => (int) $task->id]))
+            ->assertOk()
+            ->assertSee('name="knowledge_tag_filters[]"', false)
+            ->assertSee('value="行业:制造业"', false);
+    }
+
+    public function test_task_form_can_select_image_tags_within_selected_library(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_image_tag_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-image-tag@example.com',
+            'display_name' => 'Tasks Image Tag Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => '图片标签测试模型',
+            'model_id' => 'image-tag-model',
+            'model_type' => 'chat',
+            'status' => 'active',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => '图片标签提示词',
+            'type' => 'content',
+            'content' => '请写 {{title}}',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => '图片标签标题库']);
+        $category = Category::query()->create([
+            'name' => '图片标签分类',
+            'slug' => 'image-tag-category',
+        ]);
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '产品图库',
+            'image_count' => 2,
+        ]);
+        $productImage = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'product.png',
+            'original_name' => 'product.png',
+            'file_path' => 'storage/uploads/images/product.png',
+        ]);
+        Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'other.png',
+            'original_name' => 'other.png',
+            'file_path' => 'storage/uploads/images/other.png',
+        ]);
+        app(TagService::class)->sync($productImage, '场景:产品图');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.create'))
+            ->assertOk()
+            ->assertSee(__('admin.task_create.field.image_tags'))
+            ->assertSee('data-field-name="image_tag_filters"', false)
+            ->assertSee('data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2"', false)
+            ->assertSee('场景:产品图')
+            ->assertSee(__('admin.task_create.option.image_tag_count', ['count' => 1]));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '图库标签交叉筛选任务',
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $aiModel->id,
+                'fixed_category_id' => $category->id,
+                'status' => 'paused',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+                'image_library_id' => $imageLibrary->id,
+                'image_count' => 2,
+                'image_tag_filters' => ['场景:产品图'],
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $task = Task::query()->where('name', '图库标签交叉筛选任务')->firstOrFail();
+        $this->assertSame('场景:产品图', (string) $task->image_tag_filter);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.edit', ['taskId' => (int) $task->id]))
+            ->assertOk()
+            ->assertSee('name="image_tag_filters[]"', false)
+            ->assertSee('value="场景:产品图"', false);
     }
 
     public function test_task_article_action_links_to_filtered_article_list(): void

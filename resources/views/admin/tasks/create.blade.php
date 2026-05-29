@@ -11,6 +11,26 @@
         ->all();
     $publishScope = (string) old('publish_scope', (string) ($taskForm['publish_scope'] ?? 'local_and_distribution'));
     $distributionChannelsDisabled = $publishScope === 'local_only';
+    $storedKnowledgeTagFilter = (string) ($taskForm['knowledge_tag_filter'] ?? '');
+    $selectedKnowledgeTagFilters = old('knowledge_tag_filters', null);
+    if (! is_array($selectedKnowledgeTagFilters)) {
+        $selectedKnowledgeTagFilters = $storedKnowledgeTagFilter !== ''
+            ? preg_split('/\s*,\s*/u', $storedKnowledgeTagFilter, -1, PREG_SPLIT_NO_EMPTY)
+            : [];
+    }
+    $selectedKnowledgeTagFilters = collect($selectedKnowledgeTagFilters)
+        ->map(static fn ($value): string => (string) $value)
+        ->all();
+    $storedImageTagFilter = (string) ($taskForm['image_tag_filter'] ?? '');
+    $selectedImageTagFilters = old('image_tag_filters', null);
+    if (! is_array($selectedImageTagFilters)) {
+        $selectedImageTagFilters = $storedImageTagFilter !== ''
+            ? preg_split('/\s*,\s*/u', $storedImageTagFilter, -1, PREG_SPLIT_NO_EMPTY)
+            : [];
+    }
+    $selectedImageTagFilters = collect($selectedImageTagFilters)
+        ->map(static fn ($value): string => (string) $value)
+        ->all();
 @endphp
 
 @section('content')
@@ -122,6 +142,27 @@
                                         <option value="{{ $kb['id'] }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
                                     @endforeach
                                 </select>
+                                <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_base') !!}</p>
+                            </div>
+                            <div class="lg:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_tags') }}</label>
+                                <input type="hidden" name="knowledge_tag_filter_present" value="1">
+                                @if (empty($formOptions['knowledgeTags']))
+                                    <div class="mt-1 rounded-md border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500">
+                                        {{ $t('task_create.option.no_knowledge_tags') }}
+                                    </div>
+                                @else
+                                    <div class="mt-1">
+                                        @include('admin.partials.tag-label-selector', [
+                                            'name' => 'knowledge_tag_filters',
+                                            'tagOptions' => $formOptions['knowledgeTags'],
+                                            'selectedLabels' => $selectedKnowledgeTagFilters,
+                                            'countLabelKey' => 'admin.task_create.option.knowledge_tag_count',
+                                            'tone' => 'blue',
+                                        ])
+                                    </div>
+                                @endif
+                                <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_tags') !!}</p>
                             </div>
                             <div>
                                 <label for="author_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.author') }}</label>
@@ -166,6 +207,26 @@
                                     <option value="5" @selected($imageCountValue === '5')>{{ $t('task_create.option.image_count', ['count' => 5]) }}</option>
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.image_count') }}</p>
+                            </div>
+                            <div class="md:col-span-2" data-image-tag-filter-section>
+                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_tags') }}</label>
+                                <input type="hidden" name="image_tag_filter_present" value="1">
+                                @if (empty($formOptions['imageTags']))
+                                    <div class="mt-1 rounded-md border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500">
+                                        {{ $t('task_create.option.no_image_tags') }}
+                                    </div>
+                                @else
+                                    <div class="mt-1">
+                                        @include('admin.partials.tag-label-selector', [
+                                            'name' => 'image_tag_filters',
+                                            'tagOptions' => $formOptions['imageTags'],
+                                            'selectedLabels' => $selectedImageTagFilters,
+                                            'countLabelKey' => 'admin.task_create.option.image_tag_count',
+                                            'tone' => 'purple',
+                                        ])
+                                    </div>
+                                @endif
+                                <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.image_tags') !!}</p>
                             </div>
                         </div>
                     </div>

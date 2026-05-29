@@ -7,7 +7,9 @@ use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\ArticleImage;
 use App\Models\Author;
+use App\Models\CaseRecord;
 use App\Models\Category;
+use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
@@ -33,7 +35,8 @@ class WorkerExecutionService
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
         private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
-        private readonly DistributionOrchestrator $distributionOrchestrator
+        private readonly DistributionOrchestrator $distributionOrchestrator,
+        private readonly TagService $tagService
     ) {}
 
     /**
@@ -599,56 +602,238 @@ class WorkerExecutionService
 
     /**
      * 按任务配置检索知识库上下文并回填到 {{Knowledge}}。
+     *
+     * 支持两种范围：
+     * - knowledge_base_id：单个固定知识库；
+     * - knowledge_tag_filter：跨所有命中标签的知识库、Entity DB 和 Case DB。
      */
     private function resolveKnowledgeContext(Task $task, string $title, string $keyword): string
     {
+        $tagFilters = $this->taskTagFilters($task);
+        $knowledgeBaseIds = $this->resolveKnowledgeBaseIds($task);
+        $knowledgeContext = '';
+
+        if ($knowledgeBaseIds !== []) {
+            $knowledgeBases = KnowledgeBase::query()
+                ->whereIn('id', $knowledgeBaseIds)
+                ->orderBy('id')
+                ->get(['id', 'name', 'content'])
+                ->sortBy(static fn (KnowledgeBase $knowledgeBase): int => array_search((int) $knowledgeBase->id, $knowledgeBaseIds, true) ?: 0)
+                ->values()
+                ->filter(static fn (KnowledgeBase $knowledgeBase): bool => trim((string) ($knowledgeBase->content ?? '')) !== '')
+                ->values();
+
+            foreach ($knowledgeBases as $knowledgeBase) {
+                $knowledgeBaseId = (int) $knowledgeBase->id;
+                $chunkCount = KnowledgeChunk::query()->where('knowledge_base_id', $knowledgeBaseId)->count();
+                if ($chunkCount <= 0) {
+                    $this->knowledgeChunkSyncService->sync($knowledgeBaseId, trim((string) $knowledgeBase->content));
+                }
+            }
+
+            if ($knowledgeBases->isNotEmpty()) {
+                $query = trim($title."\n".$keyword);
+                $knowledgeContext = $this->fetchKnowledgeContextFromChunks($knowledgeBases->pluck('id')->map(static fn ($id): int => (int) $id)->all(), $query, 6, 3200);
+                if ($knowledgeContext === '') {
+                    $knowledgeContext = $this->composeFallbackKnowledgeContent($knowledgeBases->all(), 3200);
+                }
+            }
+        }
+
+        $entityCaseContext = $this->composeTaggedEntityCaseContext($tagFilters, 2200);
+
+        return trim(implode("\n\n", array_filter([$knowledgeContext, $entityCaseContext], static fn (string $part): bool => trim($part) !== '')));
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function resolveKnowledgeBaseIds(Task $task): array
+    {
+        $ids = [];
         $knowledgeBaseId = (int) ($task->knowledge_base_id ?? 0);
-        if ($knowledgeBaseId <= 0) {
+        if ($knowledgeBaseId > 0) {
+            $ids[] = $knowledgeBaseId;
+        }
+
+        $tagFilters = $this->taskTagFilters($task);
+        if ($tagFilters !== []) {
+            $tagKnowledgeBaseIds = KnowledgeBase::query()
+                ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+            $ids = array_merge($ids, $tagKnowledgeBaseIds);
+        }
+
+        return array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+    }
+
+    /**
+     * @return list<array{group_name:string,name:string}>
+     */
+    private function taskTagFilters(Task $task): array
+    {
+        $tagFilter = trim((string) ($task->knowledge_tag_filter ?? ''));
+
+        return $tagFilter === '' ? [] : $this->tagService->parseTagText($tagFilter);
+    }
+
+    /**
+     * @param  list<array{group_name:string,name:string}>  $tagFilters
+     */
+    private function addExactTagFilterConditions($query, array $tagFilters): void
+    {
+        $query->where(function ($nested) use ($tagFilters): void {
+            foreach ($tagFilters as $tagFilter) {
+                $groupName = trim((string) ($tagFilter['group_name'] ?? ''));
+                $name = trim((string) ($tagFilter['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $nested->orWhere(function ($tagQuery) use ($groupName, $name): void {
+                    if ($groupName !== '') {
+                        $tagQuery
+                            ->where('group_name', $groupName)
+                            ->where('name', $name);
+
+                        return;
+                    }
+
+                    $tagQuery->where('name', $name);
+                });
+            }
+        });
+    }
+
+    /**
+     * @param  list<array{group_name:string,name:string}>  $tagFilters
+     */
+    private function composeTaggedEntityCaseContext(array $tagFilters, int $maxChars): string
+    {
+        if ($tagFilters === []) {
             return '';
         }
 
-        $knowledgeBase = KnowledgeBase::query()
-            ->whereKey($knowledgeBaseId)
-            ->first(['id', 'content']);
-        if (! $knowledgeBase) {
+        $entities = EntityRecord::query()
+            ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
+            ->orderBy('name')
+            ->limit(12)
+            ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json']);
+
+        $cases = CaseRecord::query()
+            ->with('entity:id,name')
+            ->where(function ($query) use ($tagFilters): void {
+                $query
+                    ->whereHas('tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters))
+                    ->orWhereHas('entity.tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters));
+            })
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get(['id', 'entity_id', 'title', 'case_type', 'summary', 'challenge', 'solution', 'result', 'metrics']);
+
+        if ($entities->isEmpty() && $cases->isEmpty()) {
             return '';
         }
 
-        $content = trim((string) ($knowledgeBase->content ?? ''));
-        if ($content === '') {
-            return '';
+        $lines = [];
+        if ($entities->isNotEmpty()) {
+            $lines[] = '【Entity DB 参考】';
+            foreach ($entities as $entity) {
+                $line = '- 实体：'.(string) $entity->name;
+                if ((string) ($entity->entity_type ?? '') !== '') {
+                    $line .= '（类型：'.(string) $entity->entity_type.'）';
+                }
+                $lines[] = $line;
+                if ((string) ($entity->aliases ?? '') !== '') {
+                    $lines[] = '  别名：'.$this->shortContextText($entity->aliases, 180);
+                }
+                if ((string) ($entity->description ?? '') !== '') {
+                    $lines[] = '  描述：'.$this->shortContextText($entity->description, 320);
+                }
+                if ((string) ($entity->attributes_json ?? '') !== '' && trim((string) $entity->attributes_json) !== '{}') {
+                    $lines[] = '  属性：'.$this->shortContextText($entity->attributes_json, 260);
+                }
+            }
         }
 
-        $chunkCount = KnowledgeChunk::query()->where('knowledge_base_id', $knowledgeBaseId)->count();
-        if ($chunkCount <= 0) {
-            $this->knowledgeChunkSyncService->sync($knowledgeBaseId, $content);
+        if ($cases->isNotEmpty()) {
+            $lines[] = '【Case DB 参考】';
+            foreach ($cases as $caseRecord) {
+                $line = '- 案例：'.(string) $caseRecord->title;
+                if ((string) ($caseRecord->case_type ?? '') !== '') {
+                    $line .= '（类型：'.(string) $caseRecord->case_type.'）';
+                }
+                if ($caseRecord->entity) {
+                    $line .= '，关联实体：'.(string) $caseRecord->entity->name;
+                }
+                $lines[] = $line;
+
+                foreach ([
+                    'summary' => '摘要',
+                    'challenge' => '挑战',
+                    'solution' => '方案',
+                    'result' => '结果',
+                    'metrics' => '指标',
+                ] as $field => $label) {
+                    $value = (string) ($caseRecord->{$field} ?? '');
+                    if ($value !== '') {
+                        $lines[] = '  '.$label.'：'.$this->shortContextText($value, 260);
+                    }
+                }
+            }
         }
 
-        $query = trim($title."\n".$keyword);
-        $context = $this->fetchKnowledgeContextFromChunks($knowledgeBaseId, $query, 4, 2400);
-        if ($context !== '') {
-            return $context;
-        }
+        $context = trim(implode("\n", $lines));
 
-        return mb_strlen($content, 'UTF-8') > 2400 ? mb_substr($content, 0, 2400, 'UTF-8') : $content;
+        return mb_strlen($context, 'UTF-8') > $maxChars
+            ? mb_substr($context, 0, $maxChars, 'UTF-8').'...'
+            : $context;
+    }
+
+    private function shortContextText(mixed $value, int $maxChars): string
+    {
+        $text = trim((string) preg_replace('/\s+/u', ' ', (string) $value));
+
+        return mb_strlen($text, 'UTF-8') > $maxChars
+            ? mb_substr($text, 0, $maxChars, 'UTF-8').'...'
+            : $text;
     }
 
     /**
      * 从 knowledge_chunks 中检索相关片段。
+     *
+     * @param  list<int>  $knowledgeBaseIds
      */
-    private function fetchKnowledgeContextFromChunks(int $knowledgeBaseId, string $query, int $limit, int $maxChars): string
+    private function fetchKnowledgeContextFromChunks(array $knowledgeBaseIds, string $query, int $limit, int $maxChars): string
     {
+        $knowledgeBaseIds = array_values(array_unique(array_filter($knowledgeBaseIds, static fn (int $id): bool => $id > 0)));
+        if ($knowledgeBaseIds === []) {
+            return '';
+        }
+
         if (trim($query) !== '') {
-            $vectorRows = $this->fetchKnowledgeChunksByPgvector($knowledgeBaseId, $query, max($limit * 3, 8));
+            $vectorRows = $this->fetchKnowledgeChunksByPgvector($knowledgeBaseIds, $query, max($limit * 3, 8));
             if ($vectorRows !== []) {
                 return $this->composeKnowledgeContext($vectorRows, $limit, $maxChars);
             }
         }
 
-        $rows = KnowledgeChunk::query()
-            ->where('knowledge_base_id', $knowledgeBaseId)
-            ->orderBy('chunk_index')
-            ->get(['chunk_index', 'content', 'embedding_json', 'embedding_model_id', 'embedding_dimensions'])
+        $rows = DB::table('knowledge_chunks as kc')
+            ->join('knowledge_bases as kb', 'kb.id', '=', 'kc.knowledge_base_id')
+            ->whereIn('kc.knowledge_base_id', $knowledgeBaseIds)
+            ->orderBy('kc.knowledge_base_id')
+            ->orderBy('kc.chunk_index')
+            ->get([
+                'kc.knowledge_base_id',
+                'kb.name as knowledge_base_name',
+                'kc.chunk_index',
+                'kc.content',
+                'kc.embedding_json',
+                'kc.embedding_model_id',
+                'kc.embedding_dimensions',
+            ])
             ->all();
         if ($rows === []) {
             return '';
@@ -685,6 +870,8 @@ class WorkerExecutionService
             $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25);
 
             $scored[] = [
+                'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
+                'knowledge_base_name' => (string) ($row->knowledge_base_name ?? ''),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => $score,
@@ -694,7 +881,7 @@ class WorkerExecutionService
         usort($scored, static function (array $a, array $b): int {
             $diff = ($b['score'] <=> $a['score']);
 
-            return $diff !== 0 ? $diff : ($a['chunk_index'] <=> $b['chunk_index']);
+            return $diff !== 0 ? $diff : (($a['knowledge_base_id'] <=> $b['knowledge_base_id']) ?: ($a['chunk_index'] <=> $b['chunk_index']));
         });
 
         return $this->composeKnowledgeContext($scored, $limit, $maxChars);
@@ -722,9 +909,14 @@ class WorkerExecutionService
             return ['content' => $content, 'images' => []];
         }
 
+        $imageQuery = Image::query()->where('library_id', $libraryId);
+        $imageTagFilters = $this->taskImageTagFilters($task);
+        if ($imageTagFilters !== []) {
+            $imageQuery->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $imageTagFilters));
+        }
+
         /** @var list<Image> $images */
-        $images = Image::query()
-            ->where('library_id', $libraryId)
+        $images = $imageQuery
             ->inRandomOrder()
             ->limit($imageCount)
             ->get(['id', 'file_path', 'original_name'])
@@ -749,6 +941,16 @@ class WorkerExecutionService
         }
 
         return ['content' => $content, 'images' => $images];
+    }
+
+    /**
+     * @return list<array{group_name:string,name:string}>
+     */
+    private function taskImageTagFilters(Task $task): array
+    {
+        $tagFilter = trim((string) ($task->image_tag_filter ?? ''));
+
+        return $tagFilter === '' ? [] : $this->tagService->parseTagText($tagFilter);
     }
 
     /**
@@ -975,11 +1177,16 @@ class WorkerExecutionService
     /**
      * 优先使用 pgvector 执行数据库向量检索，命中则返回候选块。
      *
-     * @return list<array{chunk_index:int,content:string,score:float}>
+     * @param  list<int>  $knowledgeBaseIds
+     * @return list<array{knowledge_base_id:int,knowledge_base_name:string,chunk_index:int,content:string,score:float}>
      */
-    private function fetchKnowledgeChunksByPgvector(int $knowledgeBaseId, string $query, int $candidateLimit): array
+    private function fetchKnowledgeChunksByPgvector(array $knowledgeBaseIds, string $query, int $candidateLimit): array
     {
         if (! $this->canUsePgvectorSearch()) {
+            return [];
+        }
+        $knowledgeBaseIds = array_values(array_unique(array_filter($knowledgeBaseIds, static fn (int $id): bool => $id > 0)));
+        if ($knowledgeBaseIds === []) {
             return [];
         }
 
@@ -987,18 +1194,20 @@ class WorkerExecutionService
         if ($vectorLiteral === '') {
             return [];
         }
+        $placeholders = implode(',', array_fill(0, count($knowledgeBaseIds), '?'));
 
         $rows = DB::select(
-            '
-                SELECT chunk_index, content,
-                       (embedding_vector <=> CAST(? AS vector)) AS vector_distance
-                FROM knowledge_chunks
-                WHERE knowledge_base_id = ?
-                  AND embedding_vector IS NOT NULL
-                ORDER BY embedding_vector <=> CAST(? AS vector), chunk_index ASC
+            "
+                SELECT kc.knowledge_base_id, kb.name AS knowledge_base_name, kc.chunk_index, kc.content,
+                       (kc.embedding_vector <=> CAST(? AS vector)) AS vector_distance
+                FROM knowledge_chunks kc
+                JOIN knowledge_bases kb ON kb.id = kc.knowledge_base_id
+                WHERE kc.knowledge_base_id IN ({$placeholders})
+                  AND kc.embedding_vector IS NOT NULL
+                ORDER BY kc.embedding_vector <=> CAST(? AS vector), kc.chunk_index ASC
                 LIMIT ?
-            ',
-            [$vectorLiteral, $knowledgeBaseId, $vectorLiteral, max(1, $candidateLimit)]
+            ",
+            array_merge([$vectorLiteral], $knowledgeBaseIds, [$vectorLiteral, max(1, $candidateLimit)])
         );
 
         $results = [];
@@ -1009,6 +1218,8 @@ class WorkerExecutionService
             }
             $distance = (float) ($row->vector_distance ?? 1.0);
             $results[] = [
+                'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
+                'knowledge_base_name' => (string) ($row->knowledge_base_name ?? ''),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => 1.0 - $distance,
@@ -1055,7 +1266,7 @@ class WorkerExecutionService
     /**
      * 从候选块拼装知识上下文，按片段顺序输出。
      *
-     * @param  list<array{chunk_index:int,content:string,score:float}>  $scored
+     * @param  list<array{knowledge_base_id?:int,knowledge_base_name?:string,chunk_index:int,content:string,score:float}>  $scored
      */
     private function composeKnowledgeContext(array $scored, int $limit, int $maxChars): string
     {
@@ -1064,7 +1275,7 @@ class WorkerExecutionService
         }
 
         $selected = array_slice($scored, 0, max(1, $limit));
-        usort($selected, static fn (array $a, array $b): int => $a['chunk_index'] <=> $b['chunk_index']);
+        usort($selected, static fn (array $a, array $b): int => (($a['knowledge_base_id'] ?? 0) <=> ($b['knowledge_base_id'] ?? 0)) ?: ($a['chunk_index'] <=> $b['chunk_index']));
 
         $parts = [];
         $charCount = 0;
@@ -1077,8 +1288,43 @@ class WorkerExecutionService
             if ($parts !== [] && $nextLength > $maxChars) {
                 continue;
             }
-            $parts[] = '【知识片段'.($index + 1)."】\n".$content;
+            $source = trim((string) ($chunk['knowledge_base_name'] ?? ''));
+            $heading = '【知识片段'.($index + 1).($source !== '' ? ' / 知识库：'.$source : '').'】';
+            $parts[] = $heading."\n".$content;
             $charCount = $nextLength;
+        }
+
+        return trim(implode("\n\n", $parts));
+    }
+
+    /**
+     * @param  list<KnowledgeBase>  $knowledgeBases
+     */
+    private function composeFallbackKnowledgeContent(array $knowledgeBases, int $maxChars): string
+    {
+        $parts = [];
+        $charCount = 0;
+        foreach ($knowledgeBases as $knowledgeBase) {
+            $content = trim((string) ($knowledgeBase->content ?? ''));
+            if ($content === '') {
+                continue;
+            }
+            $name = trim((string) ($knowledgeBase->name ?? ''));
+            $block = ($name !== '' ? "【知识库：{$name}】\n" : '').$content;
+            $blockLength = mb_strlen($block, 'UTF-8');
+            if ($parts !== [] && $charCount + $blockLength > $maxChars) {
+                $remaining = $maxChars - $charCount;
+                if ($remaining <= 120) {
+                    break;
+                }
+                $block = mb_substr($block, 0, $remaining, 'UTF-8');
+                $blockLength = mb_strlen($block, 'UTF-8');
+            }
+            $parts[] = $block;
+            $charCount += $blockLength;
+            if ($charCount >= $maxChars) {
+                break;
+            }
         }
 
         return trim(implode("\n\n", $parts));

@@ -27,9 +27,10 @@ class TitleAiGenerationService
     /**
      * 生成标题列表。
      *
-     * @param  list<string>  $keywords
+     * @param  list<string|array<string,mixed>>  $keywords
      * @return array{
      *   titles:list<string>,
+     *   items:list<array{title:string,keyword:string}>,
      *   fallback_used:bool,
      *   fallback_reason:?string
      * }
@@ -41,26 +42,34 @@ class TitleAiGenerationService
         string $style,
         string $customPrompt = ''
     ): array {
+        $keywordContexts = $this->normalizeKeywordContexts($keywords);
         try {
-            $content = $this->requestTitlesFromModel($aiModel, $keywords, $count, $style, $customPrompt);
-            $titles = $this->parseGeneratedTitles($content);
-            if ($titles !== []) {
+            $content = $this->requestTitlesFromModel($aiModel, $keywordContexts, $count, $style, $customPrompt);
+            $items = $this->parseGeneratedTitleItems($content, $keywordContexts);
+            if ($items !== []) {
                 return [
-                    'titles' => $titles,
+                    'titles' => array_values(array_unique(array_column($items, 'title'))),
+                    'items' => $items,
                     'fallback_used' => false,
                     'fallback_reason' => null,
                 ];
             }
         } catch (Throwable $exception) {
+            $items = $this->generateMockTitleItems($keywordContexts, $count, $style, $customPrompt);
+
             return [
-                'titles' => $this->generateMockTitles($keywords, $count, $style),
+                'titles' => array_values(array_unique(array_column($items, 'title'))),
+                'items' => $items,
                 'fallback_used' => true,
                 'fallback_reason' => $exception->getMessage(),
             ];
         }
 
+        $items = $this->generateMockTitleItems($keywordContexts, $count, $style, $customPrompt);
+
         return [
-            'titles' => $this->generateMockTitles($keywords, $count, $style),
+            'titles' => array_values(array_unique(array_column($items, 'title'))),
+            'items' => $items,
             'fallback_used' => true,
             'fallback_reason' => 'empty_result',
         ];
@@ -69,11 +78,11 @@ class TitleAiGenerationService
     /**
      * 请求真实模型生成标题。
      *
-     * @param  list<string>  $keywords
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
      */
     private function requestTitlesFromModel(
         AiModel $aiModel,
-        array $keywords,
+        array $keywordContexts,
         int $count,
         string $style,
         string $customPrompt
@@ -99,14 +108,14 @@ class TitleAiGenerationService
             'question' => '疑问式的',
         ];
         $styleDescription = $styleMap[$style] ?? '专业严谨的';
-        $keywordsText = implode('、', $keywords);
+        $keywordsText = $this->formatKeywordContextLines($keywordContexts, $customPrompt);
 
         $systemPrompt = "你是一个专业的内容标题生成专家。请根据提供的关键词生成{$styleDescription}文章标题。";
-        $userPrompt = "请基于以下关键词生成 {$count} 个{$styleDescription}文章标题：\n\n关键词：{$keywordsText}\n\n";
-        if ($customPrompt !== '') {
+        $userPrompt = "请基于以下关键词和标签上下文生成 {$count} 个{$styleDescription}文章标题：\n\n{$keywordsText}\n\n";
+        if ($customPrompt !== '' && ! $this->promptHasVariables($customPrompt)) {
             $userPrompt .= "额外要求：{$customPrompt}\n\n";
         }
-        $userPrompt .= "要求：\n1. 每个标题独占一行\n2. 标题要有吸引力和可读性\n3. 适合搜索引擎优化\n4. 不要添加序号或其他标记\n5. 直接输出标题内容";
+        $userPrompt .= "要求：\n1. 每个标题独占一行\n2. 每行格式必须为：关键词 | 标题\n3. 标题要有吸引力和可读性\n4. 适合搜索引擎优化\n5. 不要添加序号、Markdown 或额外解释";
 
         try {
             $response = agent($systemPrompt)->prompt(
@@ -134,23 +143,42 @@ class TitleAiGenerationService
     }
 
     /**
-     * 解析模型输出文本为标题列表。
-     *
-     * @return list<string>
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
+     * @return list<array{title:string,keyword:string}>
      */
-    private function parseGeneratedTitles(string $content): array
+    private function parseGeneratedTitleItems(string $content, array $keywordContexts): array
     {
-        $titles = [];
-        foreach (preg_split('/\R/u', $content) ?: [] as $line) {
-            $title = preg_replace('/^\d+[\.\)\-、\s]*/u', '', trim($line));
-            $title = trim((string) $title);
+        $items = [];
+        $fallbackKeywords = array_values(array_map(static fn (array $context): string => $context['keyword'], $keywordContexts));
+        foreach (preg_split('/\R/u', $content) ?: [] as $index => $line) {
+            $line = preg_replace('/^\d+[\.\)\-、\s]*/u', '', trim($line));
+            $line = trim((string) $line);
+            if ($line === '') {
+                continue;
+            }
+
+            $keyword = '';
+            $title = $line;
+            if (str_contains($line, '|')) {
+                [$keywordPart, $titlePart] = array_pad(explode('|', $line, 2), 2, '');
+                $keyword = trim((string) $keywordPart);
+                $title = trim((string) $titlePart);
+            }
             if ($title === '') {
                 continue;
             }
-            $titles[] = $title;
+
+            $keyword = $this->resolveTitleKeyword($title, $keyword, $keywordContexts, $fallbackKeywords, $index);
+            $items[] = [
+                'title' => $title,
+                'keyword' => $keyword,
+            ];
         }
 
-        return array_values(array_unique($titles));
+        return collect($items)
+            ->unique(static fn (array $item): string => $item['title'])
+            ->values()
+            ->all();
     }
 
     /**
@@ -162,9 +190,10 @@ class TitleAiGenerationService
     }
 
     /**
-     * @return list<string>
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
+     * @return list<array{title:string,keyword:string}>
      */
-    private function generateMockTitles(array $keywords, int $count, string $style): array
+    private function generateMockTitleItems(array $keywordContexts, int $count, string $style, string $customPrompt): array
     {
         $styleTemplates = [
             'professional' => [
@@ -195,13 +224,165 @@ class TitleAiGenerationService
         ];
 
         $templates = $styleTemplates[$style] ?? $styleTemplates['professional'];
-        $titles = [];
+        $items = [];
+        $keywordContexts = $keywordContexts !== [] ? $keywordContexts : [[
+            'keyword' => 'GEOFlow',
+            'tags' => [],
+            'tag_labels' => [],
+        ]];
         for ($index = 0; $index < $count; $index++) {
-            $keyword = $keywords[array_rand($keywords)];
-            $template = $templates[array_rand($templates)];
-            $titles[] = str_replace('{keyword}', $keyword, $template);
+            $context = $keywordContexts[array_rand($keywordContexts)];
+            $keyword = $context['keyword'];
+            if ($customPrompt !== '' && $this->promptHasVariables($customPrompt)) {
+                $title = $this->renderPromptVariables($customPrompt, $context);
+            } else {
+                $template = $templates[array_rand($templates)];
+                $title = str_replace('{keyword}', $keyword, $template);
+            }
+
+            $items[] = [
+                'title' => mb_substr(trim($title), 0, 500, 'UTF-8'),
+                'keyword' => $keyword,
+            ];
         }
 
-        return $titles;
+        return collect($items)
+            ->filter(static fn (array $item): bool => $item['title'] !== '')
+            ->unique(static fn (array $item): string => $item['title'])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string|array<string,mixed>>  $keywords
+     * @return list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>
+     */
+    private function normalizeKeywordContexts(array $keywords): array
+    {
+        $contexts = [];
+        foreach ($keywords as $keyword) {
+            if (is_array($keyword)) {
+                $keywordText = trim((string) ($keyword['keyword'] ?? ''));
+                if ($keywordText === '') {
+                    continue;
+                }
+                $tags = [];
+                foreach ((array) ($keyword['tags'] ?? []) as $group => $value) {
+                    $group = trim((string) $group);
+                    $value = trim((string) $value);
+                    if ($group !== '' && $value !== '') {
+                        $tags[$group] = $value;
+                    }
+                }
+                $tagLabels = array_values(array_filter(array_map('trim', (array) ($keyword['tag_labels'] ?? []))));
+                if ($tagLabels === [] && $tags !== []) {
+                    $tagLabels = array_map(static fn (string $group, string $value): string => $group.':'.$value, array_keys($tags), array_values($tags));
+                }
+                $contexts[] = [
+                    'keyword' => $keywordText,
+                    'tags' => $tags,
+                    'tag_labels' => $tagLabels,
+                ];
+
+                continue;
+            }
+
+            $keywordText = trim((string) $keyword);
+            if ($keywordText !== '') {
+                $contexts[] = [
+                    'keyword' => $keywordText,
+                    'tags' => [],
+                    'tag_labels' => [],
+                ];
+            }
+        }
+
+        return $contexts;
+    }
+
+    /**
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
+     */
+    private function formatKeywordContextLines(array $keywordContexts, string $customPrompt): string
+    {
+        $lines = [];
+        foreach ($keywordContexts as $context) {
+            $line = '- 关键词：'.$context['keyword'];
+            if ($context['tag_labels'] !== []) {
+                $line .= '；标签：'.implode('，', $context['tag_labels']);
+            }
+            if ($customPrompt !== '' && $this->promptHasVariables($customPrompt)) {
+                $line .= '；变量要求：'.$this->renderPromptVariables($customPrompt, $context);
+            }
+            $lines[] = $line;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param  array{keyword:string,tags:array<string,string>,tag_labels:list<string>}  $context
+     */
+    private function renderPromptVariables(string $prompt, array $context): string
+    {
+        return preg_replace_callback('/\{\{\s*([A-Za-z0-9_.\-\x{4e00}-\x{9fa5}]+)\s*\}\}/u', function (array $matches) use ($context): string {
+            $name = trim((string) ($matches[1] ?? ''));
+            $lowerName = mb_strtolower($name, 'UTF-8');
+            if ($lowerName === 'keyword') {
+                return $context['keyword'];
+            }
+            if (in_array($lowerName, ['tags', 'keyword.tags', 'keyword.tag_labels'], true)) {
+                return implode('，', $context['tag_labels']);
+            }
+            foreach (['keyword.tags.', 'keyword.tag.', 'tags.', 'tag.'] as $prefix) {
+                if (! str_starts_with($lowerName, $prefix)) {
+                    continue;
+                }
+                $groupName = trim(mb_substr($name, mb_strlen($prefix, 'UTF-8'), null, 'UTF-8'));
+
+                return $this->tagValue($context['tags'], $groupName);
+            }
+
+            return (string) ($matches[0] ?? '');
+        }, $prompt) ?? $prompt;
+    }
+
+    /**
+     * @param  array<string,string>  $tags
+     */
+    private function tagValue(array $tags, string $groupName): string
+    {
+        foreach ($tags as $group => $value) {
+            if (mb_strtolower($group, 'UTF-8') === mb_strtolower($groupName, 'UTF-8')) {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function promptHasVariables(string $prompt): bool
+    {
+        return preg_match('/\{\{\s*(keyword|tags|tag|keyword\.tags|keyword\.tag|keyword\.tag_labels)(?:[.\s}])/iu', $prompt) === 1;
+    }
+
+    /**
+     * @param  list<array{keyword:string,tags:array<string,string>,tag_labels:list<string>}>  $keywordContexts
+     * @param  list<string>  $fallbackKeywords
+     */
+    private function resolveTitleKeyword(string $title, string $reportedKeyword, array $keywordContexts, array $fallbackKeywords, int $index): string
+    {
+        foreach ($keywordContexts as $context) {
+            if ($reportedKeyword !== '' && trim($reportedKeyword) === $context['keyword']) {
+                return $context['keyword'];
+            }
+        }
+        foreach ($keywordContexts as $context) {
+            if (mb_stripos($title, $context['keyword'], 0, 'UTF-8') !== false) {
+                return $context['keyword'];
+            }
+        }
+
+        return $fallbackKeywords !== [] ? $fallbackKeywords[$index % count($fallbackKeywords)] : '';
     }
 }

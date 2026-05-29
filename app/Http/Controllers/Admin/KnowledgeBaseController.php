@@ -8,6 +8,7 @@ use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
 use App\Models\Task;
 use App\Services\GeoFlow\KnowledgeChunkSyncService;
+use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +17,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 
@@ -24,20 +26,27 @@ use Illuminate\View\View;
  */
 class KnowledgeBaseController extends Controller
 {
-    public function __construct(private readonly KnowledgeChunkSyncService $chunkSyncService) {}
+    public function __construct(
+        private readonly KnowledgeChunkSyncService $chunkSyncService,
+        private readonly TagService $tagService,
+    ) {}
 
     /**
      * 列表页。
      */
-    public function index(): View
+    public function index(Request $request): View
     {
+        $tagFilter = trim((string) $request->query('tag', ''));
+
         return view('admin.knowledge-bases.index', [
             'pageTitle' => __('admin.knowledge_bases.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
-            'knowledgeBases' => $this->loadKnowledgeBases(),
+            'knowledgeBases' => $this->loadKnowledgeBases($tagFilter),
             'stats' => $this->loadStats(),
             'hasDefaultEmbeddingModel' => $this->hasDefaultEmbeddingModel(),
+            'tagFilter' => $tagFilter,
+            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -53,6 +62,9 @@ class KnowledgeBaseController extends Controller
             'isEdit' => false,
             'knowledgeBaseId' => 0,
             'knowledgeForm' => $this->emptyForm(),
+            'tagsText' => '',
+            'selectedTagIds' => [],
+            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -68,6 +80,9 @@ class KnowledgeBaseController extends Controller
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
             'knowledgeBase' => $knowledgeBase,
+            'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
+            'selectedTagIds' => $this->tagService->selectedTagIdsFor($knowledgeBase),
+            'tagOptions' => $this->tagService->existingTagOptions(),
             'relatedTasks' => $this->loadRelatedTasks($knowledgeBaseId),
             'chunkStats' => $this->loadChunkStats($knowledgeBaseId),
             'chunkPreviewRows' => $this->loadChunkPreviewRows($knowledgeBaseId),
@@ -86,13 +101,16 @@ class KnowledgeBaseController extends Controller
             'description' => ['nullable', 'string'],
             'content' => ['required', 'string'],
             'file_type' => ['required', 'in:markdown,word,text'],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'name.required' => __('admin.knowledge_bases.error.name_required'),
             'content.required' => __('admin.knowledge_bases.error.content_required'),
         ]);
 
         $content = trim((string) $payload['content']);
-        DB::transaction(function () use ($knowledgeBase, $payload, $content): void {
+        $tagIds = $this->requestHasTagSelection($request) ? $this->selectedTagIds($request) : null;
+        DB::transaction(function () use ($knowledgeBase, $payload, $content, $tagIds): void {
             $knowledgeBase->update([
                 'name' => trim((string) $payload['name']),
                 'description' => trim((string) ($payload['description'] ?? '')),
@@ -101,6 +119,9 @@ class KnowledgeBaseController extends Controller
                 'character_count' => mb_strlen($content, 'UTF-8'),
                 'word_count' => mb_strlen(strip_tags($content), 'UTF-8'),
             ]);
+            if ($tagIds !== null) {
+                $this->tagService->syncExisting($knowledgeBase, $tagIds);
+            }
 
             $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
         });
@@ -120,6 +141,8 @@ class KnowledgeBaseController extends Controller
             'knowledge_file' => ['required', File::types(['txt', 'md', 'docx'])->max(10 * 1024)],
             'name' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'knowledge_file.required' => __('admin.knowledge_bases.error.file_required'),
         ]);
@@ -145,7 +168,8 @@ class KnowledgeBaseController extends Controller
             }
 
             $chunkCount = 0;
-            DB::transaction(function () use (&$chunkCount, $knowledgeName, $request, $content, $parsed, $storedRelativePath): void {
+            $tagIds = $this->selectedTagIds($request);
+            DB::transaction(function () use (&$chunkCount, $knowledgeName, $request, $content, $parsed, $storedRelativePath, $tagIds): void {
                 $knowledgeBase = KnowledgeBase::query()->create([
                     'name' => $knowledgeName,
                     'description' => trim((string) $request->input('description', '')),
@@ -157,6 +181,7 @@ class KnowledgeBaseController extends Controller
                     'used_task_count' => 0,
                     'file_path' => $storedRelativePath,
                 ]);
+                $this->tagService->syncExisting($knowledgeBase, $tagIds);
                 $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
             });
 
@@ -176,19 +201,23 @@ class KnowledgeBaseController extends Controller
         $payload = $this->validateKnowledgeForm($request);
 
         $content = trim((string) $payload['content']);
-        $knowledgeBase = KnowledgeBase::query()->create([
-            'name' => trim((string) $payload['name']),
-            'description' => trim((string) ($payload['description'] ?? '')),
-            'content' => $content,
-            'file_type' => (string) $payload['file_type'],
-            'character_count' => mb_strlen($content, 'UTF-8'),
-            'word_count' => mb_strlen(strip_tags($content), 'UTF-8'),
-            'usage_count' => 0,
-            'used_task_count' => 0,
-            'file_path' => '',
-        ]);
-
-        $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
+        $chunkCount = 0;
+        $tagIds = $this->selectedTagIds($request);
+        DB::transaction(function () use ($payload, $content, $tagIds, &$chunkCount): void {
+            $knowledgeBase = KnowledgeBase::query()->create([
+                'name' => trim((string) $payload['name']),
+                'description' => trim((string) ($payload['description'] ?? '')),
+                'content' => $content,
+                'file_type' => (string) $payload['file_type'],
+                'character_count' => mb_strlen($content, 'UTF-8'),
+                'word_count' => mb_strlen(strip_tags($content), 'UTF-8'),
+                'usage_count' => 0,
+                'used_task_count' => 0,
+                'file_path' => '',
+            ]);
+            $this->tagService->syncExisting($knowledgeBase, $tagIds);
+            $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
+        });
 
         return redirect()
             ->route('admin.knowledge-bases.index')
@@ -215,6 +244,9 @@ class KnowledgeBaseController extends Controller
                 'file_type' => (string) ($knowledgeBase->file_type ?? 'markdown'),
             ],
             'chunkCount' => (int) $knowledgeBase->chunks()->count(),
+            'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
+            'selectedTagIds' => $this->tagService->selectedTagIdsFor($knowledgeBase),
+            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -228,16 +260,22 @@ class KnowledgeBaseController extends Controller
         $payload = $this->validateKnowledgeForm($request);
         $content = trim((string) $payload['content']);
 
-        $knowledgeBase->update([
-            'name' => trim((string) $payload['name']),
-            'description' => trim((string) ($payload['description'] ?? '')),
-            'content' => $content,
-            'file_type' => (string) $payload['file_type'],
-            'character_count' => mb_strlen($content, 'UTF-8'),
-            'word_count' => mb_strlen(strip_tags($content), 'UTF-8'),
-        ]);
-
-        $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
+        $chunkCount = 0;
+        $tagIds = $this->requestHasTagSelection($request) ? $this->selectedTagIds($request) : null;
+        DB::transaction(function () use ($knowledgeBase, $payload, $content, $tagIds, &$chunkCount): void {
+            $knowledgeBase->update([
+                'name' => trim((string) $payload['name']),
+                'description' => trim((string) ($payload['description'] ?? '')),
+                'content' => $content,
+                'file_type' => (string) $payload['file_type'],
+                'character_count' => mb_strlen($content, 'UTF-8'),
+                'word_count' => mb_strlen(strip_tags($content), 'UTF-8'),
+            ]);
+            if ($tagIds !== null) {
+                $this->tagService->syncExisting($knowledgeBase, $tagIds);
+            }
+            $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
+        });
 
         return redirect()
             ->route('admin.knowledge-bases.index')
@@ -305,13 +343,28 @@ class KnowledgeBaseController extends Controller
         }
     }
 
+    public function updateTags(Request $request, int $knowledgeBaseId): RedirectResponse
+    {
+        $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+
+        $request->validate([
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
+        ]);
+
+        $this->tagService->syncExisting($knowledgeBase, $this->selectedTagIds($request));
+
+        return back()->with('message', __('admin.knowledge_bases.message.tags_updated'));
+    }
+
     /**
      * @return array<int, array<string,mixed>>
      */
-    private function loadKnowledgeBases(): array
+    private function loadKnowledgeBases(string $tagFilter): array
     {
         $query = KnowledgeBase::query()
             ->select(['id', 'name', 'description', 'file_type', 'word_count', 'usage_count', 'created_at', 'updated_at'])
+            ->with(['tags' => fn ($query) => $query->orderBy('group_name')->orderBy('name')])
             ->withCount('chunks as chunk_count')
             ->withCount([
                 'chunks as vectorized_chunk_count' => fn ($query) => $query
@@ -319,6 +372,7 @@ class KnowledgeBaseController extends Controller
                     ->where('embedding_dimensions', '>', 0),
             ])
             ->orderByDesc('created_at');
+        $this->tagService->applyFilter($query, $tagFilter);
 
         return $query->get()->map(static function (KnowledgeBase $knowledgeBase): array {
             return [
@@ -330,6 +384,11 @@ class KnowledgeBaseController extends Controller
                 'usage_count' => (int) ($knowledgeBase->usage_count ?? 0),
                 'chunk_count' => (int) ($knowledgeBase->chunk_count ?? 0),
                 'vectorized_chunk_count' => (int) ($knowledgeBase->vectorized_chunk_count ?? 0),
+                'tags' => $knowledgeBase->tags
+                    ->map(static fn ($tag): string => $tag->displayName())
+                    ->filter(static fn (string $label): bool => $label !== '')
+                    ->values()
+                    ->all(),
                 'created_at' => $knowledgeBase->created_at?->format('Y-m-d H:i:s'),
                 'updated_at' => $knowledgeBase->updated_at?->format('Y-m-d H:i:s'),
             ];
@@ -372,6 +431,8 @@ class KnowledgeBaseController extends Controller
             'description' => ['nullable', 'string'],
             'content' => ['required', 'string'],
             'file_type' => ['required', 'in:markdown,word,text'],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'name.required' => __('admin.knowledge_bases.error.name_required'),
             'content.required' => __('admin.knowledge_bases.error.content_required'),
@@ -389,6 +450,24 @@ class KnowledgeBaseController extends Controller
             'content' => '',
             'file_type' => 'markdown',
         ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedTagIds(Request $request): array
+    {
+        return collect($request->input('tag_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function requestHasTagSelection(Request $request): bool
+    {
+        return $request->has('tag_ids') || $request->has('tag_ids_present');
     }
 
     /**

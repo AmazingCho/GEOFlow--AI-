@@ -219,9 +219,12 @@ final class UrlImportProcessingService
             throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
         }
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles): array {
+        $language = $this->analysisLanguage($analysis, $page, $job);
+        $libraryLabels = $this->libraryLabels($language);
+
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $libraryLabels): array {
             $knowledgeBase = KnowledgeBase::query()->create([
-                'name' => $baseName.' 知识库',
+                'name' => $baseName.$libraryLabels['knowledge_suffix'],
                 'description' => (string) ($analysis['summary'] ?? ''),
                 'content' => $knowledgeContent,
                 'character_count' => mb_strlen($knowledgeContent, 'UTF-8'),
@@ -233,8 +236,8 @@ final class UrlImportProcessingService
             ]);
 
             $keywordLibrary = KeywordLibrary::query()->create([
-                'name' => $baseName.' 关键词库',
-                'description' => 'URL智能采集自动生成',
+                'name' => $baseName.$libraryLabels['keyword_suffix'],
+                'description' => $libraryLabels['description'],
                 'keyword_count' => 0,
             ]);
             foreach ($keywords as $keyword) {
@@ -246,8 +249,8 @@ final class UrlImportProcessingService
             $keywordLibrary->update(['keyword_count' => Keyword::query()->where('library_id', (int) $keywordLibrary->id)->count()]);
 
             $titleLibrary = TitleLibrary::query()->create([
-                'name' => $baseName.' 标题库',
-                'description' => 'URL智能采集自动生成',
+                'name' => $baseName.$libraryLabels['title_suffix'],
+                'description' => $libraryLabels['description'],
                 'title_count' => 0,
                 'generation_type' => 'url_import',
                 'generation_rounds' => 1,
@@ -366,7 +369,7 @@ final class UrlImportProcessingService
     }
 
     /**
-     * @return array{title:string,description:string,text:string,summary:string,raw_json:array<string,mixed>}
+     * @return array{title:string,description:string,text:string,summary:string,language_hint:string,raw_json:array<string,mixed>}
      */
     private function parseHtml(string $html, string $baseUrl): array
     {
@@ -391,6 +394,7 @@ final class UrlImportProcessingService
             $title = $h1 ? trim((string) $h1->textContent) : ((string) (parse_url($baseUrl, PHP_URL_HOST) ?: 'URL素材'));
         }
 
+        $languageHint = $this->detectHtmlLanguage($dom, $xpath);
         $description = $this->firstMetaContent($xpath, ['description', 'og:description', 'twitter:description']);
         $body = $xpath->query('//article')->item(0) ?: $xpath->query('//main')->item(0) ?: $xpath->query('//body')->item(0);
         $text = $body ? $this->normalizeText((string) $body->textContent) : '';
@@ -401,10 +405,12 @@ final class UrlImportProcessingService
             'description' => $this->normalizeText($description),
             'text' => Str::limit($text, 20000, ''),
             'summary' => $this->normalizeText($summary),
+            'language_hint' => $languageHint,
             'raw_json' => [
                 'title' => $this->normalizeText($title),
                 'description' => $this->normalizeText($description),
                 'text' => Str::limit($text, 20000, ''),
+                'language_hint' => $languageHint,
             ],
         ];
     }
@@ -419,7 +425,8 @@ final class UrlImportProcessingService
         $text = (string) ($parsed['text'] ?? '');
         $summary = (string) ($parsed['summary'] ?? '');
         $libraryName = $this->safeName($title !== '' ? $title : (string) $job->source_domain);
-        $pageJson = $this->buildPageJson($parsed, $job);
+        $language = $this->resolveContentLanguage($parsed, $job);
+        $pageJson = $this->buildPageJson($parsed, $job, $language);
 
         $models = $this->assertAnalysisModelsReady();
         $errors = [];
@@ -439,17 +446,22 @@ final class UrlImportProcessingService
                     $this->log($job, 'info', __('admin.url_import.log.clean_start'));
                     $cleaned = $this->normalizeCleanedPage($this->requestAiJson(
                         $runtime,
-                        $this->buildCleanSystemPrompt(),
-                        $this->buildCleanUserPrompt($pageJson)
+                        $this->buildCleanSystemPrompt($language),
+                        $this->buildCleanUserPrompt($pageJson, $language)
                     ), $parsed);
+                    $this->assertGeneratedLanguage([
+                        $cleaned['title'],
+                        $cleaned['summary'],
+                        $cleaned['text'],
+                    ], $language, 'clean');
                     $this->log($job, 'info', __('admin.url_import.log.clean_done', [
                         'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
                     ]));
 
                     $knowledgePayload = $this->requestAiJson(
                         $runtime,
-                        $this->buildKnowledgeSystemPrompt(),
-                        $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [])
+                        $this->buildKnowledgeSystemPrompt($language),
+                        $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [], $language)
                     );
                     $aiSummary = $this->normalizeText($this->aiResponseTextToString($knowledgePayload['summary'] ?? $cleaned['summary'] ?? $summary));
                     $aiLibraryName = $this->safeName($this->aiResponseTextToString($knowledgePayload['library_name'] ?? $cleaned['title'] ?? $libraryName));
@@ -457,6 +469,7 @@ final class UrlImportProcessingService
                     if ($aiKnowledge === '') {
                         throw new \RuntimeException(__('admin.url_import.error.ai_knowledge_missing'));
                     }
+                    $this->assertGeneratedLanguage([$aiSummary, $aiLibraryName, $aiKnowledge], $language, 'knowledge');
                     $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
                         'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
                     ]));
@@ -465,8 +478,8 @@ final class UrlImportProcessingService
                     $this->log($job, 'info', __('admin.url_import.log.keywords_start'));
                     $keywordPayload = $this->requestAiJson(
                         $runtime,
-                        $this->buildKeywordsSystemPrompt(),
-                        $this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge),
+                        $this->buildKeywordsSystemPrompt($language),
+                        $this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge, $language),
                         'keywords'
                     );
                     $keywordValues = $keywordPayload['keywords'] ?? (array_is_list($keywordPayload) ? $keywordPayload : []);
@@ -474,14 +487,15 @@ final class UrlImportProcessingService
                     if ($aiKeywords === []) {
                         throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
                     }
+                    $this->assertGeneratedLanguage($aiKeywords, $language, 'keywords');
                     $this->log($job, 'info', __('admin.url_import.log.keywords_done', ['count' => count($aiKeywords)]));
 
                     $this->updateStep($job, 'titles', 80);
                     $this->log($job, 'info', __('admin.url_import.log.titles_start'));
                     $titlePayload = $this->requestAiJson(
                         $runtime,
-                        $this->buildTitlesSystemPrompt(),
-                        $this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords),
+                        $this->buildTitlesSystemPrompt($language),
+                        $this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords, $language),
                         'titles'
                     );
                     $titleValues = $titlePayload['titles'] ?? (array_is_list($titlePayload) ? $titlePayload : []);
@@ -489,6 +503,7 @@ final class UrlImportProcessingService
                     if ($aiTitles === []) {
                         throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
                     }
+                    $this->assertGeneratedLanguage($aiTitles, $language, 'titles');
                     $this->log($job, 'info', __('admin.url_import.log.titles_done', ['count' => count($aiTitles)]));
 
                     $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
@@ -500,6 +515,7 @@ final class UrlImportProcessingService
                         'titles' => $aiTitles,
                         'knowledge_markdown' => $aiKnowledge,
                         'analysis_source' => 'ai',
+                        'language' => $language,
                         'model' => [
                             'id' => (int) $model->id,
                             'name' => (string) $model->name,
@@ -705,7 +721,10 @@ final class UrlImportProcessingService
         return OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl);
     }
 
-    private function buildCleanSystemPrompt(): string
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function buildCleanSystemPrompt(array $language): string
     {
         return <<<'PROMPT'
 你是 GEOFlow 的网页正文清洗器。只输出 JSON，不要输出 Markdown 代码块。
@@ -713,13 +732,14 @@ final class UrlImportProcessingService
 目标：从页面 JSON 中去掉导航、菜单、广告、版权、按钮、登录、推荐流、重复模板文案，只保留页面主体内容和可被知识库引用的事实，并识别页面背后的真实核心业务。
 core_business 必须描述页面主体对应的行业、产品/服务、目标客户、商业场景、价值主张和可验证边界。
 不能虚构页面没有的信息。
-PROMPT;
+PROMPT."\n\n".$this->languageDirective($language);
     }
 
     /**
      * @param  array<string, mixed>  $parsed
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildPageJson(array $parsed, UrlImportJob $job): array
+    private function buildPageJson(array $parsed, UrlImportJob $job, array $language): array
     {
         $options = json_decode((string) $job->options_json, true);
         $options = is_array($options) ? $options : [];
@@ -730,6 +750,10 @@ PROMPT;
             'project_name' => (string) ($options['project_name'] ?? ''),
             'source_label' => (string) ($options['source_label'] ?? ''),
             'content_language' => (string) ($options['content_language'] ?? ''),
+            'resolved_content_language' => $language['code'],
+            'resolved_content_language_name' => $language['name'],
+            'language_detection_source' => $language['source'],
+            'html_language_hint' => $language['hint'],
             'operator_notes' => (string) ($options['notes'] ?? ''),
             'title' => (string) ($parsed['title'] ?? ''),
             'description' => (string) ($parsed['description'] ?? ''),
@@ -740,10 +764,12 @@ PROMPT;
 
     /**
      * @param  array<string, mixed>  $pageJson
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildCleanUserPrompt(array $pageJson): string
+    private function buildCleanUserPrompt(array $pageJson, array $language): string
     {
-        return "请清洗以下页面 JSON，输出 clean_title、clean_summary、clean_text、entities、facts、noise_removed。\n\n页面 JSON：\n"
+        return $this->languageDirective($language)."\n\n"
+            ."请清洗以下页面 JSON，输出 clean_title、clean_summary、clean_text、entities、facts、noise_removed。\n\n页面 JSON：\n"
             .json_encode($pageJson, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
             ."\n\n输出要求：\n"
             ."1. clean_text 只保留主体正文，不要保留“查看详情、返回首页、登录、注册、更多、相关阅读”等模板噪声。\n"
@@ -753,28 +779,33 @@ PROMPT;
             .'5. entities 输出品牌、产品、服务、行业、目标用户、地名、人名等实体。';
     }
 
-    private function buildKeywordsSystemPrompt(): string
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function buildKeywordsSystemPrompt(array $language): string
     {
         return <<<'PROMPT'
 你是 GEOFlow 的核心业务关键词提炼器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：keywords。
-keywords 最多 10 个，必须是短关键词或短语。中文关键词优先 2-5 个字，英文关键词优先 1-3 个单词。
+keywords 最多 10 个，必须是目标语言中的短关键词或短语。中文关键词优先 2-5 个字，英文关键词优先 1-3 个单词，其他语言使用自然、可检索的短语。
 只允许输出基于知识库反推出来的核心业务词根、产品/服务词、行业词、需求场景词、问题词、解决方案词。
 关键词必须具备商业价值或内容选题价值，能支撑后续生成 GEO 文章。
 禁止输出：AI、GEO、URL、来源、页面描述、引擎、官网、首页、公司名、人名、导航词、按钮词、广告口号、整段摘要、长句和重复词。
 不能虚构页面没有的信息。
-PROMPT;
+PROMPT."\n\n".$this->languageDirective($language);
     }
 
     /**
      * @param  array<string, mixed>  $pageJson
      * @param  array<string, mixed>  $cleaned
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildKeywordsUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown): string
+    private function buildKeywordsUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $language): string
     {
-        return "请只基于已清洗知识库，提取 5-10 个最核心的业务词根或业务关键词。不要从原网页机械摘词，要先判断业务本质，再输出能带来商业检索价值的短关键词。\n\n"
-            ."GEOFlow 内置规则：\n".$this->builtInGeoCollectionPrompt()."\n\n"
-            ."后台关键词提示词：\n".$this->latestPromptContent('keyword')."\n\n"
+        return $this->languageDirective($language)."\n\n"
+            ."请只基于已清洗知识库，提取 5-10 个最核心的业务词根或业务关键词。不要从原网页机械摘词，要先判断业务本质，再输出能带来商业检索价值的短关键词。\n\n"
+            ."GEOFlow 内置规则：\n".$this->builtInGeoCollectionPrompt($language)."\n\n"
+            ."后台关键词提示词（仅作语义参考；若与目标输出语言冲突，以目标输出语言为准）：\n".$this->latestPromptContent('keyword')."\n\n"
             ."页面来源与清洗结果：\n".json_encode([
                 'source_url' => $pageJson['source_url'] ?? '',
                 'source_domain' => $pageJson['source_domain'] ?? '',
@@ -786,27 +817,32 @@ PROMPT;
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     }
 
-    private function buildTitlesSystemPrompt(): string
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function buildTitlesSystemPrompt(array $language): string
     {
         return <<<'PROMPT'
 你是 GEOFlow 的 GEO 标题库构建器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：titles。
-titles 最多 50 个，必须基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。
+titles 最多 50 个，必须使用目标语言，基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。
 标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断、2026 趋势或商业价值。
 每个标题都必须围绕某个核心业务词或业务场景展开，面向 AI 搜索/GEO 的问答、推荐、比较、选型、采购、实施和风险判断。
 不要机械复读网页标题，不要虚构“第一、最好、领先”等无来源支撑的绝对化表述。
-PROMPT;
+PROMPT."\n\n".$this->languageDirective($language);
     }
 
     /**
      * @param  array<string, mixed>  $pageJson
      * @param  array<string, mixed>  $cleaned
      * @param  list<string>  $keywords
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildTitlesUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $keywords): string
+    private function buildTitlesUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $keywords, array $language): string
     {
-        return "请为 GEOFlow 标题库生成 50 个可用于内容任务的标题。标题要围绕核心业务词展开，必须服务于用户在 AI 搜索中的真实问题、比较、选型、采购、实施或运营决策。\n\n"
-            ."后台正文提示词参考：\n".$this->latestPromptContent('content')."\n\n"
+        return $this->languageDirective($language)."\n\n"
+            ."请为 GEOFlow 标题库生成 50 个可用于内容任务的标题。标题要围绕核心业务词展开，必须服务于用户在 AI 搜索中的真实问题、比较、选型、采购、实施或运营决策。\n\n"
+            ."后台正文提示词参考（仅作结构参考；若与目标输出语言冲突，以目标输出语言为准）：\n".$this->latestPromptContent('content')."\n\n"
             ."输入：\n".json_encode([
                 'source_url' => $pageJson['source_url'] ?? '',
                 'title' => $cleaned['title'] ?? $pageJson['title'] ?? '',
@@ -817,26 +853,31 @@ PROMPT;
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     }
 
-    private function buildKnowledgeSystemPrompt(): string
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function buildKnowledgeSystemPrompt(array $language): string
     {
         return <<<'PROMPT'
 你是 GEOFlow 的知识库构建器。只输出 JSON，不要输出 Markdown 代码块。
 字段固定为：summary, library_name, knowledge_markdown。
-knowledge_markdown 必须围绕“核心业务”构建，是真实可追溯、结构化、原子化的知识库内容，保留来源 URL，只沉淀页面明确出现或可由页面内容直接归纳的信息。
+knowledge_markdown 必须使用目标语言并围绕“核心业务”构建，是真实可追溯、结构化、原子化的知识库内容，保留来源 URL，只沉淀页面明确出现或可由页面内容直接归纳的信息。
 必须优先抽取：核心业务、产品/服务、目标用户、业务场景、能力/优势、可验证事实、使用边界、适合支撑的 GEO 内容方向。
 不能虚构事实、案例、客户、排名、数据、背书。信息不足时明确标注“页面未明确说明”。
-PROMPT;
+PROMPT."\n\n".$this->languageDirective($language);
     }
 
     /**
      * @param  array<string, mixed>  $pageJson
      * @param  array<string, mixed>  $cleaned
      * @param  list<string>  $keywords
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildKnowledgeUserPrompt(array $pageJson, array $cleaned, array $keywords): string
+    private function buildKnowledgeUserPrompt(array $pageJson, array $cleaned, array $keywords, array $language): string
     {
-        return "请基于页面 JSON 和清洗正文生成可直接入库的 GEOFlow 知识库 Markdown。先识别核心业务，再把页面信息拆成结构化、原子化事实，最后归纳 GEO 内容可用方向和使用边界。\n\n"
-            ."后台描述提示词参考：\n".$this->latestPromptContent('description')."\n\n"
+        return $this->languageDirective($language)."\n\n"
+            ."请基于页面 JSON 和清洗正文生成可直接入库的 GEOFlow 知识库 Markdown。先识别核心业务，再把页面信息拆成结构化、原子化事实，最后归纳 GEO 内容可用方向和使用边界。\n\n"
+            ."后台描述提示词参考（仅作结构参考；若与目标输出语言冲突，以目标输出语言为准）：\n".$this->latestPromptContent('description')."\n\n"
             ."输入：\n".json_encode([
                 'source_url' => $pageJson['source_url'] ?? '',
                 'source_domain' => $pageJson['source_domain'] ?? '',
@@ -851,7 +892,10 @@ PROMPT;
             ."\n\n建议结构：来源、核心业务摘要、原子化事实、产品/服务与能力、目标用户与场景、可引用事实、GEO 内容建议、使用边界。";
     }
 
-    private function builtInGeoCollectionPrompt(): string
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function builtInGeoCollectionPrompt(array $language): string
     {
         return <<<'PROMPT'
 你正在为 GEOFlow 构建可复用素材库。请把网页内容拆成三类资产：
@@ -870,7 +914,7 @@ PROMPT;
 - 先沉淀事实，再生成观点。
 - 保留来源 URL、页面标题、页面摘要、明确出现的品牌/产品/服务/能力/场景。
 - 对不确定信息要标注边界，不能伪造客户案例、数据、第三方评价或排名。
-PROMPT;
+PROMPT."\n\n".$this->languageDirective($language);
     }
 
     private function latestPromptContent(string $type): string
@@ -1079,7 +1123,8 @@ PROMPT;
             ->map(static fn (string $keyword): string => preg_replace('/^[\s,，。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+|[\s,，。.!！?？:：;；|｜\/\\\\()（）\[\]【】{}「」\'"“”‘’]+$/u', '', $keyword) ?? $keyword)
             ->filter(function (string $keyword) use ($stopWords): bool {
                 $length = mb_strlen($keyword, 'UTF-8');
-                if ($length < 2 || $length > 12) {
+                $hasCjk = preg_match('/[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]/u', $keyword) === 1;
+                if ($length < 2 || ($hasCjk ? $length > 12 : $length > 60)) {
                     return false;
                 }
 
@@ -1091,6 +1136,10 @@ PROMPT;
 
                 $lower = mb_strtolower($keyword, 'UTF-8');
                 if (in_array($lower, $stopWords, true)) {
+                    return false;
+                }
+
+                if (! $hasCjk && count(preg_split('/\s+/u', trim($keyword)) ?: []) > 4) {
                     return false;
                 }
 
@@ -1166,6 +1215,273 @@ PROMPT;
         $lines[] = trim((string) ($parsed['text'] ?? ''));
 
         return trim(implode("\n", $lines));
+    }
+
+    private function detectHtmlLanguage(DOMDocument $dom, DOMXPath $xpath): string
+    {
+        $htmlLang = $dom->documentElement?->getAttribute('lang') ?? '';
+        $language = $this->normalizeLanguageCode((string) $htmlLang);
+        if ($language !== '') {
+            return $language;
+        }
+
+        $metaLanguage = $this->firstMetaContent($xpath, ['language', 'content-language', 'og:locale']);
+        $language = $this->normalizeLanguageCode($metaLanguage);
+        if ($language !== '') {
+            return $language;
+        }
+
+        $httpEquiv = $xpath->query('//meta[translate(@http-equiv, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="content-language"]/@content')->item(0);
+        if ($httpEquiv) {
+            return $this->normalizeLanguageCode((string) $httpEquiv->nodeValue);
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsed
+     * @return array{code:string,name:string,source:string,requested:string,hint:string}
+     */
+    private function resolveContentLanguage(array $parsed, UrlImportJob $job): array
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $requested = $this->normalizeLanguageCode((string) ($options['content_language'] ?? ''));
+        $hint = $this->normalizeLanguageCode((string) ($parsed['language_hint'] ?? ''));
+
+        if ($requested !== '') {
+            return [
+                'code' => $requested,
+                'name' => $this->languageName($requested),
+                'source' => 'selected',
+                'requested' => $requested,
+                'hint' => $hint,
+            ];
+        }
+
+        $detected = $hint !== '' ? $hint : $this->detectLanguageFromText(implode("\n", [
+            (string) ($parsed['title'] ?? ''),
+            (string) ($parsed['description'] ?? ''),
+            (string) ($parsed['text'] ?? ''),
+        ]));
+
+        return [
+            'code' => $detected,
+            'name' => $this->languageName($detected),
+            'source' => $hint !== '' ? 'html' : 'text',
+            'requested' => '',
+            'hint' => $hint,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     * @param  array<string, mixed>  $page
+     * @return array{code:string,name:string,source:string,requested:string,hint:string}
+     */
+    private function analysisLanguage(array $analysis, array $page, UrlImportJob $job): array
+    {
+        $language = $analysis['language'] ?? null;
+        if (is_array($language)) {
+            $code = $this->normalizeLanguageCode((string) ($language['code'] ?? ''));
+            if ($code !== '') {
+                return [
+                    'code' => $code,
+                    'name' => $this->languageName($code),
+                    'source' => (string) ($language['source'] ?? 'analysis'),
+                    'requested' => $this->normalizeLanguageCode((string) ($language['requested'] ?? '')),
+                    'hint' => $this->normalizeLanguageCode((string) ($language['hint'] ?? '')),
+                ];
+            }
+        }
+
+        return $this->resolveContentLanguage($page, $job);
+    }
+
+    private function normalizeLanguageCode(string $language): string
+    {
+        $language = trim($language);
+        if ($language === '') {
+            return '';
+        }
+
+        $language = strtolower(str_replace('_', '-', preg_split('/[,;]/', $language)[0] ?? $language));
+        $language = trim($language);
+        $aliases = [
+            'cn' => 'zh-CN',
+            'zh' => 'zh-CN',
+            'zh-cn' => 'zh-CN',
+            'zh-hans' => 'zh-CN',
+            'zh-sg' => 'zh-CN',
+            'zh-tw' => 'zh-TW',
+            'zh-hk' => 'zh-TW',
+            'zh-hant' => 'zh-TW',
+            'en' => 'en',
+            'en-us' => 'en',
+            'en-gb' => 'en',
+            'es' => 'es',
+            'es-es' => 'es',
+            'es-mx' => 'es',
+            'pt' => 'pt',
+            'pt-pt' => 'pt',
+            'pt-br' => 'pt-BR',
+            'fr' => 'fr',
+            'fr-fr' => 'fr',
+            'de' => 'de',
+            'de-de' => 'de',
+            'it' => 'it',
+            'it-it' => 'it',
+            'nl' => 'nl',
+            'nl-nl' => 'nl',
+            'ja' => 'ja',
+            'ja-jp' => 'ja',
+            'ko' => 'ko',
+            'ko-kr' => 'ko',
+            'ru' => 'ru',
+            'ru-ru' => 'ru',
+            'ar' => 'ar',
+        ];
+        if (isset($aliases[$language])) {
+            return $aliases[$language];
+        }
+
+        $primary = strtok($language, '-');
+        if (is_string($primary) && isset($aliases[$primary])) {
+            return $aliases[$primary];
+        }
+
+        return preg_match('/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/', $language) === 1 ? $language : '';
+    }
+
+    private function detectLanguageFromText(string $text): string
+    {
+        $text = Str::limit($this->normalizeText($text), 6000, '');
+        if ($text === '') {
+            return 'en';
+        }
+
+        $han = preg_match_all('/\p{Han}/u', $text);
+        $kana = preg_match_all('/[\p{Hiragana}\p{Katakana}]/u', $text);
+        $hangul = preg_match_all('/\p{Hangul}/u', $text);
+        $cyrillic = preg_match_all('/\p{Cyrillic}/u', $text);
+        $arabic = preg_match_all('/\p{Arabic}/u', $text);
+        $latin = preg_match_all('/\p{Latin}/u', $text);
+
+        if ($hangul > 8) {
+            return 'ko';
+        }
+        if ($kana > 8) {
+            return 'ja';
+        }
+        if ($han > 12 && $han >= $latin) {
+            return 'zh-CN';
+        }
+        if ($cyrillic > 12) {
+            return 'ru';
+        }
+        if ($arabic > 12) {
+            return 'ar';
+        }
+
+        $lower = mb_strtolower($text, 'UTF-8');
+        if (preg_match('/[áéíóúñ¿¡]|\b(el|la|los|las|para|con|una|que|por|servicios|soluciones|empresa)\b/u', $lower)) {
+            return 'es';
+        }
+        if (preg_match('/[ãõç]|\b(para|com|uma|serviços|soluções|empresa|gestão)\b/u', $lower)) {
+            return 'pt';
+        }
+        if (preg_match('/[àâçéèêëîïôûùüÿœ]|\b(avec|pour|les|des|une|services|solutions|entreprise)\b/u', $lower)) {
+            return 'fr';
+        }
+        if (preg_match('/[äöüß]|\b(und|für|mit|der|die|das|unternehmen|lösungen)\b/u', $lower)) {
+            return 'de';
+        }
+
+        return 'en';
+    }
+
+    private function languageName(string $code): string
+    {
+        return [
+            'zh-CN' => 'Simplified Chinese',
+            'zh-TW' => 'Traditional Chinese',
+            'en' => 'English',
+            'es' => 'Spanish',
+            'pt' => 'Portuguese',
+            'pt-BR' => 'Brazilian Portuguese',
+            'fr' => 'French',
+            'de' => 'German',
+            'it' => 'Italian',
+            'nl' => 'Dutch',
+            'ja' => 'Japanese',
+            'ko' => 'Korean',
+            'ru' => 'Russian',
+            'ar' => 'Arabic',
+        ][$code] ?? $code;
+    }
+
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function languageDirective(array $language): string
+    {
+        return 'Target output language: '.$language['name'].' ('.$language['code'].'). '
+            .'All generated user-facing values, including clean_text, summary, library_name, knowledge_markdown headings and body, keywords, and titles, MUST be written in '.$language['name'].'. '
+            .'Keep JSON field names and source URLs unchanged. Preserve brand names, product names, and quoted proper nouns when appropriate. '
+            .'If any backend prompt or source page language conflicts with this target language, the target output language wins. '
+            .'Do not output Chinese text unless the target output language is Chinese.';
+    }
+
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     * @return array{knowledge_suffix:string,keyword_suffix:string,title_suffix:string,description:string}
+     */
+    private function libraryLabels(array $language): array
+    {
+        return match ($language['code']) {
+            'zh-CN', 'zh-TW' => [
+                'knowledge_suffix' => ' 知识库',
+                'keyword_suffix' => ' 关键词库',
+                'title_suffix' => ' 标题库',
+                'description' => 'URL智能采集自动生成',
+            ],
+            'es' => [
+                'knowledge_suffix' => ' Base de conocimiento',
+                'keyword_suffix' => ' Biblioteca de palabras clave',
+                'title_suffix' => ' Biblioteca de títulos',
+                'description' => 'Generado automáticamente por la importación inteligente de URL',
+            ],
+            'pt', 'pt-BR' => [
+                'knowledge_suffix' => ' Base de conhecimento',
+                'keyword_suffix' => ' Biblioteca de palavras-chave',
+                'title_suffix' => ' Biblioteca de títulos',
+                'description' => 'Gerado automaticamente pela importação inteligente de URL',
+            ],
+            default => [
+                'knowledge_suffix' => ' Knowledge Base',
+                'keyword_suffix' => ' Keyword Library',
+                'title_suffix' => ' Title Library',
+                'description' => 'Automatically generated by URL smart import',
+            ],
+        };
+    }
+
+    /**
+     * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
+     */
+    private function assertGeneratedLanguage(mixed $value, array $language, string $step): void
+    {
+        if (! in_array($language['code'], ['en', 'es', 'pt', 'pt-BR', 'fr', 'de', 'it', 'nl'], true)) {
+            return;
+        }
+
+        $text = is_array($value) ? implode("\n", array_map(fn (mixed $item): string => $this->aiResponseTextToString($item), $value)) : $this->aiResponseTextToString($value);
+        $cjk = preg_match_all('/[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]/u', $text);
+        $latin = preg_match_all('/\p{Latin}/u', $text);
+        if ($cjk >= 4 && $cjk > max(2, (int) floor($latin * 0.1))) {
+            throw new \RuntimeException('AI output language mismatch at '.$step.'. Expected '.$language['name'].' ('.$language['code'].').');
+        }
     }
 
     /**

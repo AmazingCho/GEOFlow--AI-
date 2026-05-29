@@ -10,9 +10,11 @@ use App\Models\DistributionChannel;
 use App\Models\ImageLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
+use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TitleLibrary;
 use App\Services\GeoFlow\DistributionOrchestrator;
+use App\Services\GeoFlow\TagService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
@@ -37,6 +39,7 @@ class TaskController extends Controller
         private readonly TaskLifecycleService $taskLifecycleService,
         private readonly TaskMonitoringQueryService $taskMonitoringQueryService,
         private readonly DistributionOrchestrator $distributionOrchestrator,
+        private readonly TagService $tagService,
     ) {}
 
     /**
@@ -200,7 +203,9 @@ class TaskController extends Controller
                 'author_id' => (string) (($task['author_id'] ?? 0) ?: 0),
                 'image_library_id' => (string) (($task['image_library_id'] ?? '') ?: ''),
                 'image_count' => (string) ($task['image_count'] ?? 0),
+                'image_tag_filter' => (string) ($task['image_tag_filter'] ?? ''),
                 'knowledge_base_id' => (string) (($task['knowledge_base_id'] ?? '') ?: ''),
+                'knowledge_tag_filter' => (string) ($task['knowledge_tag_filter'] ?? ''),
                 'fixed_category_id' => (string) (($task['fixed_category_id'] ?? '') ?: ''),
                 'status' => (string) ($task['status'] ?? 'active'),
                 'article_limit' => (string) ($task['article_limit'] ?? 10),
@@ -409,7 +414,9 @@ class TaskController extends Controller
      *     prompts: list<array{id:int,name:string}>,
      *     aiModels: list<array{id:int,name:string}>,
      *     imageLibraries: list<array{id:int,name:string,count:int}>,
+     *     imageTags: list<array{id:int,label:string,count:int}>,
      *     knowledgeBases: list<array{id:int,name:string}>,
+     *     knowledgeTags: list<array{id:int,label:string,count:int}>,
      *     authors: list<array{id:int,name:string}>,
      *     categories: list<array{id:int,name:string}>,
      *     distributionChannels: list<array{id:int,name:string,domain:string}>
@@ -476,6 +483,41 @@ class TaskController extends Controller
             ->map(static fn (KnowledgeBase $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
 
+        $imageTags = Tag::query()
+            ->withCount('images')
+            ->whereHas('images')
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (Tag $row): array => [
+                'id' => (int) $row->id,
+                'label' => $row->displayName(),
+                'count' => (int) ($row->images_count ?? 0),
+            ])
+            ->filter(static fn (array $row): bool => $row['label'] !== '')
+            ->values()
+            ->all();
+
+        $knowledgeTags = Tag::query()
+            ->withCount(['knowledgeBases', 'entities', 'caseRecords'])
+            ->where(function ($query): void {
+                $query
+                    ->whereHas('knowledgeBases')
+                    ->orWhereHas('entities')
+                    ->orWhereHas('caseRecords');
+            })
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (Tag $row): array => [
+                'id' => (int) $row->id,
+                'label' => $row->displayName(),
+                'count' => (int) ($row->knowledge_bases_count ?? 0) + (int) ($row->entities_count ?? 0) + (int) ($row->case_records_count ?? 0),
+            ])
+            ->filter(static fn (array $row): bool => $row['label'] !== '')
+            ->values()
+            ->all();
+
         $authors = Author::query()
             ->select(['id', 'name'])
             ->orderBy('name')
@@ -508,7 +550,9 @@ class TaskController extends Controller
             'prompts' => $prompts,
             'aiModels' => $aiModels,
             'imageLibraries' => $imageLibraries,
+            'imageTags' => $imageTags,
             'knowledgeBases' => $knowledgeBases,
+            'knowledgeTags' => $knowledgeTags,
             'authors' => $authors,
             'categories' => $categories,
             'distributionChannels' => $distributionChannels,
@@ -524,7 +568,9 @@ class TaskController extends Controller
      *     author_id: int|null,
      *     image_library_id: int|null,
      *     image_count: int|null,
+     *     image_tag_filter: string|null,
      *     knowledge_base_id: int|null,
+     *     knowledge_tag_filter: string|null,
      *     fixed_category_id: int|null,
      *     status: string,
      *     article_limit: int|null,
@@ -544,7 +590,13 @@ class TaskController extends Controller
             'author_id' => ['nullable', 'integer', 'min:0'],
             'image_library_id' => ['nullable', 'integer', 'min:1'],
             'image_count' => ['nullable', 'integer', 'min:0', 'max:5'],
+            'image_tag_filters' => ['nullable', 'array'],
+            'image_tag_filters.*' => ['string', 'max:220'],
+            'image_tag_filter_present' => ['nullable', 'string'],
             'knowledge_base_id' => ['nullable', 'integer', 'min:1'],
+            'knowledge_tag_filters' => ['nullable', 'array'],
+            'knowledge_tag_filters.*' => ['string', 'max:220'],
+            'knowledge_tag_filter_present' => ['nullable', 'string'],
             'fixed_category_id' => ['nullable', 'integer', 'min:1'],
             'status' => ['required', 'string', 'in:active,paused'],
             'article_limit' => ['nullable', 'integer', 'min:1', 'max:99999'],
@@ -574,10 +626,12 @@ class TaskController extends Controller
             'title_library_id' => (int) $payload['title_library_id'],
             'image_library_id' => isset($payload['image_library_id']) ? (int) $payload['image_library_id'] : null,
             'image_count' => (int) ($payload['image_count'] ?? 0),
+            'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
             'knowledge_base_id' => isset($payload['knowledge_base_id']) ? (int) $payload['knowledge_base_id'] : null,
+            'knowledge_tag_filter' => $this->normalizeTagLabelFilters($request, 'knowledge_tag_filters'),
             'fixed_category_id' => isset($payload['fixed_category_id']) ? (int) $payload['fixed_category_id'] : null,
             'status' => (string) $payload['status'],
             'publish_scope' => (string) ($payload['publish_scope'] ?? 'local_and_distribution'),
@@ -608,6 +662,22 @@ class TaskController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function normalizeTagLabelFilters(Request $request, string $fieldName): string
+    {
+        $rawFilters = $request->input($fieldName, []);
+        if (! is_array($rawFilters)) {
+            $rawFilters = [];
+        }
+
+        $tagText = collect($rawFilters)
+            ->map(static fn (mixed $value): string => trim((string) $value))
+            ->filter(static fn (string $value): bool => $value !== '')
+            ->unique(static fn (string $value): string => mb_strtolower($value, 'UTF-8'))
+            ->implode(', ');
+
+        return $this->tagService->normalizeTagText($tagText);
     }
 
     /**

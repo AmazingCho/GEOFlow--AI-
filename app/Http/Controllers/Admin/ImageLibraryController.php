@@ -7,6 +7,7 @@ use App\Models\ArticleImage;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Task;
+use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 
@@ -24,6 +26,8 @@ use Illuminate\View\View;
 class ImageLibraryController extends Controller
 {
     private const DETAIL_PER_PAGE = 24;
+
+    public function __construct(private readonly TagService $tagService) {}
 
     /**
      * 列表页。
@@ -47,7 +51,8 @@ class ImageLibraryController extends Controller
         $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
-        $images = $this->loadDetailImages($libraryId, $search);
+        $tagFilter = trim((string) $request->query('tag', ''));
+        $images = $this->loadDetailImages($libraryId, $search, $tagFilter);
         $usageTotal = (int) ArticleImage::query()
             ->whereHas('image', function ($query) use ($libraryId): void {
                 $query->where('library_id', $libraryId);
@@ -60,9 +65,11 @@ class ImageLibraryController extends Controller
             'adminSiteName' => AdminWeb::siteName(),
             'library' => $library,
             'search' => $search,
+            'tagFilter' => $tagFilter,
             'images' => $images,
             'usageTotal' => $usageTotal,
             'totalImages' => Image::query()->where('library_id', $libraryId)->count(),
+            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -101,6 +108,8 @@ class ImageLibraryController extends Controller
                 'required',
                 File::types(['jpg', 'jpeg', 'png', 'gif', 'webp'])->max(10 * 1024),
             ],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'images.required' => __('admin.image_detail.error.select_images'),
         ]);
@@ -114,11 +123,13 @@ class ImageLibraryController extends Controller
         $uploadedCount = 0;
         $skippedCount = 0;
         $uploadErrors = [];
-        DB::transaction(function () use ($uploadedFiles, $libraryId, &$uploadedCount, &$skippedCount, &$uploadErrors): void {
+        $tagIds = $this->selectedTagIds($request);
+        $tagsText = $this->tagService->tagTextForIds($tagIds);
+        DB::transaction(function () use ($uploadedFiles, $libraryId, $tagIds, $tagsText, &$uploadedCount, &$skippedCount, &$uploadErrors): void {
             foreach ($uploadedFiles as $uploadedFile) {
                 try {
                     $stored = $this->storeUploadedImageFile($uploadedFile);
-                    Image::query()->create([
+                    $image = Image::query()->create([
                         'library_id' => $libraryId,
                         'filename' => $stored['filename'],
                         'original_name' => $stored['original_name'],
@@ -128,10 +139,11 @@ class ImageLibraryController extends Controller
                         'mime_type' => $stored['mime_type'],
                         'width' => $stored['width'],
                         'height' => $stored['height'],
-                        'tags' => '',
+                        'tags' => $tagsText,
                         'used_count' => 0,
                         'usage_count' => 0,
                     ]);
+                    $this->tagService->syncExisting($image, $tagIds);
                     $uploadedCount++;
                 } catch (\Throwable $exception) {
                     $skippedCount++;
@@ -163,6 +175,46 @@ class ImageLibraryController extends Controller
         return redirect()->route('admin.image-libraries.detail', ['libraryId' => $libraryId])->with('message', $message);
     }
 
+    public function updateImageTags(Request $request, int $libraryId, int $imageId): RedirectResponse
+    {
+        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $image = Image::query()
+            ->where('library_id', (int) $library->id)
+            ->whereKey($imageId)
+            ->firstOrFail();
+
+        $request->validate([
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
+        ]);
+        $tagIds = $this->selectedTagIds($request);
+        $tagsText = $this->tagService->tagTextForIds($tagIds);
+
+        $image->update(['tags' => $tagsText]);
+        $this->tagService->syncExisting($image, $tagIds);
+
+        return redirect()
+            ->route('admin.image-libraries.detail', [
+                'libraryId' => $libraryId,
+                'search' => trim((string) $request->input('search', '')),
+                'tag' => trim((string) $request->input('tag', '')),
+            ])
+            ->with('message', '图片标签已更新');
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedTagIds(Request $request): array
+    {
+        return collect($request->input('tag_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /**
      * 删除图片（支持单条/批量）。
      */
@@ -192,6 +244,7 @@ class ImageLibraryController extends Controller
             ->whereIn('image_id', $imageIds->all())
             ->delete();
 
+        $this->tagService->detachTaggables(Image::class, $imageIds->all());
         $deletedCount = Image::query()
             ->where('library_id', $libraryId)
             ->whereIn('id', $imageIds->all())
@@ -298,7 +351,13 @@ class ImageLibraryController extends Controller
             return back()->withErrors(__('admin.image_libraries.error.in_use', ['count' => $taskCount]));
         }
 
+        $imageIds = Image::query()
+            ->where('library_id', $libraryId)
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
         $filePaths = Image::query()->where('library_id', $libraryId)->pluck('file_path')->filter()->values()->all();
+        $this->tagService->detachTaggables(Image::class, $imageIds);
         Image::query()->where('library_id', $libraryId)->delete();
 
         $library->delete();
@@ -415,18 +474,21 @@ class ImageLibraryController extends Controller
     /**
      * @return LengthAwarePaginator<int, Image>
      */
-    private function loadDetailImages(int $libraryId, string $search): LengthAwarePaginator
+    private function loadDetailImages(int $libraryId, string $search, string $tagFilter): LengthAwarePaginator
     {
         $query = Image::query()
+            ->with(['tags' => fn ($query) => $query->orderBy('group_name')->orderBy('name')])
             ->where('library_id', $libraryId)
             ->orderByDesc('created_at');
         if ($search !== '') {
             $query->where(function ($builder) use ($search): void {
                 $builder->where('original_name', 'like', '%'.$search.'%')
                     ->orWhere('filename', 'like', '%'.$search.'%')
-                    ->orWhere('file_name', 'like', '%'.$search.'%');
+                    ->orWhere('file_name', 'like', '%'.$search.'%')
+                    ->orWhere('tags', 'like', '%'.$search.'%');
             });
         }
+        $this->tagService->applyFilter($query, $tagFilter);
 
         return $query->paginate(self::DETAIL_PER_PAGE)->withQueryString();
     }

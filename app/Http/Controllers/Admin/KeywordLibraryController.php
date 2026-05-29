@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
+use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -21,6 +23,8 @@ use Illuminate\View\View;
 class KeywordLibraryController extends Controller
 {
     private const DETAIL_PER_PAGE = 50;
+
+    public function __construct(private readonly TagService $tagService) {}
 
     /**
      * 列表页。
@@ -44,7 +48,8 @@ class KeywordLibraryController extends Controller
         $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
-        $keywords = $this->loadDetailKeywords($libraryId, $search);
+        $tagFilter = trim((string) $request->query('tag', ''));
+        $keywords = $this->loadDetailKeywords($libraryId, $search, $tagFilter);
         $usageTotal = $this->loadUsageTotal($libraryId);
 
         return view('admin.keyword-libraries.detail', [
@@ -53,8 +58,10 @@ class KeywordLibraryController extends Controller
             'adminSiteName' => AdminWeb::siteName(),
             'library' => $library,
             'search' => $search,
+            'tagFilter' => $tagFilter,
             'keywords' => $keywords,
             'usageTotal' => $usageTotal,
+            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -67,6 +74,8 @@ class KeywordLibraryController extends Controller
 
         $payload = $request->validate([
             'keyword' => ['required', 'string', 'max:200'],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'keyword.required' => __('admin.keyword_detail.error.keyword_required'),
         ]);
@@ -84,15 +93,53 @@ class KeywordLibraryController extends Controller
             return back()->withErrors(__('admin.keyword_detail.error.keyword_exists'));
         }
 
-        Keyword::query()->create([
+        $createdKeyword = Keyword::query()->create([
             'library_id' => $libraryId,
             'keyword' => $keyword,
             'used_count' => 0,
             'usage_count' => 0,
         ]);
+        $this->tagService->syncExisting($createdKeyword, $this->selectedTagIds($request));
         $this->refreshKeywordLibraryCount($libraryId);
 
         return redirect()->route('admin.keyword-libraries.detail', ['libraryId' => $libraryId])->with('message', __('admin.keyword_detail.message.add_success'));
+    }
+
+    public function updateKeywordTags(Request $request, int $libraryId, int $keywordId): RedirectResponse
+    {
+        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $keyword = Keyword::query()
+            ->where('library_id', (int) $library->id)
+            ->whereKey($keywordId)
+            ->firstOrFail();
+
+        $payload = $request->validate([
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
+        ]);
+
+        $this->tagService->syncExisting($keyword, $this->selectedTagIds($request));
+
+        return redirect()
+            ->route('admin.keyword-libraries.detail', [
+                'libraryId' => $libraryId,
+                'search' => trim((string) $request->input('search', '')),
+                'tag' => trim((string) $request->input('tag', '')),
+            ])
+            ->with('message', '关键词标签已更新');
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedTagIds(Request $request): array
+    {
+        return collect($request->input('tag_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -113,6 +160,7 @@ class KeywordLibraryController extends Controller
             return back()->withErrors(__('admin.keyword_detail.error.select_required'));
         }
 
+        $this->tagService->detachTaggables(Keyword::class, $keywordIds->all());
         $deletedCount = Keyword::query()
             ->where('library_id', $libraryId)
             ->whereIn('id', $keywordIds->all())
@@ -285,6 +333,12 @@ class KeywordLibraryController extends Controller
     {
         $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
 
+        $keywordIds = Keyword::query()
+            ->where('library_id', $libraryId)
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $this->tagService->detachTaggables(Keyword::class, $keywordIds);
         Keyword::query()->where('library_id', $libraryId)->delete();
         $library->delete();
 
@@ -342,14 +396,16 @@ class KeywordLibraryController extends Controller
     /**
      * @return LengthAwarePaginator<int, Keyword>
      */
-    private function loadDetailKeywords(int $libraryId, string $search): LengthAwarePaginator
+    private function loadDetailKeywords(int $libraryId, string $search, string $tagFilter): LengthAwarePaginator
     {
         $query = Keyword::query()
+            ->with(['tags' => fn ($query) => $query->orderBy('group_name')->orderBy('name')])
             ->where('library_id', $libraryId)
             ->orderByDesc('created_at');
         if ($search !== '') {
             $query->where('keyword', 'like', '%'.$search.'%');
         }
+        $this->tagService->applyFilter($query, $tagFilter);
 
         return $query->paginate(self::DETAIL_PER_PAGE)->withQueryString();
     }

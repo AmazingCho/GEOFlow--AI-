@@ -3,34 +3,33 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
-class Keyword extends Model
+class EntityRecord extends Model
 {
-    public const UPDATED_AT = null;
-
-    protected $table = 'keywords';
+    protected $table = 'entities';
 
     protected $fillable = [
-        'library_id',
-        'keyword',
-        'used_count',
+        'name',
+        'entity_type',
+        'aliases',
+        'description',
+        'attributes_json',
+        'source_url',
         'usage_count',
     ];
 
     protected function casts(): array
     {
         return [
-            'library_id' => 'integer',
-            'used_count' => 'integer',
             'usage_count' => 'integer',
         ];
     }
 
-    public function library(): BelongsTo
+    public function cases(): HasMany
     {
-        return $this->belongsTo(KeywordLibrary::class, 'library_id');
+        return $this->hasMany(CaseRecord::class, 'entity_id');
     }
 
     public function tags(): MorphToMany
@@ -40,8 +39,9 @@ class Keyword extends Model
 
     protected static function booted(): void
     {
-        static::deleting(static function (Keyword $keyword): void {
-            $keyword->tags()->detach();
+        static::deleting(static function (EntityRecord $entity): void {
+            $entity->tags()->detach();
+            $entity->cases()->update(['entity_id' => null]);
         });
     }
 }

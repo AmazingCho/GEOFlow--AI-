@@ -92,11 +92,16 @@
         <div class="bg-white shadow rounded-lg mb-6">
             <div class="px-6 py-4">
                 <div class="flex items-center justify-between">
-                    <form method="GET" class="flex items-center space-x-4">
+                    <form method="GET" class="flex flex-wrap items-center gap-3">
                         <div class="flex-1">
                             <input type="text" name="search" value="{{ $search }}"
                                 placeholder="{{ __('admin.keyword_detail.search_placeholder') }}"
-                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                class="block w-full border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        </div>
+                        <div class="w-56">
+                            <input type="text" name="tag" value="{{ $tagFilter ?? '' }}"
+                                placeholder="按标签筛选，如 行业:制造业"
+                                class="block w-full border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                         </div>
                         <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
                             <i data-lucide="search" class="w-4 h-4 mr-2"></i>
@@ -159,14 +164,33 @@
                 <div class="px-6 py-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                         @foreach ($keywords as $keyword)
-                            <div class="group flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-                                <div class="flex items-center space-x-2 min-w-0">
-                                    <input type="checkbox" form="batch-form" name="keyword_ids[]" value="{{ (int) $keyword->id }}" class="keyword-checkbox hidden rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                    <span class="text-sm text-gray-900 break-all">{{ $keyword->keyword }}</span>
+                            @php
+                                $keywordTagIds = $keyword->tags->pluck('id')->map(static fn ($id) => (int) $id)->all();
+                            @endphp
+                            <div class="group relative p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex items-start space-x-2 min-w-0">
+                                        <input type="checkbox" form="batch-form" name="keyword_ids[]" value="{{ (int) $keyword->id }}" class="keyword-checkbox hidden mt-1 rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                        <div class="min-w-0">
+                                            <span class="text-sm text-gray-900 break-all">{{ $keyword->keyword }}</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="deleteKeyword({{ (int) $keyword->id }}, @js($keyword->keyword))" class="text-red-600 hover:text-red-800 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
                                 </div>
-                                <button type="button" onclick="deleteKeyword({{ (int) $keyword->id }}, @js($keyword->keyword))" class="text-red-600 hover:text-red-800 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <i data-lucide="x" class="w-4 h-4"></i>
-                                </button>
+                                <form method="POST" action="{{ route('admin.keyword-libraries.keywords.tags', ['libraryId' => (int) $library->id, 'keywordId' => (int) $keyword->id]) }}" class="mt-3 space-y-2">
+                                    @csrf
+                                    <input type="hidden" name="search" value="{{ $search }}">
+                                    <input type="hidden" name="tag" value="{{ $tagFilter ?? '' }}">
+                                    @include('admin.partials.tag-selector', [
+                                        'name' => 'tag_ids',
+                                        'tagOptions' => $tagOptions ?? [],
+                                        'selectedTagIds' => $keywordTagIds,
+                                        'tone' => 'blue',
+                                        'autoSubmit' => true,
+                                    ])
+                                </form>
                             </div>
                         @endforeach
                     </div>
@@ -203,6 +227,15 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.keyword_detail.field_keyword') }}</label>
                             <input type="text" name="keyword" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="{{ __('admin.keyword_detail.placeholder_keyword') }}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">标签</label>
+                            @include('admin.partials.tag-selector', [
+                                'name' => 'tag_ids',
+                                'tagOptions' => $tagOptions ?? [],
+                                'selectedTagIds' => [],
+                                'tone' => 'blue',
+                            ])
                         </div>
                     </div>
                     <div class="mt-6 flex justify-end space-x-3">

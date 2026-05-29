@@ -113,11 +113,16 @@
         <div class="bg-white shadow rounded-lg mb-6">
             <div class="px-6 py-4">
                 <div class="flex items-center justify-between">
-                    <form method="GET" class="flex items-center space-x-4">
+                    <form method="GET" class="flex flex-wrap items-center gap-3">
                         <div class="flex-1">
                             <input type="text" name="search" value="{{ $search }}"
                                 placeholder="{{ __('admin.image_detail.search_placeholder') }}"
-                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm">
+                                class="block w-full border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm">
+                        </div>
+                        <div class="w-56">
+                            <input type="text" name="tag" value="{{ $tagFilter ?? '' }}"
+                                placeholder="按标签筛选，如 场景:产品图"
+                                class="block w-full border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm">
                         </div>
                         <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700">
                             <i data-lucide="search" class="w-4 h-4 mr-2"></i>
@@ -182,25 +187,40 @@
                         @foreach ($images as $image)
                             @php
                                 $imageUrl = \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($image->file_path ?? ''));
+                                $imageTagIds = collect($image->getRelation('tags'))->pluck('id')->map(static fn ($id) => (int) $id)->all();
                             @endphp
-                            <div class="image-item relative overflow-hidden rounded-lg border-2 border-transparent transition-all hover:border-purple-500 hover:scale-[1.02]" data-image-id="{{ (int) $image->id }}">
+                            <div class="image-item relative overflow-hidden rounded-lg border-2 border-transparent transition-all hover:border-purple-500" data-image-id="{{ (int) $image->id }}">
                                 <input type="checkbox" form="batch-form" name="image_ids[]" value="{{ (int) $image->id }}" class="image-checkbox hidden absolute top-2 left-2 rounded border-gray-300 text-purple-600 shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50 z-10">
-                                <img
-                                    src="{{ $imageUrl }}"
-                                    alt="{{ (string) ($image->original_name ?? '') }}"
-                                    class="w-full aspect-square object-cover"
-                                    onclick="showImageModal(@js($imageUrl), @js((string) ($image->original_name ?? '')), '{{ (int) ($image->width ?? 0) }}x{{ (int) ($image->height ?? 0) }}', @js($formatSize((int) ($image->file_size ?? 0))), @js($imageUrl))"
-                                >
-                                <div class="image-overlay absolute inset-0 bg-black/70 text-white flex flex-col justify-center items-center opacity-0 transition-opacity">
-                                    <p class="text-xs text-center mb-2 px-2 break-all">{{ (string) ($image->original_name ?? '') }}</p>
-                                    <p class="text-xs text-gray-300">{{ (int) ($image->width ?? 0) }}x{{ (int) ($image->height ?? 0) }}</p>
-                                    <p class="text-xs text-gray-300">{{ $formatSize((int) ($image->file_size ?? 0)) }}</p>
+                                <div class="group relative">
+                                    <img
+                                        src="{{ $imageUrl }}"
+                                        alt="{{ (string) ($image->original_name ?? '') }}"
+                                        class="w-full aspect-square cursor-zoom-in object-cover"
+                                        onclick="showImageModal(@js($imageUrl), @js((string) ($image->original_name ?? '')), '{{ (int) ($image->width ?? 0) }}x{{ (int) ($image->height ?? 0) }}', @js($formatSize((int) ($image->file_size ?? 0))), @js($imageUrl))"
+                                    >
+                                    <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                        <p class="mb-2 break-all px-2 text-center text-xs">{{ (string) ($image->original_name ?? '') }}</p>
+                                        <p class="text-xs text-gray-300">{{ (int) ($image->width ?? 0) }}x{{ (int) ($image->height ?? 0) }}</p>
+                                        <p class="text-xs text-gray-300">{{ $formatSize((int) ($image->file_size ?? 0)) }}</p>
+                                    </div>
                                 </div>
-                                <div class="border-t border-gray-100 bg-white p-2">
+                                <div class="relative z-10 border-t border-gray-100 bg-white p-2">
                                     <div class="text-[11px] font-medium text-gray-500">{{ $urlLabel }}</div>
                                     <a href="{{ $imageUrl }}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-xs text-blue-600 hover:text-blue-800" title="{{ $imageUrl }}">
                                         {{ $imageUrl }}
                                     </a>
+                                    <form method="POST" action="{{ route('admin.image-libraries.images.tags', ['libraryId' => (int) $library->id, 'imageId' => (int) $image->id]) }}" class="mt-2 space-y-2">
+                                        @csrf
+                                        <input type="hidden" name="search" value="{{ $search }}">
+                                        <input type="hidden" name="tag" value="{{ $tagFilter ?? '' }}">
+                                        @include('admin.partials.tag-selector', [
+                                            'name' => 'tag_ids',
+                                            'tagOptions' => $tagOptions ?? [],
+                                            'selectedTagIds' => $imageTagIds,
+                                            'tone' => 'purple',
+                                            'autoSubmit' => true,
+                                        ])
+                                    </form>
                                 </div>
                             </div>
                         @endforeach
@@ -246,6 +266,15 @@
                         <div id="file-list" class="hidden">
                             <h4 class="text-sm font-medium text-gray-900 mb-2">{{ __('admin.image_detail.selected_files') }}</h4>
                             <div id="file-items" class="space-y-2"></div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">上传图片标签</label>
+                            @include('admin.partials.tag-selector', [
+                                'name' => 'tag_ids',
+                                'tagOptions' => $tagOptions ?? [],
+                                'selectedTagIds' => [],
+                                'tone' => 'purple',
+                            ])
                         </div>
                     </div>
 

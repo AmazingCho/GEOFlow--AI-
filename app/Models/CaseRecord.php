@@ -6,31 +6,34 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
-class Keyword extends Model
+class CaseRecord extends Model
 {
-    public const UPDATED_AT = null;
-
-    protected $table = 'keywords';
+    protected $table = 'case_records';
 
     protected $fillable = [
-        'library_id',
-        'keyword',
-        'used_count',
+        'entity_id',
+        'title',
+        'case_type',
+        'summary',
+        'challenge',
+        'solution',
+        'result',
+        'metrics',
+        'source_url',
         'usage_count',
     ];
 
     protected function casts(): array
     {
         return [
-            'library_id' => 'integer',
-            'used_count' => 'integer',
+            'entity_id' => 'integer',
             'usage_count' => 'integer',
         ];
     }
 
-    public function library(): BelongsTo
+    public function entity(): BelongsTo
     {
-        return $this->belongsTo(KeywordLibrary::class, 'library_id');
+        return $this->belongsTo(EntityRecord::class, 'entity_id');
     }
 
     public function tags(): MorphToMany
@@ -40,8 +43,8 @@ class Keyword extends Model
 
     protected static function booted(): void
     {
-        static::deleting(static function (Keyword $keyword): void {
-            $keyword->tags()->detach();
+        static::deleting(static function (CaseRecord $caseRecord): void {
+            $caseRecord->tags()->detach();
         });
     }
 }

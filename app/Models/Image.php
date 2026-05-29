@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
 class Image extends Model
 {
@@ -47,5 +48,17 @@ class Image extends Model
     public function articleImages(): HasMany
     {
         return $this->hasMany(ArticleImage::class, 'image_id');
+    }
+
+    public function tags(): MorphToMany
+    {
+        return $this->morphToMany(Tag::class, 'taggable')->withTimestamps();
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(static function (Image $image): void {
+            $image->tags()->detach();
+        });
     }
 }

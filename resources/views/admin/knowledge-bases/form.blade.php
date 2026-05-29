@@ -35,6 +35,15 @@
                         <textarea name="description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}">{{ old('description', (string) ($knowledgeForm['description'] ?? '')) }}</textarea>
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">标签</label>
+                        @include('admin.partials.tag-selector', [
+                            'name' => 'tag_ids',
+                            'tagOptions' => $tagOptions ?? [],
+                            'selectedTagIds' => $selectedTagIds ?? [],
+                            'tone' => 'orange',
+                        ])
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_doc_type') }}</label>
                         <select name="file_type" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
                             <option value="markdown" @selected(old('file_type', (string) ($knowledgeForm['file_type'] ?? 'markdown')) === 'markdown')>{{ __('admin.status.markdown') }}</option>
@@ -66,4 +75,3 @@
         </div>
     </div>
 @endsection
-
