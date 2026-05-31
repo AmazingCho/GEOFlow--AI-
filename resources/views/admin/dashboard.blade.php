@@ -25,6 +25,9 @@
             ['label' => __('admin.dashboard.quick_start.keywords'), 'href' => route('admin.keyword-libraries.index'), 'class' => 'border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100'],
             ['label' => __('admin.dashboard.quick_start.images'), 'href' => route('admin.image-libraries.index'), 'class' => 'border-purple-100 bg-purple-50 text-purple-700 hover:bg-purple-100'],
             ['label' => __('admin.dashboard.quick_start.authors'), 'href' => route('admin.authors.index'), 'class' => 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'],
+            ['label' => __('admin.dashboard.quick_start.tags'), 'href' => route('admin.material-tags.index'), 'class' => 'border-cyan-100 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'],
+            ['label' => __('admin.dashboard.quick_start.entities'), 'href' => route('admin.entities.index'), 'class' => 'border-indigo-100 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'],
+            ['label' => __('admin.dashboard.quick_start.cases'), 'href' => route('admin.cases.index'), 'class' => 'border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100'],
         ];
 
         $stats = $dashboardStats ?? [];

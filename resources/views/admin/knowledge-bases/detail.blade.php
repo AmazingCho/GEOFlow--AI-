@@ -24,7 +24,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_name') }}</label>
-                        <input type="text" name="name" value="{{ old('name', (string) $knowledgeBase->name) }}" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>
+                        <input type="text" name="name" value="{{ old('name', (string) $knowledgeBase->name) }}" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_bases.field_doc_type') }}</label>
@@ -37,11 +37,11 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_description') }}</label>
-                    <textarea name="description" rows="3" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm">{{ old('description', (string) ($knowledgeBase->description ?? '')) }}</textarea>
+                    <textarea name="description" rows="3" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm">{{ old('description', (string) ($knowledgeBase->description ?? '')) }}</textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_content') }}</label>
-                    <textarea name="content" rows="18" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>{{ old('content', (string) ($knowledgeBase->content ?? '')) }}</textarea>
+                    <textarea name="content" rows="18" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>{{ old('content', (string) ($knowledgeBase->content ?? '')) }}</textarea>
                 </div>
                 <div class="flex justify-end">
                     <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm text-white bg-orange-600 hover:bg-orange-700">
@@ -62,6 +62,9 @@
                     'name' => 'tag_ids',
                     'tagOptions' => $tagOptions ?? [],
                     'selectedTagIds' => $selectedTagIds ?? [],
+                    'recommendedTags' => $recommendedTags ?? [],
+                    'recommendationUrl' => route('admin.material-tags.recommendations'),
+                    'recommendationSourceSelector' => '[data-tag-source="knowledge-detail"]',
                     'tone' => 'orange',
                     'autoSubmit' => true,
                 ])

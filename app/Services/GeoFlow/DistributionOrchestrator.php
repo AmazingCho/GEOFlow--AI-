@@ -100,6 +100,59 @@ class DistributionOrchestrator
     }
 
     /**
+     * @param  list<int>  $channelIds
+     */
+    public function enqueueArticleToChannels(int|Article $article, array $channelIds, string $action = 'publish'): int
+    {
+        $articleModel = $article instanceof Article
+            ? $article
+            : Article::query()->whereKey($article)->first();
+
+        if (! $articleModel || $channelIds === []) {
+            return 0;
+        }
+
+        $channels = DistributionChannel::query()
+            ->whereIn('id', $channelIds)
+            ->where('status', 'active')
+            ->get();
+
+        if ($channels->isEmpty()) {
+            return 0;
+        }
+
+        $payload = $this->payloadBuilder->build($articleModel);
+        $payloadHash = hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+        $queued = 0;
+
+        foreach ($channels as $channel) {
+            $distribution = ArticleDistribution::query()->updateOrCreate(
+                [
+                    'article_id' => (int) $articleModel->id,
+                    'distribution_channel_id' => (int) $channel->id,
+                    'action' => $action,
+                ],
+                [
+                    'status' => 'queued',
+                    'next_retry_at' => now(),
+                    'payload_hash' => $payloadHash,
+                    'idempotency_key' => $this->idempotencyKey((int) $articleModel->id, (int) $channel->id, $action),
+                ]
+            );
+
+            $this->log('info', '文章已手动加入分发队列', (int) $channel->id, (int) $distribution->id, (int) $articleModel->id, [
+                'event' => 'distribution.manual_queued',
+            ]);
+            ProcessArticleDistributionJob::dispatch((int) $distribution->id)
+                ->onQueue('distribution')
+                ->afterCommit();
+            $queued++;
+        }
+
+        return $queued;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function healthCheck(DistributionChannel $channel): array

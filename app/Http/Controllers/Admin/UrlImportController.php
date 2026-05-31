@@ -39,7 +39,7 @@ class UrlImportController extends Controller
             'content_language' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'outputs' => ['array'],
-            'outputs.*' => ['string', 'in:knowledge,keywords,titles'],
+            'outputs.*' => ['string', 'in:knowledge,keywords,titles,entities,cases'],
         ]);
 
         try {
@@ -70,7 +70,7 @@ class UrlImportController extends Controller
                 'source_label' => $validated['source_label'] ?? '',
                 'content_language' => $validated['content_language'] ?? '',
                 'notes' => $validated['notes'] ?? '',
-                'outputs' => $validated['outputs'] ?? ['knowledge', 'keywords', 'titles'],
+                'outputs' => $validated['outputs'] ?? ['knowledge', 'keywords', 'titles', 'entities', 'cases'],
             ], JSON_UNESCAPED_UNICODE),
             'result_json' => '',
             'error_message' => '',
@@ -139,23 +139,28 @@ class UrlImportController extends Controller
         return response()->json($this->statusPayload($job));
     }
 
-    public function commit(int $jobId): RedirectResponse
+    public function commit(Request $request, int $jobId): RedirectResponse
     {
         $job = UrlImportJob::query()->whereKey($jobId)->firstOrFail();
 
         try {
-            $summary = $this->urlImportProcessingService->commit($job);
+            $summary = $this->urlImportProcessingService->commit($job, $this->selectedImportItems($request));
         } catch (\Throwable $exception) {
             return back()->withErrors(__('admin.url_import.error.commit_failed').': '.$exception->getMessage());
         }
 
-        return redirect()
-            ->route('admin.url-import.show', ['jobId' => $jobId])
-            ->with('message', __('admin.url_import.commit.success').'：'.__('admin.url_import_history.import.summary', [
+        $message = __('admin.url_import.commit.success').'：'.__('admin.url_import_history.import.summary', [
                 'knowledge_base' => $summary['knowledge_base'],
                 'keywords' => $summary['keywords'],
                 'titles' => $summary['titles'],
-            ]));
+            ]);
+        if ((int) ($summary['entities'] ?? 0) > 0 || (int) ($summary['cases'] ?? 0) > 0) {
+            $message .= '；Entity '.(int) ($summary['entities'] ?? 0).'，Case '.(int) ($summary['cases'] ?? 0);
+        }
+
+        return redirect()
+            ->route('admin.url-import.show', ['jobId' => $jobId])
+            ->with('message', $message);
     }
 
     public function show(int $jobId): View
@@ -195,6 +200,33 @@ class UrlImportController extends Controller
             'keyword_libraries' => KeywordLibrary::query()->count(),
             'title_libraries' => TitleLibrary::query()->count(),
         ];
+    }
+
+    /**
+     * @return array<string, list<int>>
+     */
+    private function selectedImportItems(Request $request): array
+    {
+        $selected = $request->input('selected', []);
+        if (! is_array($selected)) {
+            return [];
+        }
+
+        $result = [];
+        foreach (['knowledge', 'keywords', 'titles', 'entities', 'cases', 'images'] as $type) {
+            $values = $selected[$type] ?? null;
+            if (! is_array($values)) {
+                continue;
+            }
+            $result[$type] = collect($values)
+                ->map(static fn ($value): int => (int) $value)
+                ->filter(static fn (int $value): bool => $value >= 0)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $result;
     }
 
     /**

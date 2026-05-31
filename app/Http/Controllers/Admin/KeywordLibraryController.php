@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
@@ -24,7 +25,10 @@ class KeywordLibraryController extends Controller
 {
     private const DETAIL_PER_PAGE = 50;
 
-    public function __construct(private readonly TagService $tagService) {}
+    public function __construct(
+        private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService
+    ) {}
 
     /**
      * 列表页。
@@ -51,6 +55,13 @@ class KeywordLibraryController extends Controller
         $tagFilter = trim((string) $request->query('tag', ''));
         $keywords = $this->loadDetailKeywords($libraryId, $search, $tagFilter);
         $usageTotal = $this->loadUsageTotal($libraryId);
+        $keywordRecommendationInputs = [];
+        $selectedTagIdsByKeyword = [];
+        foreach ($keywords as $keyword) {
+            $keywordRecommendationInputs[(int) $keyword->id] = (string) $keyword->keyword;
+            $selectedTagIdsByKeyword[(int) $keyword->id] = $keyword->tags->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        }
+        $selectedTagIds = collect($selectedTagIdsByKeyword)->flatten()->map(static fn ($id): int => (int) $id)->unique()->values()->all();
 
         return view('admin.keyword-libraries.detail', [
             'pageTitle' => (string) $library->name.__('admin.keyword_detail.page_title_suffix'),
@@ -61,7 +72,8 @@ class KeywordLibraryController extends Controller
             'tagFilter' => $tagFilter,
             'keywords' => $keywords,
             'usageTotal' => $usageTotal,
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'tagRecommendationsByKeyword' => $this->tagRecommendationService->recommendForItems($keywordRecommendationInputs, $selectedTagIdsByKeyword),
         ]);
     }
 

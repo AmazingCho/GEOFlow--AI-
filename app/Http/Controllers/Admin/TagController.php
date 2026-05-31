@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tag;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -26,7 +29,10 @@ class TagController extends Controller
         'cases' => 'caseRecords',
     ];
 
-    public function __construct(private readonly TagService $tagService) {}
+    public function __construct(
+        private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService
+    ) {}
 
     public function index(Request $request): View
     {
@@ -36,14 +42,8 @@ class TagController extends Controller
         $scope = $this->scope($request);
 
         $query = Tag::query()
+            ->where('type', 'material')
             ->withCount(['keywords', 'images', 'knowledgeBases', 'entities', 'caseRecords'])
-            ->with([
-                'keywords' => fn ($query) => $query->with('library:id,name')->orderBy('keyword'),
-                'images' => fn ($query) => $query->with('library:id,name')->orderByDesc('created_at'),
-                'knowledgeBases' => fn ($query) => $query->orderBy('name'),
-                'entities' => fn ($query) => $query->orderBy('name'),
-                'caseRecords' => fn ($query) => $query->with('entity:id,name')->orderBy('title'),
-            ])
             ->orderBy('group_name')
             ->orderBy('name');
 
@@ -96,12 +96,131 @@ class TagController extends Controller
         }
 
         $tag = $this->tagService->firstOrCreateTag($groupName, $name);
+        $this->flushStatsCache();
 
         return redirect()
             ->route('admin.material-tags.index')
             ->with('message', __($tag->wasRecentlyCreated ? 'admin.material_tags.message_created' : 'admin.material_tags.message_exists', [
                 'tag' => $tag->displayName(),
             ]));
+    }
+
+    public function recommendations(Request $request): JsonResponse
+    {
+        $text = trim((string) $request->query('text', ''));
+        $selectedIds = collect((array) $request->query('selected_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        return response()->json([
+            'items' => $this->tagRecommendationService->recommendForText($text, $selectedIds, 6),
+        ]);
+    }
+
+    public function search(Request $request): JsonResponse
+    {
+        $query = trim((string) $request->query('q', $request->query('search', '')));
+        $limit = min(30, max(5, (int) $request->query('limit', 20)));
+        $scope = trim((string) $request->query('scope', ''));
+        $industryLabels = $this->industryNamesFromLabels((array) $request->query('industry_labels', []));
+
+        if ($scope === 'industry') {
+            return response()->json([
+                'items' => $this->searchIndustryTagOptions($query, $limit),
+            ]);
+        }
+
+        if ($scope === 'images') {
+            return response()->json([
+                'items' => $this->searchScopedTagOptions($query, $limit, ['images'], 'admin.task_create.option.image_tag_count', $industryLabels),
+            ]);
+        }
+
+        if ($scope === 'knowledge') {
+            return response()->json([
+                'items' => $this->searchScopedTagOptions($query, $limit, ['knowledgeBases', 'entities', 'caseRecords'], 'admin.task_create.option.knowledge_tag_count', $industryLabels),
+            ]);
+        }
+
+        return response()->json([
+            'items' => $this->tagService->searchTagOptions($query, 'material', $limit),
+        ]);
+    }
+
+    public function references(int $tagId): JsonResponse
+    {
+        $tag = Tag::query()->where('type', 'material')->whereKey($tagId)->firstOrFail();
+        $tagLabel = $tag->displayName();
+
+        return response()->json([
+            'tag' => [
+                'id' => (int) $tag->id,
+                'label' => $tagLabel,
+            ],
+            'sections' => [
+                'keywords' => $tag->keywords()
+                    ->with('library:id,name')
+                    ->orderBy('keyword')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn ($keyword): array => [
+                        'label' => (string) $keyword->keyword,
+                        'meta' => (string) ($keyword->library?->name ?? ''),
+                        'href' => route('admin.keyword-libraries.detail', ['libraryId' => (int) $keyword->library_id, 'tag' => $tagLabel]),
+                    ])
+                    ->values()
+                    ->all(),
+                'images' => $tag->images()
+                    ->with('library:id,name')
+                    ->orderByDesc('images.created_at')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn ($image): array => [
+                        'label' => (string) ($image->original_name ?: $image->filename),
+                        'meta' => (string) ($image->library?->name ?? ''),
+                        'href' => route('admin.image-libraries.detail', ['libraryId' => (int) $image->library_id, 'tag' => $tagLabel]),
+                    ])
+                    ->values()
+                    ->all(),
+                'knowledge' => $tag->knowledgeBases()
+                    ->orderBy('name')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn ($knowledgeBase): array => [
+                        'label' => (string) $knowledgeBase->name,
+                        'meta' => '',
+                        'href' => route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]),
+                    ])
+                    ->values()
+                    ->all(),
+                'entities' => $tag->entities()
+                    ->orderBy('name')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn ($entity): array => [
+                        'label' => (string) $entity->name,
+                        'meta' => (string) ($entity->entity_type ?? ''),
+                        'href' => route('admin.entities.index', ['tag' => $tagLabel]),
+                    ])
+                    ->values()
+                    ->all(),
+                'cases' => $tag->caseRecords()
+                    ->with('entity:id,name')
+                    ->orderBy('title')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn ($caseRecord): array => [
+                        'label' => (string) $caseRecord->title,
+                        'meta' => (string) ($caseRecord->entity?->name ?? ''),
+                        'href' => route('admin.cases.index', ['tag' => $tagLabel]),
+                    ])
+                    ->values()
+                    ->all(),
+            ],
+        ]);
     }
 
     public function update(Request $request, int $tagId): RedirectResponse
@@ -137,6 +256,7 @@ class TagController extends Controller
             'slug' => $this->buildSlug('material', $groupName, $name),
         ]);
         $this->tagService->refreshLegacyImageTagText($imageIds);
+        $this->flushStatsCache();
 
         return back()->with('message', __('admin.material_tags.message_updated', [
             'tag' => $tag->fresh()?->displayName() ?? $name,
@@ -154,6 +274,7 @@ class TagController extends Controller
         $label = $tag->displayName();
         $tag->delete();
         $this->tagService->refreshLegacyImageTagText($imageIds);
+        $this->flushStatsCache();
 
         return back()->with('message', __('admin.material_tags.message_deleted', ['tag' => $label]));
     }
@@ -183,6 +304,7 @@ class TagController extends Controller
 
             $deleted = Tag::query()->where('type', 'material')->whereIn('id', $tagIds)->delete();
             $this->tagService->refreshLegacyImageTagText($imageIds);
+            $this->flushStatsCache();
 
             return back()->with('message', __('admin.material_tags.message_bulk_deleted', ['count' => (int) $deleted]));
         }
@@ -217,6 +339,7 @@ class TagController extends Controller
                 $updated++;
             });
         $this->tagService->refreshLegacyImageTagText($imageIds);
+        $this->flushStatsCache();
 
         return back()->with('message', __('admin.material_tags.message_bulk_moved', [
             'count' => $updated,
@@ -229,14 +352,136 @@ class TagController extends Controller
      */
     private function loadStats(): array
     {
-        return [
-            'total' => Tag::query()->count(),
-            'keyword_links' => (int) Tag::query()->withCount('keywords')->get()->sum('keywords_count'),
-            'image_links' => (int) Tag::query()->withCount('images')->get()->sum('images_count'),
-            'knowledge_links' => (int) Tag::query()->withCount('knowledgeBases')->get()->sum('knowledge_bases_count'),
-            'entity_links' => (int) Tag::query()->withCount('entities')->get()->sum('entities_count'),
-            'case_links' => (int) Tag::query()->withCount('caseRecords')->get()->sum('case_records_count'),
-        ];
+        return Cache::remember('admin.material_tags.stats', now()->addMinutes(5), fn (): array => [
+            'total' => Tag::query()->where('type', 'material')->count(),
+            'keyword_links' => (int) Tag::query()->where('type', 'material')->withCount('keywords')->get()->sum('keywords_count'),
+            'image_links' => (int) Tag::query()->where('type', 'material')->withCount('images')->get()->sum('images_count'),
+            'knowledge_links' => (int) Tag::query()->where('type', 'material')->withCount('knowledgeBases')->get()->sum('knowledge_bases_count'),
+            'entity_links' => (int) Tag::query()->where('type', 'material')->withCount('entities')->get()->sum('entities_count'),
+            'case_links' => (int) Tag::query()->where('type', 'material')->withCount('caseRecords')->get()->sum('case_records_count'),
+        ]);
+    }
+
+    private function flushStatsCache(): void
+    {
+        Cache::forget('admin.material_tags.stats');
+    }
+
+    /**
+     * @param  list<string>  $relations
+     * @return list<array{id:int,label:string,count:int,meta:string}>
+     */
+    private function searchScopedTagOptions(string $query, int $limit, array $relations, string $countLabelKey, array $industryNames = []): array
+    {
+        $builder = Tag::query()
+            ->where('type', 'material')
+            ->withCount($relations)
+            ->where(function ($nested) use ($relations): void {
+                foreach ($relations as $relation) {
+                    $nested->orWhereHas($relation);
+                }
+            });
+
+        if ($industryNames !== []) {
+            $builder->where(function ($nested) use ($relations, $industryNames): void {
+                foreach ($relations as $relation) {
+                    $nested->orWhereHas($relation, function ($relationQuery) use ($industryNames): void {
+                        $relationQuery->whereHas('tags', function ($tagQuery) use ($industryNames): void {
+                            $tagQuery
+                                ->where('type', 'material')
+                                ->where('group_name', '行业领域')
+                                ->whereIn('name', $industryNames);
+                        });
+                    });
+                }
+            });
+        }
+
+        if ($query !== '') {
+            $builder->where(function ($nested) use ($query): void {
+                $nested
+                    ->where('name', 'like', '%'.$query.'%')
+                    ->orWhere('group_name', 'like', '%'.$query.'%');
+            });
+        }
+
+        return $builder
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->limit($limit)
+            ->get(['id', 'group_name', 'name'])
+            ->map(function (Tag $tag) use ($relations, $countLabelKey): array {
+                $count = collect($relations)
+                    ->sum(static fn (string $relation): int => (int) ($tag->{Str::snake($relation).'_count'} ?? 0));
+
+                return [
+                    'id' => (int) $tag->id,
+                    'label' => $tag->displayName(),
+                    'count' => $count,
+                    'meta' => __($countLabelKey, ['count' => $count]),
+                ];
+            })
+            ->filter(static fn (array $tag): bool => $tag['label'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{id:int,label:string,count:int,meta:string}>
+     */
+    private function searchIndustryTagOptions(string $query, int $limit): array
+    {
+        $builder = Tag::query()
+            ->where('type', 'material')
+            ->where('group_name', '行业领域')
+            ->withCount(['keywords', 'images', 'knowledgeBases', 'entities', 'caseRecords']);
+
+        if ($query !== '') {
+            $builder->where('name', 'like', '%'.$query.'%');
+        }
+
+        return $builder
+            ->orderBy('name')
+            ->limit($limit)
+            ->get(['id', 'group_name', 'name'])
+            ->map(static function (Tag $tag): array {
+                $count = (int) ($tag->keywords_count ?? 0)
+                    + (int) ($tag->images_count ?? 0)
+                    + (int) ($tag->knowledge_bases_count ?? 0)
+                    + (int) ($tag->entities_count ?? 0)
+                    + (int) ($tag->case_records_count ?? 0);
+
+                return [
+                    'id' => (int) $tag->id,
+                    'label' => $tag->displayName(),
+                    'count' => $count,
+                    'meta' => __('admin.task_create.option.industry_tag_count', ['count' => $count]),
+                ];
+            })
+            ->filter(static fn (array $tag): bool => $tag['label'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $labels
+     * @return list<string>
+     */
+    private function industryNamesFromLabels(array $labels): array
+    {
+        return collect($labels)
+            ->map(static function ($label): string {
+                $label = trim((string) $label);
+                if (str_starts_with($label, '行业领域:')) {
+                    return trim(str_replace('行业领域:', '', $label));
+                }
+
+                return $label;
+            })
+            ->filter(static fn (string $label): bool => $label !== '')
+            ->unique(static fn (string $label): string => mb_strtolower($label, 'UTF-8'))
+            ->values()
+            ->all();
     }
 
     /**

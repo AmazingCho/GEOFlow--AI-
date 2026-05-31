@@ -136,7 +136,7 @@
                                     <input type="hidden" name="groups[]" value="{{ $group }}">
                                 </span>
                             @endforeach
-                            <input type="text" data-group-search value="" autocomplete="off" placeholder="{{ __('admin.material_tags.group_placeholder') }}" class="min-w-[180px] flex-1 border-0 p-0 text-sm focus:ring-0">
+                            <input type="text" data-group-search value="" autocomplete="off" placeholder="{{ __('admin.material_tags.group_placeholder') }}" class="min-w-[180px] flex-1 border-0 p-0 text-sm outline-none focus:ring-0">
                         </div>
                         <div data-group-menu class="absolute left-0 right-0 z-40 mt-1 hidden max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
                             @forelse ($groupOptions as $group)
@@ -257,68 +257,9 @@
                                     <i data-lucide="x" class="h-5 w-5"></i>
                                 </button>
                             </div>
-                            <div class="grid grid-cols-1 gap-4 p-6 lg:grid-cols-5">
-                                <div class="rounded-md border border-gray-200 p-3">
-                                    <div class="mb-2 text-sm font-medium text-gray-900">{{ __('admin.material_tags.applied_keywords') }}</div>
-                                    @forelse ($tag->keywords as $keyword)
-                                        <a href="{{ route('admin.keyword-libraries.detail', ['libraryId' => (int) $keyword->library_id, 'tag' => $tag->displayName()]) }}" class="mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700">
-                                            {{ $keyword->keyword }}
-                                            @if ($keyword->library)
-                                                <span class="text-gray-400">/ {{ $keyword->library->name }}</span>
-                                            @endif
-                                        </a>
-                                    @empty
-                                        <div class="text-xs text-gray-400">{{ __('admin.material_tags.none') }}</div>
-                                    @endforelse
-                                </div>
-                                <div class="rounded-md border border-gray-200 p-3">
-                                    <div class="mb-2 text-sm font-medium text-gray-900">{{ __('admin.material_tags.applied_images') }}</div>
-                                    @forelse ($tag->images as $image)
-                                        <a href="{{ route('admin.image-libraries.detail', ['libraryId' => (int) $image->library_id, 'tag' => $tag->displayName()]) }}" class="mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-purple-50 hover:text-purple-700">
-                                            {{ $image->original_name ?: $image->filename }}
-                                            @if ($image->library)
-                                                <span class="text-gray-400">/ {{ $image->library->name }}</span>
-                                            @endif
-                                        </a>
-                                    @empty
-                                        <div class="text-xs text-gray-400">{{ __('admin.material_tags.none') }}</div>
-                                    @endforelse
-                                </div>
-                                <div class="rounded-md border border-gray-200 p-3">
-                                    <div class="mb-2 text-sm font-medium text-gray-900">{{ __('admin.material_tags.applied_knowledge') }}</div>
-                                    @forelse ($tag->knowledgeBases as $knowledgeBase)
-                                        <a href="{{ route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" class="mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-orange-50 hover:text-orange-700">
-                                            {{ $knowledgeBase->name }}
-                                        </a>
-                                    @empty
-                                        <div class="text-xs text-gray-400">{{ __('admin.material_tags.none') }}</div>
-                                    @endforelse
-                                </div>
-                                <div class="rounded-md border border-gray-200 p-3">
-                                    <div class="mb-2 text-sm font-medium text-gray-900">{{ __('admin.material_tags.applied_entities') }}</div>
-                                    @forelse ($tag->entities as $entity)
-                                        <a href="{{ route('admin.entities.index', ['tag' => $tag->displayName()]) }}" class="mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700">
-                                            {{ $entity->name }}
-                                            @if ((string) ($entity->entity_type ?? '') !== '')
-                                                <span class="text-gray-400">/ {{ $entity->entity_type }}</span>
-                                            @endif
-                                        </a>
-                                    @empty
-                                        <div class="text-xs text-gray-400">{{ __('admin.material_tags.none') }}</div>
-                                    @endforelse
-                                </div>
-                                <div class="rounded-md border border-gray-200 p-3">
-                                    <div class="mb-2 text-sm font-medium text-gray-900">{{ __('admin.material_tags.applied_cases') }}</div>
-                                    @forelse ($tag->caseRecords as $caseRecord)
-                                        <a href="{{ route('admin.cases.index', ['tag' => $tag->displayName()]) }}" class="mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-emerald-50 hover:text-emerald-700">
-                                            {{ $caseRecord->title }}
-                                            @if ($caseRecord->entity)
-                                                <span class="text-gray-400">/ {{ $caseRecord->entity->name }}</span>
-                                            @endif
-                                        </a>
-                                    @empty
-                                        <div class="text-xs text-gray-400">{{ __('admin.material_tags.none') }}</div>
-                                    @endforelse
+                            <div class="p-6" data-tag-references-body data-tag-references-url="{{ route('admin.material-tags.references', ['tagId' => (int) $tag->id]) }}">
+                                <div class="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                    {{ __('admin.material_tags.references_lazy_hint') }}
                                 </div>
                             </div>
                         </div>
@@ -440,6 +381,16 @@
     <script>
         (function () {
             const deleteText = @json(__('admin.material_tags.delete_confirmation_text'));
+            const referenceLabels = {
+                keywords: @json(__('admin.material_tags.applied_keywords')),
+                images: @json(__('admin.material_tags.applied_images')),
+                knowledge: @json(__('admin.material_tags.applied_knowledge')),
+                entities: @json(__('admin.material_tags.applied_entities')),
+                cases: @json(__('admin.material_tags.applied_cases')),
+            };
+            const referenceLoadingText = @json(__('admin.material_tags.references_loading'));
+            const referenceErrorText = @json(__('admin.material_tags.references_error'));
+            const referenceEmptyText = @json(__('admin.material_tags.none'));
 
             function refreshIcons() {
                 if (typeof lucide !== 'undefined') {
@@ -447,11 +398,88 @@
                 }
             }
 
+            function renderReferenceSections(body, sections) {
+                body.innerHTML = '';
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-1 gap-4 lg:grid-cols-5';
+
+                Object.keys(referenceLabels).forEach(function (key) {
+                    const card = document.createElement('div');
+                    card.className = 'rounded-md border border-gray-200 p-3';
+
+                    const title = document.createElement('div');
+                    title.className = 'mb-2 text-sm font-medium text-gray-900';
+                    title.textContent = referenceLabels[key];
+                    card.appendChild(title);
+
+                    const items = Array.isArray(sections?.[key]) ? sections[key] : [];
+                    if (items.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'text-xs text-gray-400';
+                        empty.textContent = referenceEmptyText;
+                        card.appendChild(empty);
+                    } else {
+                        items.forEach(function (item) {
+                            const link = document.createElement('a');
+                            link.href = item.href || '#';
+                            link.className = 'mb-1 block rounded bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700';
+                            link.textContent = item.label || '';
+                            if (item.meta) {
+                                const meta = document.createElement('span');
+                                meta.className = 'text-gray-400';
+                                meta.textContent = ' / ' + item.meta;
+                                link.appendChild(meta);
+                            }
+                            card.appendChild(link);
+                        });
+                    }
+
+                    grid.appendChild(card);
+                });
+
+                body.appendChild(grid);
+                body.dataset.loaded = '1';
+                refreshIcons();
+            }
+
+            function loadReferences(modal) {
+                const body = modal?.querySelector('[data-tag-references-body]');
+                const url = body?.getAttribute('data-tag-references-url') || '';
+                if (!body || !url || body.dataset.loaded === '1' || body.dataset.loading === '1') {
+                    return;
+                }
+
+                body.dataset.loading = '1';
+                body.innerHTML = '<div class="rounded-md border border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500"></div>';
+                body.firstElementChild.textContent = referenceLoadingText;
+
+                fetch(url, {
+                    headers: {'Accept': 'application/json'},
+                    credentials: 'same-origin',
+                })
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error('Request failed');
+                        }
+
+                        return response.json();
+                    })
+                    .then((payload) => renderReferenceSections(body, payload.sections || {}))
+                    .catch(() => {
+                        body.innerHTML = '<div class="rounded-md border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-700"></div>';
+                        body.firstElementChild.textContent = referenceErrorText;
+                    })
+                    .finally(() => {
+                        body.dataset.loading = '0';
+                    });
+            }
+
             document.addEventListener('click', function (event) {
                 const openButton = event.target.closest('[data-open-modal]');
                 if (openButton) {
                     const modal = document.getElementById(openButton.getAttribute('data-open-modal'));
                     modal?.classList.remove('hidden');
+                    loadReferences(modal);
                     refreshIcons();
                     return;
                 }

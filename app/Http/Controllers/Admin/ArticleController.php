@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Author;
 use App\Models\Category;
+use App\Models\DistributionChannel;
 use App\Models\Task;
+use App\Models\TaskRun;
+use App\Services\GeoFlow\ArticleQualityAssessmentService;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
@@ -15,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Throwable;
 
@@ -26,7 +30,10 @@ use Throwable;
  */
 class ArticleController extends Controller
 {
-    public function __construct(private readonly DistributionOrchestrator $distributionOrchestrator) {}
+    public function __construct(
+        private readonly DistributionOrchestrator $distributionOrchestrator,
+        private readonly ArticleQualityAssessmentService $qualityAssessmentService
+    ) {}
 
     /**
      * 文章管理首页：渲染筛选与列表。
@@ -35,6 +42,7 @@ class ArticleController extends Controller
     {
         $filters = $this->buildFilters($request);
         $articles = $this->queryArticles($filters);
+        $this->attachQualityReports($articles);
         $isTrashView = (bool) ($filters['trashed'] ?? false);
 
         return view('admin.articles.index', [
@@ -52,7 +60,31 @@ class ArticleController extends Controller
             'isTrashView' => $isTrashView,
             'trashI18n' => $this->trashI18n(),
             'articleBatchRoutes' => $this->articleBatchRoutes($isTrashView),
+            'distributionChannels' => $isTrashView ? [] : $this->loadDistributionChannels(),
         ]);
+    }
+
+    public function publish(Request $request, int $articleId): RedirectResponse
+    {
+        $article = Article::query()->whereKey($articleId)->firstOrFail();
+        $payload = $request->validate([
+            'distribution_channel_ids' => ['required', 'array', 'min:1'],
+            'distribution_channel_ids.*' => ['integer', 'min:1'],
+        ]);
+
+        if ((string) $article->status !== 'published') {
+            $article->forceFill([
+                'status' => 'published',
+                'published_at' => $article->published_at ?: now(),
+            ])->save();
+        }
+
+        $queued = $this->distributionOrchestrator->enqueueArticleToChannels(
+            $article,
+            collect($payload['distribution_channel_ids'] ?? [])->map(static fn ($id): int => (int) $id)->filter()->unique()->values()->all()
+        );
+
+        return back()->with('message', '文章已加入发布队列，共 '.$queued.' 个渠道。');
     }
 
     /**
@@ -253,8 +285,10 @@ class ArticleController extends Controller
     {
         $article = Article::query()
             ->with(['task:id,name', 'author:id,name', 'category:id,name'])
+            ->withCount('articleImages as article_images_count')
             ->whereKey($articleId)
             ->firstOrFail();
+        $generationTrace = $this->loadGenerationTrace($articleId);
 
         return view('admin.articles.form', [
             'pageTitle' => __('admin.article_edit.page_title'),
@@ -279,7 +313,114 @@ class ArticleController extends Controller
                 'is_featured' => (bool) ($article->is_featured ?? false),
             ],
             'formOptions' => $this->loadFormOptions(),
+            'generationTrace' => $generationTrace,
+            'qualityReport' => $this->qualityAssessmentService->assess($article, $generationTrace),
         ]);
+    }
+
+    private function attachQualityReports(LengthAwarePaginator $articles): void
+    {
+        if ($articles->isEmpty()) {
+            return;
+        }
+
+        $ids = $articles->getCollection()
+            ->map(fn (Article $article): int => (int) $article->id)
+            ->filter()
+            ->values()
+            ->all();
+        $traces = $this->loadGenerationTracesForArticles($ids);
+
+        $articles->getCollection()->transform(function (Article $article) use ($traces): Article {
+            $article->setAttribute('quality_report', $this->cachedQualityReport($article, $traces[(int) $article->id] ?? []));
+
+            return $article;
+        });
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function cachedQualityReport(Article $article, array $generationTrace): array
+    {
+        $runId = (int) data_get($generationTrace, '_run.id', 0);
+        $updatedAt = $article->updated_at?->timestamp ?? 0;
+        $key = 'article_quality:'.(int) $article->id.':'.$updatedAt.':'.$runId;
+
+        return Cache::remember($key, now()->addMinutes(15), fn (): array => $this->qualityAssessmentService->assess($article, $generationTrace));
+    }
+
+    /**
+     * @param  list<int>  $articleIds
+     * @return array<int, array<string,mixed>>
+     */
+    private function loadGenerationTracesForArticles(array $articleIds): array
+    {
+        if ($articleIds === []) {
+            return [];
+        }
+
+        $runs = TaskRun::query()
+            ->whereIn('article_id', $articleIds)
+            ->where('status', 'completed')
+            ->orderByDesc('finished_at')
+            ->orderByDesc('id')
+            ->get(['id', 'article_id', 'duration_ms', 'meta', 'started_at', 'finished_at']);
+
+        $traces = [];
+        foreach ($runs as $run) {
+            $articleId = (int) $run->article_id;
+            if ($articleId <= 0 || isset($traces[$articleId])) {
+                continue;
+            }
+
+            $meta = is_array($run->meta) ? $run->meta : [];
+            $trace = is_array($meta['generation_trace'] ?? null) ? $meta['generation_trace'] : [];
+            if ($trace === []) {
+                continue;
+            }
+
+            $trace['_run'] = [
+                'id' => (int) $run->id,
+                'duration_ms' => (int) ($run->duration_ms ?? 0),
+                'started_at' => $run->started_at?->format('Y-m-d H:i:s'),
+                'finished_at' => $run->finished_at?->format('Y-m-d H:i:s'),
+            ];
+            $traces[$articleId] = $trace;
+        }
+
+        return $traces;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function loadGenerationTrace(int $articleId): array
+    {
+        $run = TaskRun::query()
+            ->where('article_id', $articleId)
+            ->where('status', 'completed')
+            ->orderByDesc('finished_at')
+            ->orderByDesc('id')
+            ->first(['id', 'duration_ms', 'meta', 'started_at', 'finished_at']);
+        if (! $run) {
+            return [];
+        }
+
+        $meta = is_array($run->meta) ? $run->meta : [];
+        $trace = is_array($meta['generation_trace'] ?? null) ? $meta['generation_trace'] : [];
+        if ($trace === []) {
+            return [];
+        }
+
+        $trace['_run'] = [
+            'id' => (int) $run->id,
+            'duration_ms' => (int) ($run->duration_ms ?? 0),
+            'started_at' => $run->started_at?->format('Y-m-d H:i:s'),
+            'finished_at' => $run->finished_at?->format('Y-m-d H:i:s'),
+        ];
+
+        return $trace;
     }
 
     /**
@@ -389,6 +530,7 @@ class ArticleController extends Controller
             'author:id,name',
             'category:id,name',
         ])->withCount([
+            'articleImages as article_images_count',
             'distributions as distribution_total_count',
             'distributions as distribution_synced_count' => fn ($distributionQuery) => $distributionQuery->where('status', 'synced'),
             'distributions as distribution_failed_count' => fn ($distributionQuery) => $distributionQuery->where('status', 'failed'),
@@ -515,6 +657,24 @@ class ArticleController extends Controller
         } catch (QueryException) {
             return [];
         }
+    }
+
+    /**
+     * @return list<array{id:int,name:string,domain:string}>
+     */
+    private function loadDistributionChannels(): array
+    {
+        return DistributionChannel::query()
+            ->select(['id', 'name', 'domain'])
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (DistributionChannel $channel): array => [
+                'id' => (int) $channel->id,
+                'name' => (string) $channel->name,
+                'domain' => (string) $channel->domain,
+            ])
+            ->all();
     }
 
     /**

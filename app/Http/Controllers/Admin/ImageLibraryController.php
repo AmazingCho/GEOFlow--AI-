@@ -7,6 +7,7 @@ use App\Models\ArticleImage;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Task;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
@@ -27,7 +28,10 @@ class ImageLibraryController extends Controller
 {
     private const DETAIL_PER_PAGE = 24;
 
-    public function __construct(private readonly TagService $tagService) {}
+    public function __construct(
+        private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService
+    ) {}
 
     /**
      * 列表页。
@@ -52,7 +56,20 @@ class ImageLibraryController extends Controller
 
         $search = trim((string) $request->query('search', ''));
         $tagFilter = trim((string) $request->query('tag', ''));
-        $images = $this->loadDetailImages($libraryId, $search, $tagFilter);
+        $perPage = min(96, max(12, (int) $request->query('per_page', self::DETAIL_PER_PAGE) ?: self::DETAIL_PER_PAGE));
+        $images = $this->loadDetailImages($libraryId, $search, $tagFilter, $perPage);
+        $imageRecommendationInputs = [];
+        $selectedTagIdsByImage = [];
+        foreach ($images as $image) {
+            $imageRecommendationInputs[(int) $image->id] = implode(' ', [
+                (string) ($image->original_name ?? ''),
+                (string) ($image->filename ?? ''),
+                (string) ($image->file_name ?? ''),
+                (string) ($image->file_path ?? ''),
+            ]);
+            $selectedTagIdsByImage[(int) $image->id] = collect($image->getRelation('tags'))->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        }
+        $selectedTagIds = collect($selectedTagIdsByImage)->flatten()->map(static fn ($id): int => (int) $id)->unique()->values()->all();
         $usageTotal = (int) ArticleImage::query()
             ->whereHas('image', function ($query) use ($libraryId): void {
                 $query->where('library_id', $libraryId);
@@ -69,7 +86,8 @@ class ImageLibraryController extends Controller
             'images' => $images,
             'usageTotal' => $usageTotal,
             'totalImages' => Image::query()->where('library_id', $libraryId)->count(),
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'tagRecommendationsByImage' => $this->tagRecommendationService->recommendForItems($imageRecommendationInputs, $selectedTagIdsByImage),
         ]);
     }
 
@@ -200,6 +218,31 @@ class ImageLibraryController extends Controller
                 'tag' => trim((string) $request->input('tag', '')),
             ])
             ->with('message', '图片标签已更新');
+    }
+
+    public function updateImageTitle(Request $request, int $libraryId, int $imageId): RedirectResponse
+    {
+        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $image = Image::query()
+            ->where('library_id', (int) $library->id)
+            ->whereKey($imageId)
+            ->firstOrFail();
+
+        $payload = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+        ]);
+
+        $image->update([
+            'original_name' => trim((string) $payload['title']),
+        ]);
+
+        return redirect()
+            ->route('admin.image-libraries.detail', [
+                'libraryId' => $libraryId,
+                'search' => trim((string) $request->input('search', '')),
+                'tag' => trim((string) $request->input('tag', '')),
+            ])
+            ->with('message', '图片标题已更新');
     }
 
     /**
@@ -474,7 +517,7 @@ class ImageLibraryController extends Controller
     /**
      * @return LengthAwarePaginator<int, Image>
      */
-    private function loadDetailImages(int $libraryId, string $search, string $tagFilter): LengthAwarePaginator
+    private function loadDetailImages(int $libraryId, string $search, string $tagFilter, int $perPage): LengthAwarePaginator
     {
         $query = Image::query()
             ->with(['tags' => fn ($query) => $query->orderBy('group_name')->orderBy('name')])
@@ -490,7 +533,7 @@ class ImageLibraryController extends Controller
         }
         $this->tagService->applyFilter($query, $tagFilter);
 
-        return $query->paginate(self::DETAIL_PER_PAGE)->withQueryString();
+        return $query->paginate($perPage)->withQueryString();
     }
 
     /**

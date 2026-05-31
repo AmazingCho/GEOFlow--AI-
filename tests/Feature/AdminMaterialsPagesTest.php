@@ -2,13 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SyncKnowledgeBaseChunksJob;
 use App\Models\Admin;
 use App\Models\AiModel;
 use App\Models\Image;
 use App\Models\ImageLibrary;
+use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
+use App\Models\Tag;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
@@ -18,6 +21,7 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -160,6 +164,198 @@ class AdminMaterialsPagesTest extends TestCase
             ->assertSee(__('admin.url_import_history.page_title'));
     }
 
+    public function test_material_tag_references_are_loaded_lazily(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'material_tag_lazy_admin',
+            'password' => 'secret-123',
+            'email' => 'material-tag-lazy-admin@example.com',
+            'display_name' => 'Material Tag Lazy Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $tag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => '行业',
+            'name' => '制造业',
+            'slug' => 'material-industry-manufacturing',
+            'color' => '',
+        ]);
+        $library = KeywordLibrary::query()->create([
+            'name' => '测试关键词库',
+            'description' => '',
+            'keyword_count' => 1,
+        ]);
+        $keyword = Keyword::query()->create([
+            'library_id' => (int) $library->id,
+            'keyword' => '独特引用关键词',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        $keyword->tags()->attach((int) $tag->id);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.material-tags.index'))
+            ->assertOk()
+            ->assertSee($tag->displayName())
+            ->assertSee(route('admin.material-tags.references', ['tagId' => (int) $tag->id]), false)
+            ->assertDontSee('独特引用关键词');
+
+        $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.material-tags.references', ['tagId' => (int) $tag->id]))
+            ->assertOk()
+            ->assertJsonPath('sections.keywords.0.label', '独特引用关键词')
+            ->assertJsonPath('sections.keywords.0.meta', '测试关键词库');
+    }
+
+    public function test_material_tag_search_supports_scoped_remote_selectors(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'material_tag_search_admin',
+            'password' => 'secret-123',
+            'email' => 'material-tag-search-admin@example.com',
+            'display_name' => 'Material Tag Search Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $imageTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => '图片',
+            'name' => '产品图',
+            'slug' => 'material-image-product',
+            'color' => '',
+        ]);
+        $knowledgeTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => '知识',
+            'name' => '售后',
+            'slug' => 'material-knowledge-support',
+            'color' => '',
+        ]);
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '测试图库',
+            'description' => '',
+            'image_count' => 1,
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'product.jpg',
+            'original_name' => 'product.jpg',
+            'file_name' => 'product.jpg',
+            'file_path' => 'images/product.jpg',
+            'file_size' => 100,
+            'mime_type' => 'image/jpeg',
+            'width' => 100,
+            'height' => 100,
+            'tags' => '',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        $image->tags()->attach((int) $imageTag->id);
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '售后知识库',
+            'description' => '',
+            'content' => '售后说明',
+            'character_count' => 4,
+            'file_type' => 'markdown',
+            'word_count' => 4,
+        ]);
+        $knowledgeBase->tags()->attach((int) $knowledgeTag->id);
+
+        $imageResponse = $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.material-tags.search', ['scope' => 'images', 'q' => '图']));
+        $imageResponse->assertOk()
+            ->assertJsonFragment(['label' => '图片:产品图'])
+            ->assertJsonMissing(['label' => '知识:售后']);
+
+        $knowledgeResponse = $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.material-tags.search', ['scope' => 'knowledge', 'q' => '售后']));
+        $knowledgeResponse->assertOk()
+            ->assertJsonFragment(['label' => '知识:售后'])
+            ->assertJsonMissing(['label' => '图片:产品图']);
+    }
+
+    public function test_material_tag_search_can_be_scoped_by_industry_labels(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'material_industry_search_admin',
+            'password' => 'secret-123',
+            'email' => 'material-industry-search@example.com',
+            'display_name' => 'Material Industry Search Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $automationIndustry = Tag::query()->firstOrCreate([
+            'type' => 'material',
+            'group_name' => '行业领域',
+            'name' => '自动化设备',
+        ], [
+            'slug' => 'industry-automation',
+            'color' => '',
+        ]);
+        $coolingIndustry = Tag::query()->firstOrCreate([
+            'type' => 'material',
+            'group_name' => '行业领域',
+            'name' => '制冷设备',
+        ], [
+            'slug' => 'industry-cooling',
+            'color' => '',
+        ]);
+        $automationTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => '知识',
+            'name' => '自动化售后',
+            'slug' => 'knowledge-automation-support',
+            'color' => '',
+        ]);
+        $coolingTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => '知识',
+            'name' => '制冷售后',
+            'slug' => 'knowledge-cooling-support',
+            'color' => '',
+        ]);
+        $automationKb = KnowledgeBase::query()->create([
+            'name' => '自动化知识库',
+            'description' => '',
+            'content' => '自动化售后说明',
+            'character_count' => 7,
+            'file_type' => 'markdown',
+            'word_count' => 7,
+        ]);
+        $coolingKb = KnowledgeBase::query()->create([
+            'name' => '制冷知识库',
+            'description' => '',
+            'content' => '制冷售后说明',
+            'character_count' => 6,
+            'file_type' => 'markdown',
+            'word_count' => 6,
+        ]);
+        $automationKb->tags()->attach([(int) $automationIndustry->id, (int) $automationTag->id]);
+        $coolingKb->tags()->attach([(int) $coolingIndustry->id, (int) $coolingTag->id]);
+
+        $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.material-tags.search', [
+                'scope' => 'industry',
+                'q' => '自动',
+            ]))
+            ->assertOk()
+            ->assertJsonFragment(['label' => '行业领域:自动化设备'])
+            ->assertJsonMissing(['label' => '行业领域:制冷设备']);
+
+        $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.material-tags.search', [
+                'scope' => 'knowledge',
+                'q' => '售后',
+                'industry_labels' => ['行业领域:自动化设备'],
+            ]))
+            ->assertOk()
+            ->assertJsonFragment(['label' => '知识:自动化售后'])
+            ->assertJsonMissing(['label' => '知识:制冷售后']);
+    }
+
     public function test_admin_can_create_knowledge_base_from_form(): void
     {
         $admin = Admin::query()->create([
@@ -185,6 +381,36 @@ class AdminMaterialsPagesTest extends TestCase
             'file_type' => 'markdown',
         ]);
         $this->assertGreaterThan(0, KnowledgeBase::query()->count());
+    }
+
+    public function test_knowledge_base_chunk_generation_is_queued(): void
+    {
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_queue_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-queue-admin@example.com',
+            'display_name' => 'Knowledge Queue Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.store'), [
+                'name' => '队列知识库',
+                'description' => '测试队列',
+                'file_type' => 'markdown',
+                'content' => "第一段内容。\n\n第二段内容。",
+            ])
+            ->assertRedirect(route('admin.knowledge-bases.index'))
+            ->assertSessionHas('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
+
+        $knowledgeBase = KnowledgeBase::query()->where('name', '队列知识库')->firstOrFail();
+        Queue::assertPushed(SyncKnowledgeBaseChunksJob::class, function (SyncKnowledgeBaseChunksJob $job) use ($knowledgeBase): bool {
+            return $job->knowledgeBaseId === (int) $knowledgeBase->id && $job->requireRealEmbedding === false;
+        });
+        $this->assertSame(0, $knowledgeBase->chunks()->count());
     }
 
     public function test_admin_can_create_knowledge_base_from_multiple_uploaded_files(): void
@@ -287,8 +513,9 @@ class AdminMaterialsPagesTest extends TestCase
         $this->assertSame(0, $knowledgeBase->chunks()->count());
     }
 
-    public function test_create_keeps_knowledge_base_when_chunk_sync_fails(): void
+    public function test_create_keeps_knowledge_base_when_chunk_sync_is_queued(): void
     {
+        Queue::fake();
         Storage::fake('local');
 
         $admin = Admin::query()->create([
@@ -300,12 +527,6 @@ class AdminMaterialsPagesTest extends TestCase
             'status' => 'active',
         ]);
 
-        $this->mock(KnowledgeChunkSyncService::class, function ($mock): void {
-            $mock->shouldReceive('sync')
-                ->once()
-                ->andThrow(new \RuntimeException('embedding timeout'));
-        });
-
         $this->actingAs($admin, 'admin')
             ->post(route('admin.knowledge-bases.store'), [
                 'name' => '已保存但切片失败',
@@ -314,17 +535,21 @@ class AdminMaterialsPagesTest extends TestCase
                 'content' => "第一段内容。\n\n第二段内容。",
             ])
             ->assertRedirect(route('admin.knowledge-bases.index'))
-            ->assertSessionHasErrors('chunk_sync');
+            ->assertSessionHas('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
 
+        $knowledgeBase = KnowledgeBase::query()->where('name', '已保存但切片失败')->firstOrFail();
         $this->assertDatabaseHas('knowledge_bases', [
             'name' => '已保存但切片失败',
             'content' => "第一段内容。\n\n第二段内容。",
         ]);
-        $this->assertSame(0, KnowledgeBase::query()->where('name', '已保存但切片失败')->firstOrFail()->chunks()->count());
+        Queue::assertPushed(SyncKnowledgeBaseChunksJob::class, fn (SyncKnowledgeBaseChunksJob $job): bool => $job->knowledgeBaseId === (int) $knowledgeBase->id);
+        $this->assertSame(0, $knowledgeBase->chunks()->count());
     }
 
-    public function test_detail_update_keeps_changes_when_chunk_sync_fails(): void
+    public function test_detail_update_keeps_changes_when_chunk_sync_is_queued(): void
     {
+        Queue::fake();
+
         $admin = Admin::query()->create([
             'username' => 'knowledge_detail_chunk_failure_admin',
             'password' => 'secret-123',
@@ -343,12 +568,6 @@ class AdminMaterialsPagesTest extends TestCase
             'word_count' => 4,
         ]);
 
-        $this->mock(KnowledgeChunkSyncService::class, function ($mock): void {
-            $mock->shouldReceive('sync')
-                ->once()
-                ->andThrow(new \RuntimeException('semantic planner timeout'));
-        });
-
         $this->actingAs($admin, 'admin')
             ->put(route('admin.knowledge-bases.detail.update', ['knowledgeBaseId' => (int) $knowledgeBase->id]), [
                 'name' => '更新后的知识库',
@@ -357,7 +576,7 @@ class AdminMaterialsPagesTest extends TestCase
                 'content' => '更新后的正文内容',
             ])
             ->assertRedirect(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
-            ->assertSessionHasErrors('chunk_sync');
+            ->assertSessionHas('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
 
         $this->assertDatabaseHas('knowledge_bases', [
             'id' => (int) $knowledgeBase->id,
@@ -365,6 +584,7 @@ class AdminMaterialsPagesTest extends TestCase
             'description' => '更新说明',
             'content' => '更新后的正文内容',
         ]);
+        Queue::assertPushed(SyncKnowledgeBaseChunksJob::class, fn (SyncKnowledgeBaseChunksJob $job): bool => $job->knowledgeBaseId === (int) $knowledgeBase->id);
     }
 
     public function test_admin_cannot_upload_more_than_ten_knowledge_files(): void
@@ -495,6 +715,7 @@ class AdminMaterialsPagesTest extends TestCase
 
     public function test_admin_can_refresh_knowledge_chunks_with_real_embedding_model(): void
     {
+        Queue::fake();
         Http::fake([
             'https://ai.test/v1/embeddings' => Http::response([
                 'data' => [
@@ -543,12 +764,12 @@ class AdminMaterialsPagesTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->post(route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
             ->assertRedirect(route('admin.knowledge-bases.index'))
-            ->assertSessionHas('message');
+            ->assertSessionHas('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
 
-        $chunk = $knowledgeBase->chunks()->firstOrFail();
-        $this->assertSame((int) $embeddingModel->id, (int) $chunk->embedding_model_id);
-        $this->assertSame(3, (int) $chunk->embedding_dimensions);
-        $this->assertSame([0.1, 0.2, 0.3], json_decode((string) $chunk->embedding_json, true));
+        Queue::assertPushed(SyncKnowledgeBaseChunksJob::class, function (SyncKnowledgeBaseChunksJob $job) use ($knowledgeBase): bool {
+            return $job->knowledgeBaseId === (int) $knowledgeBase->id && $job->requireRealEmbedding === true;
+        });
+        $this->assertSame(0, $knowledgeBase->chunks()->count());
     }
 
     public function test_knowledge_base_list_uses_friendly_refresh_chunks_progress_ui(): void
@@ -947,6 +1168,76 @@ class AdminMaterialsPagesTest extends TestCase
         $this->assertNotContains('查看详情', $result['analysis']['keywords'] ?? []);
         $this->assertContains('AI生成标题一', $result['analysis']['titles'] ?? []);
         $this->assertArrayNotHasKey('images', $result['analysis'] ?? []);
+    }
+
+    public function test_url_import_outputs_skip_unselected_ai_assets(): void
+    {
+        Http::fake([
+            'https://source.test/knowledge-only' => Http::response(
+                '<!doctype html><html><head><title>知识页</title><meta name="description" content="知识页摘要"></head><body><article><h1>知识页</h1><p>这是一段只需要生成知识库的页面正文。</p></article></body></html>',
+                200,
+                ['Content-Type' => 'text/html; charset=utf-8']
+            ),
+            'https://ai.test/v1/chat/completions' => Http::sequence()
+                ->push(['choices' => [['message' => ['content' => json_encode([
+                    'clean_title' => '知识页',
+                    'clean_summary' => '这是一段只需要生成知识库的页面正文。',
+                    'clean_text' => '这是一段只需要生成知识库的页面正文。',
+                    'entities' => ['知识库'],
+                    'facts' => ['页面只需要生成知识库。'],
+                    'noise_removed' => [],
+                ], JSON_UNESCAPED_UNICODE)]]]], 200)
+                ->push(['choices' => [['message' => ['content' => json_encode([
+                    'summary' => '这是一段只需要生成知识库的页面正文。',
+                    'library_name' => '知识页素材',
+                    'knowledge_markdown' => "# 知识页素材\n\n- 页面只需要生成知识库。",
+                ], JSON_UNESCAPED_UNICODE)]]]], 200),
+        ]);
+
+        AiModel::query()->create([
+            'name' => 'AI Test Model',
+            'version' => '',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'failover_priority' => 1,
+            'daily_limit' => 100,
+            'used_today' => 0,
+            'total_used' => 0,
+            'status' => 'active',
+        ]);
+        $admin = Admin::query()->create([
+            'username' => 'url_import_outputs_admin',
+            'password' => 'secret-123',
+            'email' => 'url-import-outputs@example.com',
+            'display_name' => 'Url Import Outputs Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.url-import.store'), [
+                'url' => 'source.test/knowledge-only',
+                'outputs' => ['knowledge'],
+            ])
+            ->assertRedirect();
+
+        $job = UrlImportJob::query()->firstOrFail();
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.url-import.run', ['jobId' => (int) $job->id]))
+            ->assertOk()
+            ->assertJsonPath('status', 'completed');
+
+        $result = json_decode((string) $job->refresh()->result_json, true);
+
+        $this->assertSame('ai', $result['analysis']['analysis_source'] ?? null);
+        $this->assertSame('知识页素材', $result['analysis']['library_name'] ?? null);
+        $this->assertSame([], $result['analysis']['keywords'] ?? null);
+        $this->assertSame([], $result['analysis']['titles'] ?? null);
+        $this->assertSame([], data_get($result, 'analysis.entity_extraction.entities'));
+        $this->assertSame([], data_get($result, 'analysis.entity_extraction.cases'));
+        Http::assertSentCount(3);
     }
 
     public function test_url_import_accepts_ai_json_wrapped_in_markdown_or_reasoning_text(): void

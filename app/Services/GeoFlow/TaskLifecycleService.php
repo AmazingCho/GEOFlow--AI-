@@ -98,6 +98,7 @@ class TaskLifecycleService
                 'publish_scope' => $normalized['publish_scope'],
                 'knowledge_base_id' => $normalized['knowledge_base_id'],
                 'knowledge_tag_filter' => $normalized['knowledge_tag_filter'],
+                'industry_tag_filter' => $normalized['industry_tag_filter'],
                 'category_mode' => $normalized['category_mode'],
                 'fixed_category_id' => $normalized['fixed_category_id'],
             ]);
@@ -584,6 +585,12 @@ class TaskLifecycleService
             $output['knowledge_tag_filter'] = mb_substr(trim((string) $data['knowledge_tag_filter']), 0, 1000, 'UTF-8');
         } elseif (! $isUpdate) {
             $output['knowledge_tag_filter'] = '';
+        }
+
+        if (array_key_exists('industry_tag_filter', $data)) {
+            $output['industry_tag_filter'] = mb_substr(trim((string) $data['industry_tag_filter']), 0, 1000, 'UTF-8');
+        } elseif (! $isUpdate) {
+            $output['industry_tag_filter'] = '';
         }
 
         if (array_key_exists('image_tag_filter', $data)) {

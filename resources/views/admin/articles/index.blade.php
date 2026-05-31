@@ -332,10 +332,11 @@
                                 <input type="checkbox" id="select-all" class="rounded border-gray-300 text-blue-600 shadow-sm">
                             </th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.id') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
+                            <th class="w-[22%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.task_author') }}</th>
                             @if(!$isTrashView)
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.workflow') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.quality') }}</th>
                             @endif
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.actions') }}</th>
@@ -381,13 +382,22 @@
                                         ];
                                     }
                                 }
+                                $qualityReport = is_array($article->quality_report ?? null) ? $article->quality_report : [];
+                                $qualityScore = (int) ($qualityReport['score'] ?? 0);
+                                $qualityStatus = (string) ($qualityReport['status'] ?? 'poor');
+                                $qualityTone = match($qualityStatus) {
+                                    'good' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                                    'warning' => 'bg-amber-50 text-amber-700 ring-amber-100',
+                                    default => 'bg-red-50 text-red-700 ring-red-100',
+                                };
+                                $qualityIssues = collect($qualityReport['issues'] ?? [])->filter(fn ($issue) => is_array($issue))->take(2)->values();
                             @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="batch-checkbox hidden px-6 py-4">
                                     <input type="checkbox" value="{{ (int) $article->id }}" class="article-checkbox rounded border-gray-300 text-blue-600 shadow-sm">
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">#{{ (int) $article->id }}</td>
-                                <td class="px-6 py-4">
+                                <td class="w-[22%] px-6 py-4">
                                     <div class="text-sm font-medium text-gray-900 truncate">
                                         @if($isTrashView)
                                             <span>{{ $article->title }}</span>
@@ -395,9 +405,6 @@
                                             <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="hover:text-blue-600">{{ $article->title }}</a>
                                         @endif
                                     </div>
-                                    @if((string) ($article->excerpt ?? '') !== '')
-                                        <p class="text-xs text-gray-500 mt-1">{{ \Illuminate\Support\Str::limit((string) $article->excerpt, 100) }}</p>
-                                    @endif
                                     @if((string) ($article->keywords ?? '') !== '')
                                         <div class="text-xs text-blue-600 mt-1">{{ __('admin.articles.keywords') }}: {{ $article->keywords }}</div>
                                     @endif
@@ -441,6 +448,20 @@
                                         </span>
                                     </div>
                                 </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex flex-col gap-2">
+                                        <span class="inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 {{ $qualityTone }}">
+                                            {{ __('admin.articles.quality.score_label', ['score' => $qualityScore, 'grade' => (string) ($qualityReport['grade'] ?? '-')]) }}
+                                        </span>
+                                        @if($qualityIssues->isNotEmpty())
+                                            <div class="max-w-48 space-y-1">
+                                                @foreach($qualityIssues as $issue)
+                                                    <div class="truncate text-xs text-gray-500">{{ __((string) ($issue['message_key'] ?? 'admin.articles.quality.suggestions.structure')) }}</div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                </td>
                                 @endif
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                     @if($isTrashView)
@@ -474,6 +495,9 @@
                                             <a href="{{ route('admin.articles.edit', ['articleId' => (int) $article->id]) }}" class="text-green-600 hover:text-green-800" title="{{ __('admin.button.edit') }}">
                                                 <i data-lucide="edit" class="w-4 h-4"></i>
                                             </a>
+                                            <button type="button" onclick="openPublishModal({{ (int) $article->id }}, @js((string) $article->title))" class="text-blue-600 hover:text-blue-800" title="发布">
+                                                <i data-lucide="send" class="w-4 h-4"></i>
+                                            </button>
                                             @if((string) $article->review_status === 'pending')
                                                 <button type="button" onclick="quickReview({{ (int) $article->id }}, 'approved')" class="text-green-600 hover:text-green-800" title="{{ __('admin.articles.action.approve') }}">
                                                     <i data-lucide="check" class="w-4 h-4"></i>
@@ -521,6 +545,46 @@
             @endif
         </div>
     </div>
+
+    @if(!$isTrashView)
+        <div id="publish-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-gray-600 bg-opacity-50">
+            <div class="mx-auto mt-20 w-full max-w-lg rounded-lg bg-white shadow-xl">
+                <form method="POST" id="publish-form" action="">
+                    @csrf
+                    <div class="border-b border-gray-200 px-6 py-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">发布文章</h3>
+                                <p class="mt-1 text-sm text-gray-500" data-publish-title></p>
+                            </div>
+                            <button type="button" onclick="closePublishModal()" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="h-5 w-5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="space-y-3 px-6 py-5">
+                        @forelse(($distributionChannels ?? []) as $channel)
+                            <label class="flex items-start gap-3 rounded-md border border-gray-200 px-4 py-3 text-sm transition hover:border-blue-300 hover:bg-blue-50">
+                                <input type="checkbox" name="distribution_channel_ids[]" value="{{ (int) $channel['id'] }}" checked class="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                <span class="min-w-0">
+                                    <span class="block font-medium text-gray-900">{{ $channel['name'] }}</span>
+                                    <span class="block break-all text-gray-500">{{ $channel['domain'] }}</span>
+                                </span>
+                            </label>
+                        @empty
+                            <div class="rounded-md bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                                暂无可用发布渠道，请先到分发管理中创建并启用渠道。
+                            </div>
+                        @endforelse
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+                        <button type="button" onclick="closePublishModal()" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">{{ __('admin.button.cancel') }}</button>
+                        <button type="submit" @disabled(empty($distributionChannels)) class="rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500">确认发布</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 @endsection
 
 @push('scripts')
@@ -529,6 +593,25 @@
         const TRASH_I18N = @json($trashI18n);
         const IS_TRASH_VIEW = @json($isTrashView);
         const EMPTY_TRASH_URL = @json(route('admin.articles.trash.empty'));
+        const ARTICLE_PUBLISH_URL_TEMPLATE = @json(route('admin.articles.publish', ['articleId' => '__ID__']));
+
+        function openPublishModal(articleId, title) {
+            const modal = document.getElementById('publish-modal');
+            const form = document.getElementById('publish-form');
+            if (!modal || !form) {
+                return;
+            }
+            form.action = ARTICLE_PUBLISH_URL_TEMPLATE.replace('__ID__', String(articleId));
+            const titleNode = modal.querySelector('[data-publish-title]');
+            if (titleNode) {
+                titleNode.textContent = title || '';
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function closePublishModal() {
+            document.getElementById('publish-modal')?.classList.add('hidden');
+        }
 
         function toggleBatchActions() {
             const batchActions = document.getElementById('batch-actions');

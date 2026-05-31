@@ -26,7 +26,10 @@ final class UrlImportProcessingService
 {
     private const AI_ANALYSIS_MAX_ATTEMPTS = 3;
 
-    public function __construct(private readonly ApiKeyCrypto $apiKeyCrypto) {}
+    public function __construct(
+        private readonly ApiKeyCrypto $apiKeyCrypto,
+        private readonly EntityExtractionService $entityExtractionService
+    ) {}
 
     /**
      * @return array{url:string,host:string}
@@ -186,16 +189,16 @@ final class UrlImportProcessingService
     }
 
     /**
-     * @return array{knowledge_base:int,keyword_library:int,title_library:int,keywords:int,titles:int}
+     * @return array{knowledge_base:int,keyword_library:int,title_library:int,keywords:int,titles:int,entities:int,cases:int}
      */
-    public function commit(UrlImportJob $job): array
+    public function commit(UrlImportJob $job, array $selected = []): array
     {
         $result = $this->decodeResult($job);
         if ($result === []) {
             throw new \RuntimeException(__('admin.url_import.error.commit_before_parse'));
         }
         if (($result['import']['status'] ?? '') === 'imported' && is_array($result['import']['summary'] ?? null)) {
-            /** @var array{knowledge_base:int,keyword_library:int,title_library:int,keywords:int,titles:int} $summary */
+            /** @var array{knowledge_base:int,keyword_library:int,title_library:int,keywords:int,titles:int,entities:int,cases:int} $summary */
             $summary = $result['import']['summary'];
 
             return $summary;
@@ -206,75 +209,112 @@ final class UrlImportProcessingService
         /** @var array<string, mixed> $analysis */
         $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
         $baseName = $this->safeName((string) ($analysis['library_name'] ?? $page['title'] ?? $job->source_domain ?: 'URL素材'));
+        $importAll = $selected === [];
+        $selectedIndices = fn (string $type): array => $importAll ? [] : array_values(array_map('intval', $selected[$type] ?? []));
+        $typeEnabled = fn (string $type): bool => $importAll || array_key_exists($type, $selected);
         $knowledgeContent = trim((string) ($analysis['knowledge_markdown'] ?? $page['text'] ?? ''));
-        if ($knowledgeContent === '') {
+        if ($typeEnabled('knowledge') && $knowledgeContent === '') {
             throw new \RuntimeException(__('admin.url_import.error.commit_before_parse'));
         }
-        $keywords = $this->stringList($analysis['keywords'] ?? []);
-        $titles = $this->stringList($analysis['titles'] ?? []);
-        if ($keywords === []) {
+        $keywords = $this->filterBySelectedIndices($this->stringList($analysis['keywords'] ?? []), $selectedIndices('keywords'));
+        $titles = $this->filterBySelectedIndices($this->stringList($analysis['titles'] ?? []), $selectedIndices('titles'));
+        if ($typeEnabled('keywords') && $keywords === []) {
             throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
         }
-        if ($titles === []) {
+        if ($typeEnabled('titles') && $titles === []) {
             throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
         }
 
         $language = $this->analysisLanguage($analysis, $page, $job);
         $libraryLabels = $this->libraryLabels($language);
+        $entityExtraction = is_array($analysis['entity_extraction'] ?? null)
+            ? $analysis['entity_extraction']
+            : $this->entityExtractionService->extractFromUrlImport($analysis, $page, $job);
+        $entityCandidates = $this->filterBySelectedIndices(
+            is_array($entityExtraction['entities'] ?? null) ? $entityExtraction['entities'] : [],
+            $selectedIndices('entities')
+        );
+        $caseCandidates = $this->filterBySelectedIndices(
+            is_array($entityExtraction['cases'] ?? null) ? $entityExtraction['cases'] : [],
+            $selectedIndices('cases')
+        );
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $libraryLabels): array {
-            $knowledgeBase = KnowledgeBase::query()->create([
-                'name' => $baseName.$libraryLabels['knowledge_suffix'],
-                'description' => (string) ($analysis['summary'] ?? ''),
-                'content' => $knowledgeContent,
-                'character_count' => mb_strlen($knowledgeContent, 'UTF-8'),
-                'used_task_count' => 0,
-                'file_type' => 'markdown',
-                'file_path' => '',
-                'word_count' => mb_strlen($knowledgeContent, 'UTF-8'),
-                'usage_count' => 0,
-            ]);
-
-            $keywordLibrary = KeywordLibrary::query()->create([
-                'name' => $baseName.$libraryLabels['keyword_suffix'],
-                'description' => $libraryLabels['description'],
-                'keyword_count' => 0,
-            ]);
-            foreach ($keywords as $keyword) {
-                Keyword::query()->firstOrCreate(
-                    ['library_id' => (int) $keywordLibrary->id, 'keyword' => $keyword],
-                    ['used_count' => 0, 'usage_count' => 0]
-                );
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $libraryLabels, $typeEnabled, $entityCandidates, $caseCandidates): array {
+            $knowledgeBaseId = 0;
+            if ($typeEnabled('knowledge')) {
+                $knowledgeBase = KnowledgeBase::query()->create([
+                    'name' => $baseName.$libraryLabels['knowledge_suffix'],
+                    'description' => (string) ($analysis['summary'] ?? ''),
+                    'content' => $knowledgeContent,
+                    'character_count' => mb_strlen($knowledgeContent, 'UTF-8'),
+                    'used_task_count' => 0,
+                    'file_type' => 'markdown',
+                    'file_path' => '',
+                    'word_count' => mb_strlen($knowledgeContent, 'UTF-8'),
+                    'usage_count' => 0,
+                ]);
+                $knowledgeBaseId = (int) $knowledgeBase->id;
             }
-            $keywordLibrary->update(['keyword_count' => Keyword::query()->where('library_id', (int) $keywordLibrary->id)->count()]);
 
-            $titleLibrary = TitleLibrary::query()->create([
-                'name' => $baseName.$libraryLabels['title_suffix'],
-                'description' => $libraryLabels['description'],
-                'title_count' => 0,
-                'generation_type' => 'url_import',
-                'generation_rounds' => 1,
-                'is_ai_generated' => 1,
-            ]);
-            foreach ($titles as $index => $title) {
-                Title::query()->firstOrCreate(
-                    ['library_id' => (int) $titleLibrary->id, 'title' => $title],
-                    [
-                        'keyword' => $keywords[$index % max(1, count($keywords))] ?? '',
-                        'is_ai_generated' => true,
-                        'used_count' => 0,
-                        'usage_count' => 0,
-                    ]
-                );
+            $keywordLibraryId = 0;
+            $keywordCount = 0;
+            if ($typeEnabled('keywords') && $keywords !== []) {
+                $keywordLibrary = KeywordLibrary::query()->create([
+                    'name' => $baseName.$libraryLabels['keyword_suffix'],
+                    'description' => $libraryLabels['description'],
+                    'keyword_count' => 0,
+                ]);
+                foreach ($keywords as $keyword) {
+                    Keyword::query()->firstOrCreate(
+                        ['library_id' => (int) $keywordLibrary->id, 'keyword' => $keyword],
+                        ['used_count' => 0, 'usage_count' => 0]
+                    );
+                }
+                $keywordCount = (int) Keyword::query()->where('library_id', (int) $keywordLibrary->id)->count();
+                $keywordLibrary->update(['keyword_count' => $keywordCount]);
+                $keywordLibraryId = (int) $keywordLibrary->id;
             }
-            $titleLibrary->update(['title_count' => Title::query()->where('library_id', (int) $titleLibrary->id)->count()]);
+
+            $titleLibraryId = 0;
+            $titleCount = 0;
+            if ($typeEnabled('titles') && $titles !== []) {
+                $titleLibrary = TitleLibrary::query()->create([
+                    'name' => $baseName.$libraryLabels['title_suffix'],
+                    'description' => $libraryLabels['description'],
+                    'title_count' => 0,
+                    'generation_type' => 'url_import',
+                    'generation_rounds' => 1,
+                    'is_ai_generated' => 1,
+                ]);
+                foreach ($titles as $index => $title) {
+                    Title::query()->firstOrCreate(
+                        ['library_id' => (int) $titleLibrary->id, 'title' => $title],
+                        [
+                            'keyword' => $keywords[$index % max(1, count($keywords))] ?? '',
+                            'is_ai_generated' => true,
+                            'used_count' => 0,
+                            'usage_count' => 0,
+                        ]
+                    );
+                }
+                $titleCount = (int) Title::query()->where('library_id', (int) $titleLibrary->id)->count();
+                $titleLibrary->update(['title_count' => $titleCount]);
+                $titleLibraryId = (int) $titleLibrary->id;
+            }
+
+            $entityCaseSummary = $this->entityExtractionService->persistCandidates([
+                'entities' => $typeEnabled('entities') ? $entityCandidates : [],
+                'cases' => $typeEnabled('cases') ? $caseCandidates : [],
+            ]);
 
             return [
-                'knowledge_base' => (int) $knowledgeBase->id,
-                'keyword_library' => (int) $keywordLibrary->id,
-                'title_library' => (int) $titleLibrary->id,
-                'keywords' => (int) Keyword::query()->where('library_id', (int) $keywordLibrary->id)->count(),
-                'titles' => (int) Title::query()->where('library_id', (int) $titleLibrary->id)->count(),
+                'knowledge_base' => $knowledgeBaseId,
+                'keyword_library' => $keywordLibraryId,
+                'title_library' => $titleLibraryId,
+                'keywords' => $keywordCount,
+                'titles' => $titleCount,
+                'entities' => (int) ($entityCaseSummary['entities'] ?? 0),
+                'cases' => (int) ($entityCaseSummary['cases'] ?? 0),
             ];
         });
 
@@ -427,6 +467,7 @@ final class UrlImportProcessingService
         $libraryName = $this->safeName($title !== '' ? $title : (string) $job->source_domain);
         $language = $this->resolveContentLanguage($parsed, $job);
         $pageJson = $this->buildPageJson($parsed, $job, $language);
+        $outputs = $this->selectedOutputs($job);
 
         $models = $this->assertAnalysisModelsReady();
         $errors = [];
@@ -458,59 +499,99 @@ final class UrlImportProcessingService
                         'chars' => mb_strlen((string) $cleaned['text'], 'UTF-8'),
                     ]));
 
-                    $knowledgePayload = $this->requestAiJson(
-                        $runtime,
-                        $this->buildKnowledgeSystemPrompt($language),
-                        $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [], $language)
-                    );
-                    $aiSummary = $this->normalizeText($this->aiResponseTextToString($knowledgePayload['summary'] ?? $cleaned['summary'] ?? $summary));
-                    $aiLibraryName = $this->safeName($this->aiResponseTextToString($knowledgePayload['library_name'] ?? $cleaned['title'] ?? $libraryName));
-                    $aiKnowledge = trim($this->aiResponseTextToString($knowledgePayload['knowledge_markdown'] ?? ''));
-                    if ($aiKnowledge === '') {
-                        throw new \RuntimeException(__('admin.url_import.error.ai_knowledge_missing'));
+                    $aiSummary = $this->normalizeText($this->aiResponseTextToString($cleaned['summary'] ?? $summary));
+                    $aiLibraryName = $this->safeName($this->aiResponseTextToString($cleaned['title'] ?? $libraryName));
+                    $aiKnowledge = '';
+                    if ($outputs['knowledge']) {
+                        $knowledgePayload = $this->requestAiJson(
+                            $runtime,
+                            $this->buildKnowledgeSystemPrompt($language),
+                            $this->buildKnowledgeUserPrompt($pageJson, $cleaned, [], $language)
+                        );
+                        $aiSummary = $this->normalizeText($this->aiResponseTextToString($knowledgePayload['summary'] ?? $cleaned['summary'] ?? $summary));
+                        $aiLibraryName = $this->safeName($this->aiResponseTextToString($knowledgePayload['library_name'] ?? $cleaned['title'] ?? $libraryName));
+                        $aiKnowledge = trim($this->aiResponseTextToString($knowledgePayload['knowledge_markdown'] ?? ''));
+                        if ($aiKnowledge === '') {
+                            throw new \RuntimeException(__('admin.url_import.error.ai_knowledge_missing'));
+                        }
+                        $this->assertGeneratedLanguage([$aiSummary, $aiLibraryName, $aiKnowledge], $language, 'knowledge');
+                        $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
+                            'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
+                        ]));
+                    } else {
+                        $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
+                            'chars' => 0,
+                        ]));
                     }
-                    $this->assertGeneratedLanguage([$aiSummary, $aiLibraryName, $aiKnowledge], $language, 'knowledge');
-                    $this->log($job, 'info', __('admin.url_import.log.knowledge_done', [
-                        'chars' => mb_strlen($aiKnowledge, 'UTF-8'),
-                    ]));
+
+                    $knowledgeForDerivedAssets = $aiKnowledge !== ''
+                        ? $aiKnowledge
+                        : trim(implode("\n\n", array_filter([
+                            (string) ($cleaned['summary'] ?? ''),
+                            (string) ($cleaned['text'] ?? ''),
+                        ])));
 
                     $this->updateStep($job, 'keywords', 62);
                     $this->log($job, 'info', __('admin.url_import.log.keywords_start'));
-                    $keywordPayload = $this->requestAiJson(
-                        $runtime,
-                        $this->buildKeywordsSystemPrompt($language),
-                        $this->buildKeywordsUserPrompt($pageJson, $cleaned, $aiKnowledge, $language),
-                        'keywords'
-                    );
-                    $keywordValues = $keywordPayload['keywords'] ?? (array_is_list($keywordPayload) ? $keywordPayload : []);
-                    $aiKeywords = array_slice($this->cleanKeywordList($this->stringList($keywordValues)), 0, 10);
-                    if ($aiKeywords === []) {
-                        throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
+                    $aiKeywords = [];
+                    if ($outputs['keywords']) {
+                        $keywordPayload = $this->requestAiJson(
+                            $runtime,
+                            $this->buildKeywordsSystemPrompt($language),
+                            $this->buildKeywordsUserPrompt($pageJson, $cleaned, $knowledgeForDerivedAssets, $language),
+                            'keywords'
+                        );
+                        $keywordValues = $keywordPayload['keywords'] ?? (array_is_list($keywordPayload) ? $keywordPayload : []);
+                        $aiKeywords = array_slice($this->cleanKeywordList($this->stringList($keywordValues)), 0, 10);
+                        if ($aiKeywords === []) {
+                            throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
+                        }
+                        $this->assertGeneratedLanguage($aiKeywords, $language, 'keywords');
                     }
-                    $this->assertGeneratedLanguage($aiKeywords, $language, 'keywords');
                     $this->log($job, 'info', __('admin.url_import.log.keywords_done', ['count' => count($aiKeywords)]));
 
                     $this->updateStep($job, 'titles', 80);
                     $this->log($job, 'info', __('admin.url_import.log.titles_start'));
-                    $titlePayload = $this->requestAiJson(
-                        $runtime,
-                        $this->buildTitlesSystemPrompt($language),
-                        $this->buildTitlesUserPrompt($pageJson, $cleaned, $aiKnowledge, $aiKeywords, $language),
-                        'titles'
-                    );
-                    $titleValues = $titlePayload['titles'] ?? (array_is_list($titlePayload) ? $titlePayload : []);
-                    $aiTitles = array_slice($this->stringList($titleValues), 0, 50);
-                    if ($aiTitles === []) {
-                        throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
+                    $aiTitles = [];
+                    if ($outputs['titles']) {
+                        $titleKeywords = $aiKeywords !== []
+                            ? $aiKeywords
+                            : array_slice($this->cleanKeywordList($this->extractKeywords($knowledgeForDerivedAssets)), 0, 10);
+                        $titlePayload = $this->requestAiJson(
+                            $runtime,
+                            $this->buildTitlesSystemPrompt($language),
+                            $this->buildTitlesUserPrompt($pageJson, $cleaned, $knowledgeForDerivedAssets, $titleKeywords, $language),
+                            'titles'
+                        );
+                        $titleValues = $titlePayload['titles'] ?? (array_is_list($titlePayload) ? $titlePayload : []);
+                        $aiTitles = array_slice($this->stringList($titleValues), 0, 50);
+                        if ($aiTitles === []) {
+                            throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
+                        }
+                        $this->assertGeneratedLanguage($aiTitles, $language, 'titles');
                     }
-                    $this->assertGeneratedLanguage($aiTitles, $language, 'titles');
                     $this->log($job, 'info', __('admin.url_import.log.titles_done', ['count' => count($aiTitles)]));
 
                     $this->log($job, 'info', __('admin.url_import.log.ai_analyze_done', ['model' => $this->modelDisplayName($model)]));
-
-                    return [
+                    $analysisPreview = [
                         'summary' => $aiSummary !== '' ? $aiSummary : Str::limit($text, 220, '...'),
                         'library_name' => $aiLibraryName !== '' ? $aiLibraryName : $libraryName,
+                        'keywords' => $aiKeywords,
+                        'titles' => $aiTitles,
+                        'knowledge_markdown' => $aiKnowledge,
+                        'cleaned' => $cleaned,
+                    ];
+                    $entityExtraction = ($outputs['entities'] || $outputs['cases'])
+                        ? $this->entityExtractionService->extractFromUrlImport($analysisPreview, $pageJson, $job)
+                        : ['entities' => [], 'cases' => []];
+                    $entityExtraction = [
+                        'entities' => $outputs['entities'] ? (array) ($entityExtraction['entities'] ?? []) : [],
+                        'cases' => $outputs['cases'] ? (array) ($entityExtraction['cases'] ?? []) : [],
+                    ];
+
+                    return [
+                        'summary' => $analysisPreview['summary'],
+                        'library_name' => $analysisPreview['library_name'],
                         'keywords' => $aiKeywords,
                         'titles' => $aiTitles,
                         'knowledge_markdown' => $aiKnowledge,
@@ -522,6 +603,7 @@ final class UrlImportProcessingService
                         ],
                         'page_json' => $pageJson,
                         'cleaned' => $cleaned,
+                        'entity_extraction' => $entityExtraction,
                     ];
                 } catch (Throwable $exception) {
                     $message = $this->normalizeAiErrorMessage($exception, $model);
@@ -550,6 +632,26 @@ final class UrlImportProcessingService
                 'messages' => implode('；', $errors),
             ]),
         ]));
+    }
+
+    /**
+     * @return array{knowledge:bool,keywords:bool,titles:bool,entities:bool,cases:bool}
+     */
+    private function selectedOutputs(UrlImportJob $job): array
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $outputs = $options['outputs'] ?? ['knowledge', 'keywords', 'titles', 'entities', 'cases'];
+        $outputs = is_array($outputs) ? $outputs : [];
+        $lookup = array_fill_keys(array_map('strval', $outputs), true);
+
+        return [
+            'knowledge' => isset($lookup['knowledge']),
+            'keywords' => isset($lookup['keywords']),
+            'titles' => isset($lookup['titles']),
+            'entities' => isset($lookup['entities']),
+            'cases' => isset($lookup['cases']),
+        ];
     }
 
     /**
@@ -1534,6 +1636,26 @@ PROMPT."\n\n".$this->languageDirective($language);
             ->map(fn (mixed $item): string => $this->aiResponseTextToString($item))
             ->filter(static fn (string $item): bool => $item !== '')
             ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @template T
+     * @param  list<T>  $items
+     * @param  list<int>  $indices
+     * @return list<T>
+     */
+    private function filterBySelectedIndices(array $items, array $indices): array
+    {
+        if ($indices === []) {
+            return $items;
+        }
+
+        $selected = array_fill_keys($indices, true);
+
+        return Collection::make($items)
+            ->filter(static fn (mixed $item, int $index): bool => isset($selected[$index]))
             ->values()
             ->all();
     }

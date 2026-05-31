@@ -66,6 +66,90 @@
                         </div>
                     </div>
 
+                    @if($isEdit)
+                        @php
+                            $quality = is_array($qualityReport ?? null) ? $qualityReport : [];
+                            $qualityScore = (int) ($quality['score'] ?? 0);
+                            $qualityStatus = (string) ($quality['status'] ?? 'poor');
+                            $qualityTone = match($qualityStatus) {
+                                'good' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                                'warning' => 'bg-amber-50 text-amber-700 ring-amber-100',
+                                default => 'bg-red-50 text-red-700 ring-red-100',
+                            };
+                            $qualityItems = collect($quality['items'] ?? [])->filter(fn ($item) => is_array($item))->values();
+                            $qualityIssues = collect($quality['issues'] ?? [])->filter(fn ($issue) => is_array($issue))->values()->groupBy(fn ($issue) => (string) ($issue['key'] ?? 'structure'));
+                        @endphp
+                        @if($quality !== [])
+                            <div class="bg-white shadow rounded-lg">
+                                <div class="px-6 py-4 border-b border-gray-200">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h3 class="text-lg font-medium text-gray-900">{{ __('admin.article_edit.quality.title') }}</h3>
+                                            <p class="mt-1 text-xs text-gray-500">{{ __('admin.article_edit.quality.subtitle') }}</p>
+                                        </div>
+                                        <span class="inline-flex shrink-0 items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 {{ $qualityTone }}">
+                                            {{ __('admin.articles.quality.score_label', ['score' => $qualityScore, 'grade' => (string) ($quality['grade'] ?? '-')]) }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="px-6 py-4 space-y-5 text-sm">
+                                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                        <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                                            <div class="text-xs font-medium text-gray-400">{{ __('admin.article_edit.info.article_id') }}</div>
+                                            <div class="mt-1 font-semibold text-gray-900">#{{ (int) $articleId }}</div>
+                                        </div>
+                                        <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                                            <div class="text-xs font-medium text-gray-400">{{ __('admin.article_edit.info.slug') }}</div>
+                                            <div class="mt-1 truncate font-semibold text-gray-900">{{ $formData['slug'] !== '' ? $formData['slug'] : '-' }}</div>
+                                        </div>
+                                        <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                                            <div class="text-xs font-medium text-gray-400">{{ __('admin.article_edit.info.published_at') }}</div>
+                                            <div class="mt-1 font-semibold text-gray-900">{{ $formData['published_at'] !== '' ? $formData['published_at'] : '-' }}</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        @foreach($qualityItems as $item)
+                                            @php
+                                                $itemKey = (string) ($item['key'] ?? 'structure');
+                                                $itemStatus = (string) ($item['status'] ?? 'warning');
+                                                $itemTone = match($itemStatus) {
+                                                    'passed' => 'bg-emerald-50 text-emerald-700',
+                                                    'warning' => 'bg-amber-50 text-amber-700',
+                                                    default => 'bg-red-50 text-red-700',
+                                                };
+                                                $itemIssues = $qualityIssues->get($itemKey, collect());
+                                            @endphp
+                                            <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <div class="font-medium text-gray-800">{{ __('admin.articles.quality.items.'.$itemKey) }}</div>
+                                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $itemTone }}">
+                                                        {{ (int) ($item['score'] ?? 0) }}/{{ (int) ($item['max'] ?? 0) }}
+                                                    </span>
+                                                </div>
+                                                <div class="mt-1 text-xs text-gray-500">{{ __('admin.articles.quality.status.'.(string) ($item['status'] ?? 'warning')) }} · {{ (string) ($item['detail'] ?? '') }}</div>
+                                                @if($itemIssues->isNotEmpty())
+                                                    <div class="mt-3 space-y-2">
+                                                        @foreach($itemIssues as $issue)
+                                                            <div class="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                                                                {{ __((string) ($issue['message_key'] ?? 'admin.articles.quality.suggestions.structure')) }}
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                    @if($qualityIssues->flatten(1)->isEmpty())
+                                        <div class="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                                            {{ __('admin.article_edit.quality.no_issues') }}
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
+                    @endif
+
                     <div class="bg-white shadow rounded-lg">
                         <div class="px-6 py-4 border-b border-gray-200">
                             <div class="flex items-center justify-between">
@@ -86,6 +170,168 @@
                             </div>
                         </div>
                     </div>
+
+                    @if($isEdit)
+                        @php
+                            $trace = is_array($generationTrace ?? null) ? $generationTrace : [];
+                            $traceRun = is_array($trace['_run'] ?? null) ? $trace['_run'] : [];
+                            $traceTask = is_array($trace['task'] ?? null) ? $trace['task'] : [];
+                            $traceTitle = is_array($trace['title'] ?? null) ? $trace['title'] : [];
+                            $traceModel = is_array($trace['model'] ?? null) ? $trace['model'] : [];
+                            $traceKnowledge = is_array($trace['knowledge'] ?? null) ? $trace['knowledge'] : [];
+                            $tracePrompt = is_array($trace['prompt'] ?? null) ? $trace['prompt'] : null;
+                            $traceAuthor = is_array($trace['author'] ?? null) ? $trace['author'] : null;
+                            $traceCategory = is_array($trace['category'] ?? null) ? $trace['category'] : null;
+                            $traceImages = collect($trace['images'] ?? [])->filter(fn ($image) => is_array($image))->values();
+                            $traceChunks = collect($traceKnowledge['chunks'] ?? [])->filter(fn ($chunk) => is_array($chunk))->values();
+                            $traceEntities = collect($traceKnowledge['entities'] ?? [])->filter(fn ($entity) => is_array($entity))->values();
+                            $traceCases = collect($traceKnowledge['cases'] ?? [])->filter(fn ($case) => is_array($case))->values();
+                            $traceTags = collect($traceKnowledge['tag_filters'] ?? [])->map(fn ($tag) => trim((string) $tag))->filter()->values();
+                            $tracePipeline = collect($trace['pipeline'] ?? [])->filter(fn ($step) => is_array($step))->values();
+                        @endphp
+                        <div class="bg-white shadow rounded-lg">
+                            <div class="px-6 py-4 border-b border-gray-200">
+                                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.article_edit.generation_trace.title') }}</h3>
+                                <p class="mt-1 text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.subtitle') }}</p>
+                            </div>
+                            <div class="px-6 py-4 text-sm text-gray-600 space-y-4">
+                                @if($trace === [])
+                                    <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600">
+                                        {{ __('admin.article_edit.generation_trace.empty') }}
+                                    </div>
+                                @else
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <div class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ __('admin.article_edit.generation_trace.run') }}</div>
+                                            <div class="mt-1 text-gray-900">#{{ (int) ($traceRun['id'] ?? 0) }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ __('admin.article_edit.generation_trace.duration') }}</div>
+                                            <div class="mt-1 text-gray-900">{{ (int) ($traceRun['duration_ms'] ?? 0) }} ms</div>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                <div class="space-y-1">
+                                    <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.task') }}:</span> {{ (string) ($traceTask['name'] ?? $formData['task_name'] ?: __('admin.article_edit.info.manual_source')) }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.title_source') }}:</span> {{ (string) ($traceTitle['text'] ?? '-') }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.keyword') }}:</span> {{ (string) ($traceTitle['keyword'] ?? '-') }}</div>
+                                    <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.model') }}:</span> {{ (string) ($traceModel['name'] ?? '-') }}</div>
+                                    @if($tracePrompt)
+                                        <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.prompt') }}:</span> {{ (string) ($tracePrompt['name'] ?? '-') }}</div>
+                                    @endif
+                                    @if($traceAuthor)
+                                        <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.author') }}:</span> {{ (string) ($traceAuthor['name'] ?? '-') }}</div>
+                                    @endif
+                                    @if($traceCategory)
+                                        <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.category') }}:</span> {{ (string) ($traceCategory['name'] ?? '-') }}</div>
+                                    @endif
+                                </div>
+
+                                    @if($tracePipeline->isNotEmpty())
+                                        <div class="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                                            <div class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.pipeline') }}</div>
+                                            <div class="mt-3 space-y-3">
+                                                @foreach($tracePipeline as $index => $step)
+                                                    @php
+                                                        $stepName = (string) ($step['name'] ?? '');
+                                                        $stepStatus = (string) ($step['status'] ?? 'completed');
+                                                        $stepMeta = is_array($step['meta'] ?? null) ? $step['meta'] : [];
+                                                        $stepLabelKey = 'admin.article_edit.generation_trace.pipeline_steps.'.$stepName;
+                                                        $stepLabel = __($stepLabelKey);
+                                                        if ($stepLabel === $stepLabelKey) {
+                                                            $stepLabel = str($stepName)->replace('_', ' ')->title()->toString();
+                                                        }
+                                                        $statusKey = 'admin.article_edit.generation_trace.pipeline_status.'.$stepStatus;
+                                                        $statusLabel = __($statusKey);
+                                                        if ($statusLabel === $statusKey) {
+                                                            $statusLabel = str($stepStatus)->replace('_', ' ')->title()->toString();
+                                                        }
+                                                        $summaryParts = [];
+                                                        foreach (['title', 'keyword', 'knowledge_strategy', 'context_length', 'image_count', 'word_count', 'attempts'] as $metaKey) {
+                                                            if (array_key_exists($metaKey, $stepMeta) && $stepMeta[$metaKey] !== null && $stepMeta[$metaKey] !== '') {
+                                                                $summaryKey = 'admin.article_edit.generation_trace.pipeline_meta.'.$metaKey;
+                                                                $summaryLabel = __($summaryKey);
+                                                                if ($summaryLabel === $summaryKey) {
+                                                                    $summaryLabel = str($metaKey)->replace('_', ' ')->title()->toString();
+                                                                }
+                                                                $summaryParts[] = $summaryLabel.': '.(string) $stepMeta[$metaKey];
+                                                            }
+                                                        }
+                                                    @endphp
+                                                    <div class="flex gap-3">
+                                                        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full {{ $stepStatus === 'completed' ? 'bg-blue-600 text-white' : 'bg-amber-100 text-amber-700' }} text-xs font-semibold">{{ $index + 1 }}</div>
+                                                        <div class="min-w-0 flex-1">
+                                                            <div class="flex flex-wrap items-center gap-2">
+                                                                <span class="font-medium text-gray-900">{{ $stepLabel }}</span>
+                                                                <span class="rounded-full {{ $stepStatus === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }} px-2 py-0.5 text-[11px] font-semibold">{{ $statusLabel }}</span>
+                                                            </div>
+                                                            @if($summaryParts !== [])
+                                                                <div class="mt-1 text-xs leading-5 text-gray-500">{{ implode(' · ', $summaryParts) }}</div>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    @if($traceTags->isNotEmpty())
+                                        <div>
+                                            <div class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.tag_filters') }}</div>
+                                            <div class="mt-2 flex flex-wrap gap-1.5">
+                                                @foreach($traceTags as $tag)
+                                                    <span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{{ $tag }}</span>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    @if($traceKnowledge !== [] || $traceChunks->isNotEmpty())
+                                    <div class="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.knowledge') }}</span>
+                                            <span class="text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.context_length', ['count' => (int) ($traceKnowledge['context_length'] ?? 0)]) }}</span>
+                                        </div>
+                                        <div class="mt-2 text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.strategy') }}: {{ (string) ($traceKnowledge['strategy'] ?? 'none') }}</div>
+                                        @if($traceChunks->isNotEmpty())
+                                            <div class="mt-3 space-y-2">
+                                                @foreach($traceChunks->take(5) as $chunk)
+                                                    <div class="rounded border border-gray-200 bg-white p-2">
+                                                        <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                        <div class="mt-1 line-clamp-2 text-xs text-gray-500">{{ (string) ($chunk['preview'] ?? '') }}</div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                    @endif
+
+                                    @if($traceEntities->isNotEmpty() || $traceCases->isNotEmpty())
+                                        <div class="space-y-2">
+                                            <div class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.entity_case') }}</div>
+                                            @foreach($traceEntities->take(4) as $entity)
+                                                <div class="text-xs text-gray-600">Entity: {{ (string) ($entity['name'] ?? '-') }}</div>
+                                            @endforeach
+                                            @foreach($traceCases->take(4) as $case)
+                                                <div class="text-xs text-gray-600">Case: {{ (string) ($case['title'] ?? '-') }}</div>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
+                                    @if($traceImages->isNotEmpty())
+                                        <div>
+                                            <div class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.images') }}</div>
+                                            <div class="mt-2 space-y-1">
+                                                @foreach($traceImages as $image)
+                                                    <div class="truncate text-xs text-gray-600">#{{ (int) ($image['id'] ?? 0) }} {{ (string) ($image['original_name'] ?? $image['filename'] ?? '') }}</div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
+                            </div>
+                        </div>
+                    @endif
 
                     <div class="bg-white shadow rounded-lg">
                         <div class="px-6 py-4 border-b border-gray-200">
@@ -176,20 +422,6 @@
                             </div>
                         </div>
                     </div>
-
-                    @if($isEdit)
-                        <div class="bg-white shadow rounded-lg">
-                            <div class="px-6 py-4 border-b border-gray-200">
-                                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.article_edit.section.info_title') }}</h3>
-                            </div>
-                            <div class="px-6 py-4 text-sm text-gray-600 space-y-2">
-                                <div>{{ __('admin.article_edit.info.article_id') }}: #{{ (int) $articleId }}</div>
-                                <div>{{ __('admin.article_edit.info.slug') }}: {{ $formData['slug'] }}</div>
-                                <div>{{ __('admin.article_edit.info.source_task') }}: {{ $formData['task_name'] !== '' ? $formData['task_name'] : __('admin.article_edit.info.manual_source') }}</div>
-                                <div>{{ __('admin.article_edit.info.published_at') }}: {{ $formData['published_at'] !== '' ? $formData['published_at'] : '-' }}</div>
-                            </div>
-                        </div>
-                    @endif
 
                     <div class="flex items-center justify-end space-x-3">
                         <a href="{{ route('admin.articles.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">

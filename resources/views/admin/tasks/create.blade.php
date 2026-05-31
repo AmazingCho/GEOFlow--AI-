@@ -21,6 +21,16 @@
     $selectedKnowledgeTagFilters = collect($selectedKnowledgeTagFilters)
         ->map(static fn ($value): string => (string) $value)
         ->all();
+    $storedIndustryTagFilter = (string) ($taskForm['industry_tag_filter'] ?? '');
+    $selectedIndustryTagFilters = old('industry_tag_filters', null);
+    if (! is_array($selectedIndustryTagFilters)) {
+        $selectedIndustryTagFilters = $storedIndustryTagFilter !== ''
+            ? preg_split('/\s*,\s*/u', $storedIndustryTagFilter, -1, PREG_SPLIT_NO_EMPTY)
+            : [];
+    }
+    $selectedIndustryTagFilters = collect($selectedIndustryTagFilters)
+        ->map(static fn ($value): string => (string) $value)
+        ->all();
     $storedImageTagFilter = (string) ($taskForm['image_tag_filter'] ?? '');
     $selectedImageTagFilters = old('image_tag_filters', null);
     if (! is_array($selectedImageTagFilters)) {
@@ -84,7 +94,7 @@
                                 <select name="title_library_id" id="title_library_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">{{ $t('task_create.option.select_title_library') }}</option>
                                     @foreach ($formOptions['titleLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" @selected((string) old('title_library_id', (string) ($taskForm['title_library_id'] ?? '')) === (string) $library['id'])>
+                                        <option value="{{ $library['id'] }}" data-industry-tags="{{ implode('|', $library['industry_tags'] ?? []) }}" @selected((string) old('title_library_id', (string) ($taskForm['title_library_id'] ?? '')) === (string) $library['id'])>
                                             {{ $t('task_create.option.library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
                                         </option>
                                     @endforeach
@@ -96,6 +106,23 @@
                                     <option value="active" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'active')>{{ $t('task_create.option.status_active') }}</option>
                                     <option value="paused" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'paused')>{{ $t('task_create.option.status_paused') }}</option>
                                 </select>
+                            </div>
+                            <div class="lg:col-span-3">
+                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.industry_tags') }}</label>
+                                <input type="hidden" name="industry_tag_filter_present" value="1">
+                                <div class="mt-1">
+                                    @include('admin.partials.tag-label-selector', [
+                                        'name' => 'industry_tag_filters',
+                                        'tagOptions' => $formOptions['industryTags'],
+                                        'selectedLabels' => $selectedIndustryTagFilters,
+                                        'countLabelKey' => 'admin.task_create.option.industry_tag_count',
+                                        'searchScope' => 'industry',
+                                        'emptyText' => $t('task_create.option.no_industry_tags'),
+                                        'placeholder' => $t('task_create.placeholder.industry_tags'),
+                                        'tone' => 'orange',
+                                    ])
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.industry_tags') }}</p>
                             </div>
                         </div>
                     </div>
@@ -139,7 +166,7 @@
                                 <select name="knowledge_base_id" id="knowledge_base_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">{{ $t('task_create.option.no_knowledge_base') }}</option>
                                     @foreach ($formOptions['knowledgeBases'] as $kb)
-                                        <option value="{{ $kb['id'] }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
+                                        <option value="{{ $kb['id'] }}" data-industry-tags="{{ implode('|', $kb['industry_tags'] ?? []) }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
                                     @endforeach
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_base') !!}</p>
@@ -147,21 +174,18 @@
                             <div class="lg:col-span-2">
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_tags') }}</label>
                                 <input type="hidden" name="knowledge_tag_filter_present" value="1">
-                                @if (empty($formOptions['knowledgeTags']))
-                                    <div class="mt-1 rounded-md border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500">
-                                        {{ $t('task_create.option.no_knowledge_tags') }}
-                                    </div>
-                                @else
-                                    <div class="mt-1">
-                                        @include('admin.partials.tag-label-selector', [
-                                            'name' => 'knowledge_tag_filters',
-                                            'tagOptions' => $formOptions['knowledgeTags'],
-                                            'selectedLabels' => $selectedKnowledgeTagFilters,
-                                            'countLabelKey' => 'admin.task_create.option.knowledge_tag_count',
-                                            'tone' => 'blue',
-                                        ])
-                                    </div>
-                                @endif
+                                <div class="mt-1">
+                                    @include('admin.partials.tag-label-selector', [
+                                        'name' => 'knowledge_tag_filters',
+                                        'tagOptions' => $formOptions['knowledgeTags'],
+                                        'selectedLabels' => $selectedKnowledgeTagFilters,
+                                        'countLabelKey' => 'admin.task_create.option.knowledge_tag_count',
+                                        'searchScope' => 'knowledge',
+                                        'industrySourceSelector' => 'input[name="industry_tag_filters[]"]',
+                                        'emptyText' => $t('task_create.option.no_knowledge_tags'),
+                                        'tone' => 'blue',
+                                    ])
+                                </div>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_tags') !!}</p>
                             </div>
                             <div>
@@ -190,7 +214,7 @@
                                 <select name="image_library_id" id="image_library_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">{{ $t('task_create.option.no_images') }}</option>
                                     @foreach ($formOptions['imageLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" @selected((string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) === (string) $library['id'])>
+                                        <option value="{{ $library['id'] }}" data-industry-tags="{{ implode('|', $library['industry_tags'] ?? []) }}" @selected((string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) === (string) $library['id'])>
                                             {{ $t('task_create.option.image_library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
                                         </option>
                                     @endforeach
@@ -211,21 +235,18 @@
                             <div class="md:col-span-2" data-image-tag-filter-section>
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_tags') }}</label>
                                 <input type="hidden" name="image_tag_filter_present" value="1">
-                                @if (empty($formOptions['imageTags']))
-                                    <div class="mt-1 rounded-md border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500">
-                                        {{ $t('task_create.option.no_image_tags') }}
-                                    </div>
-                                @else
-                                    <div class="mt-1">
-                                        @include('admin.partials.tag-label-selector', [
-                                            'name' => 'image_tag_filters',
-                                            'tagOptions' => $formOptions['imageTags'],
-                                            'selectedLabels' => $selectedImageTagFilters,
-                                            'countLabelKey' => 'admin.task_create.option.image_tag_count',
-                                            'tone' => 'purple',
-                                        ])
-                                    </div>
-                                @endif
+                                <div class="mt-1">
+                                    @include('admin.partials.tag-label-selector', [
+                                        'name' => 'image_tag_filters',
+                                        'tagOptions' => $formOptions['imageTags'],
+                                        'selectedLabels' => $selectedImageTagFilters,
+                                        'countLabelKey' => 'admin.task_create.option.image_tag_count',
+                                        'searchScope' => 'images',
+                                        'industrySourceSelector' => 'input[name="industry_tag_filters[]"]',
+                                        'emptyText' => $t('task_create.option.no_image_tags'),
+                                        'tone' => 'purple',
+                                    ])
+                                </div>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.image_tags') !!}</p>
                             </div>
                         </div>
@@ -469,6 +490,8 @@
             }
 
             const imageLibrarySelect = document.getElementById('image_library_id');
+            const titleLibrarySelect = document.getElementById('title_library_id');
+            const knowledgeBaseSelect = document.getElementById('knowledge_base_id');
             const imageCountSelect = document.getElementById('image_count');
             const needReviewCheckbox = document.getElementById('need_review');
             const publishIntervalInput = document.getElementById('publish_interval');
@@ -555,11 +578,66 @@
                 });
             }
 
+            function selectedIndustryLabels() {
+                return Array.from(document.querySelectorAll('input[name="industry_tag_filters[]"]'))
+                    .map((input) => input.value.trim())
+                    .filter((value, index, values) => value !== '' && values.indexOf(value) === index);
+            }
+
+            function optionMatchesIndustry(option, selectedLabels) {
+                if (!option.value || selectedLabels.length === 0) {
+                    return true;
+                }
+
+                const optionLabels = (option.getAttribute('data-industry-tags') || '')
+                    .split('|')
+                    .map((value) => value.trim())
+                    .filter(Boolean);
+
+                return optionLabels.some((label) => selectedLabels.includes(label));
+            }
+
+            function filterSelectByIndustry(select) {
+                if (!select) {
+                    return;
+                }
+
+                const selectedLabels = selectedIndustryLabels();
+                let selectedOptionStillVisible = false;
+
+                Array.from(select.options).forEach((option) => {
+                    const visible = optionMatchesIndustry(option, selectedLabels);
+                    option.hidden = !visible;
+                    option.disabled = !visible;
+                    if (option.selected && visible) {
+                        selectedOptionStillVisible = true;
+                    }
+                });
+
+                if (!selectedOptionStillVisible) {
+                    select.value = '';
+                    select.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }
+
+            function syncMaterialSelectorsByIndustry() {
+                filterSelectByIndustry(titleLibrarySelect);
+                filterSelectByIndustry(knowledgeBaseSelect);
+                filterSelectByIndustry(imageLibrarySelect);
+                toggleImageCountByLibrary();
+            }
+
             imageLibrarySelect.addEventListener('change', toggleImageCountByLibrary);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));
             publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
+            document.addEventListener('geoflow:tag-label-selection-changed', function (event) {
+                const selector = event.detail?.selector;
+                if (selector && selector.getAttribute('data-field-name') === 'industry_tag_filters') {
+                    syncMaterialSelectorsByIndustry();
+                }
+            });
 
             form.addEventListener('submit', function (event) {
                 if (!document.getElementById('task_name').value.trim()) {
@@ -602,6 +680,7 @@
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
+            syncMaterialSelectorsByIndustry();
         });
     </script>
 @endpush

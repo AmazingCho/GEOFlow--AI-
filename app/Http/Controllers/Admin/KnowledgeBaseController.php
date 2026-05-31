@@ -3,17 +3,19 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncKnowledgeBaseChunksJob;
 use App\Models\AiModel;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
 use App\Models\Task;
-use App\Services\GeoFlow\KnowledgeChunkSyncService;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -28,8 +30,8 @@ use Illuminate\View\View;
 class KnowledgeBaseController extends Controller
 {
     public function __construct(
-        private readonly KnowledgeChunkSyncService $chunkSyncService,
         private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService,
     ) {}
 
     /**
@@ -38,16 +40,17 @@ class KnowledgeBaseController extends Controller
     public function index(Request $request): View
     {
         $tagFilter = trim((string) $request->query('tag', ''));
+        $search = trim((string) $request->query('search', ''));
 
         return view('admin.knowledge-bases.index', [
             'pageTitle' => __('admin.knowledge_bases.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
-            'knowledgeBases' => $this->loadKnowledgeBases($tagFilter),
+            'knowledgeBases' => $this->loadKnowledgeBases($tagFilter, $search),
             'stats' => $this->loadStats(),
             'hasDefaultEmbeddingModel' => $this->hasDefaultEmbeddingModel(),
+            'search' => $search,
             'tagFilter' => $tagFilter,
-            'tagOptions' => $this->tagService->existingTagOptions(),
         ]);
     }
 
@@ -65,7 +68,8 @@ class KnowledgeBaseController extends Controller
             'knowledgeForm' => $this->emptyForm(),
             'tagsText' => '',
             'selectedTagIds' => [],
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'tagOptions' => [],
+            'recommendedTags' => [],
         ]);
     }
 
@@ -75,6 +79,7 @@ class KnowledgeBaseController extends Controller
     public function detail(int $knowledgeBaseId): View|RedirectResponse
     {
         $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $selectedTagIds = $this->tagService->selectedTagIdsFor($knowledgeBase);
 
         return view('admin.knowledge-bases.detail', [
             'pageTitle' => __('admin.knowledge_detail.page_title'),
@@ -82,8 +87,9 @@ class KnowledgeBaseController extends Controller
             'adminSiteName' => AdminWeb::siteName(),
             'knowledgeBase' => $knowledgeBase,
             'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
-            'selectedTagIds' => $this->tagService->selectedTagIdsFor($knowledgeBase),
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'selectedTagIds' => $selectedTagIds,
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->knowledgeRecommendationText($knowledgeBase), $selectedTagIds),
             'relatedTasks' => $this->loadRelatedTasks($knowledgeBaseId),
             'chunkStats' => $this->loadChunkStats($knowledgeBaseId),
             'chunkPreviewRows' => $this->loadChunkPreviewRows($knowledgeBaseId),
@@ -154,6 +160,7 @@ class KnowledgeBaseController extends Controller
     public function edit(int $knowledgeBaseId): View|RedirectResponse
     {
         $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
+        $selectedTagIds = $this->tagService->selectedTagIdsFor($knowledgeBase);
 
         return view('admin.knowledge-bases.form', [
             'pageTitle' => __('admin.knowledge_bases.page_title'),
@@ -169,8 +176,9 @@ class KnowledgeBaseController extends Controller
             ],
             'chunkCount' => (int) $knowledgeBase->chunks()->count(),
             'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
-            'selectedTagIds' => $this->tagService->selectedTagIdsFor($knowledgeBase),
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'selectedTagIds' => $selectedTagIds,
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->knowledgeRecommendationText($knowledgeBase), $selectedTagIds),
         ]);
     }
 
@@ -236,26 +244,18 @@ class KnowledgeBaseController extends Controller
                 ->withErrors(__('admin.knowledge_bases.error.content_required'));
         }
 
-        try {
-            $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content, true);
-            $stats = $this->loadChunkStats((int) $knowledgeBase->id);
-            $vectorizedCount = (int) ($stats['vectorized_count'] ?? 0);
+        if (! $this->hasDefaultEmbeddingModel()) {
+            return redirect()
+                ->route('admin.knowledge-bases.index')
+                ->withErrors(__('admin.knowledge_bases.error.embedding_required'));
+        }
 
-            if ($chunkCount > 0 && $vectorizedCount < $chunkCount) {
-                return redirect()
-                    ->route('admin.knowledge-bases.index')
-                    ->withErrors(__('admin.knowledge_bases.error.embedding_sync_partial', [
-                        'chunks' => $chunkCount,
-                        'vectorized' => $vectorizedCount,
-                    ]));
-            }
+        try {
+            SyncKnowledgeBaseChunksJob::dispatch((int) $knowledgeBase->id, true)->onQueue('geoflow');
 
             return redirect()
                 ->route('admin.knowledge-bases.index')
-                ->with('message', __('admin.knowledge_bases.message.chunks_refreshed', [
-                    'chunks' => $chunkCount,
-                    'vectorized' => $vectorizedCount,
-                ]));
+                ->with('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -282,9 +282,9 @@ class KnowledgeBaseController extends Controller
     }
 
     /**
-     * @return array<int, array<string,mixed>>
+     * @return LengthAwarePaginator<int, array<string,mixed>>
      */
-    private function loadKnowledgeBases(string $tagFilter): array
+    private function loadKnowledgeBases(string $tagFilter, string $search): LengthAwarePaginator
     {
         $query = KnowledgeBase::query()
             ->select(['id', 'name', 'description', 'file_type', 'word_count', 'usage_count', 'created_at', 'updated_at'])
@@ -296,9 +296,18 @@ class KnowledgeBaseController extends Controller
                     ->where('embedding_dimensions', '>', 0),
             ])
             ->orderByDesc('created_at');
+
+        if ($search !== '') {
+            $query->where(function ($builder) use ($search): void {
+                $builder
+                    ->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('description', 'like', '%'.$search.'%');
+            });
+        }
+
         $this->tagService->applyFilter($query, $tagFilter);
 
-        return $query->get()->map(static function (KnowledgeBase $knowledgeBase): array {
+        return $query->paginate(20)->withQueryString()->through(static function (KnowledgeBase $knowledgeBase): array {
             return [
                 'id' => (int) $knowledgeBase->id,
                 'name' => (string) $knowledgeBase->name,
@@ -316,7 +325,7 @@ class KnowledgeBaseController extends Controller
                 'created_at' => $knowledgeBase->created_at?->format('Y-m-d H:i:s'),
                 'updated_at' => $knowledgeBase->updated_at?->format('Y-m-d H:i:s'),
             ];
-        })->all();
+        });
     }
 
     /**
@@ -505,11 +514,11 @@ class KnowledgeBaseController extends Controller
     private function redirectAfterChunkSync(KnowledgeBase $knowledgeBase, string $content, string $routeName, array $routeParameters, string $successMessageKey): RedirectResponse
     {
         try {
-            $chunkCount = $this->chunkSyncService->sync((int) $knowledgeBase->id, $content);
+            SyncKnowledgeBaseChunksJob::dispatch((int) $knowledgeBase->id, false)->onQueue('geoflow');
 
             return redirect()
                 ->route($routeName, $routeParameters)
-                ->with('message', __('admin.knowledge_bases.message.'.$successMessageKey, ['count' => $chunkCount]));
+                ->with('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
         } catch (\Throwable $exception) {
             return redirect()
                 ->route($routeName, $routeParameters)
@@ -537,6 +546,15 @@ class KnowledgeBaseController extends Controller
     private function requestHasTagSelection(Request $request): bool
     {
         return $request->has('tag_ids') || $request->has('tag_ids_present');
+    }
+
+    private function knowledgeRecommendationText(KnowledgeBase $knowledgeBase): string
+    {
+        return implode(' ', [
+            (string) $knowledgeBase->name,
+            (string) ($knowledgeBase->description ?? ''),
+            mb_substr((string) ($knowledgeBase->content ?? ''), 0, 4000, 'UTF-8'),
+        ]);
     }
 
     /**

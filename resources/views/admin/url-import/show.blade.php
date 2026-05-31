@@ -6,6 +6,9 @@
     $import = data_get($result, 'import', []);
     $keywords = array_values(array_filter((array) data_get($analysis, 'keywords', [])));
     $titles = array_values(array_filter((array) data_get($analysis, 'titles', [])));
+    $entityCandidates = array_values(array_filter((array) data_get($analysis, 'entity_extraction.entities', [])));
+    $caseCandidates = array_values(array_filter((array) data_get($analysis, 'entity_extraction.cases', [])));
+    $knowledgeMarkdown = trim((string) data_get($analysis, 'knowledge_markdown', ''));
     $rawJson = data_get($analysis, 'page_json') ?: data_get($page, 'raw_json', []);
     $importStatus = (string) data_get($import, 'status', 'preview');
     $steps = [
@@ -187,7 +190,7 @@
                             @endif
                         </div>
                         @if ($job->status === 'completed' && $importStatus !== 'imported')
-                            <form method="POST" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}">
+                            <form method="POST" id="url-import-commit-form" action="{{ route('admin.url-import.commit', ['jobId' => $job->id]) }}">
                                 @csrf
                                 <button type="submit" class="inline-flex min-h-11 items-center rounded-xl border border-transparent bg-green-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
                                     <i data-lucide="database" class="w-4 h-4 mr-2"></i>
@@ -217,21 +220,41 @@
                     </div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="rounded-xl border border-gray-200 p-5">
-                            <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.keywords') }}</h4>
+                        <div class="rounded-xl border border-gray-200 p-5" data-select-card>
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.keywords') }}</h4>
+                                <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+                                    <input type="checkbox" data-select-card-all checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    全选
+                                </label>
+                            </div>
                             <div class="mt-4 flex flex-wrap gap-2">
-                                @forelse (array_slice($keywords, 0, 40) as $keyword)
-                                    <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ $keyword }}</span>
+                                @forelse (array_slice($keywords, 0, 40) as $index => $keyword)
+                                    <label class="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                                        <input type="checkbox" form="url-import-commit-form" name="selected[keywords][]" value="{{ $index }}" checked class="rounded border-blue-200 text-blue-600 focus:ring-blue-500">
+                                        {{ $keyword }}
+                                    </label>
                                 @empty
                                     <span class="text-sm text-gray-500">{{ __('admin.common.none') }}</span>
                                 @endforelse
                             </div>
                         </div>
-                        <div class="rounded-xl border border-gray-200 p-5">
-                            <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.titles') }}</h4>
+                        <div class="rounded-xl border border-gray-200 p-5" data-select-card>
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.titles') }}</h4>
+                                <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+                                    <input type="checkbox" data-select-card-all checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    全选
+                                </label>
+                            </div>
                             <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-700">
-                                @forelse (array_slice($titles, 0, 12) as $title)
-                                    <li>{{ $title }}</li>
+                                @forelse (array_slice($titles, 0, 12) as $index => $title)
+                                    <li>
+                                        <label class="inline-flex items-start gap-2">
+                                            <input type="checkbox" form="url-import-commit-form" name="selected[titles][]" value="{{ $index }}" checked class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                            <span>{{ $title }}</span>
+                                        </label>
+                                    </li>
                                 @empty
                                     <li class="list-none text-gray-500">{{ __('admin.common.none') }}</li>
                                 @endforelse
@@ -239,10 +262,73 @@
                         </div>
                     </div>
 
-                    <div class="rounded-xl border border-gray-200 p-5">
-                        <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.knowledge') }}</h4>
-                        <pre class="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-700">{{ data_get($analysis, 'knowledge_markdown', __('admin.url_import.preview.empty_knowledge')) }}</pre>
-                    </div>
+	                    <div class="rounded-xl border border-gray-200 p-5" data-select-card>
+	                        <div class="flex items-center justify-between gap-3">
+	                            <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.knowledge') }}</h4>
+	                            @if ($knowledgeMarkdown !== '')
+	                                <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+	                                    <input type="checkbox" data-select-card-all form="url-import-commit-form" name="selected[knowledge][]" value="0" checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+	                                    保存入库
+	                                </label>
+	                            @endif
+	                        </div>
+	                        <pre class="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-700">{{ $knowledgeMarkdown !== '' ? $knowledgeMarkdown : __('admin.url_import.preview.empty_knowledge') }}</pre>
+	                    </div>
+
+                    @if ($entityCandidates !== [] || $caseCandidates !== [])
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="rounded-xl border border-gray-200 p-5" data-select-card>
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.entities') }}</h4>
+                                    <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+                                        <input type="checkbox" data-select-card-all checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                        全选
+                                    </label>
+                                </div>
+                                <div class="mt-4 space-y-3">
+                                    @forelse (array_slice($entityCandidates, 0, 8) as $index => $entity)
+                                        <label class="flex gap-3 rounded-lg bg-blue-50 px-3 py-2">
+                                            <input type="checkbox" form="url-import-commit-form" name="selected[entities][]" value="{{ $index }}" checked class="mt-1 rounded border-blue-200 text-blue-600 focus:ring-blue-500">
+                                            <span>
+                                            <div class="text-sm font-semibold text-blue-900">{{ data_get($entity, 'name') }}</div>
+                                            <div class="mt-1 text-xs text-blue-700">{{ data_get($entity, 'entity_type') }}</div>
+                                            @if (trim((string) data_get($entity, 'description')) !== '')
+                                                <p class="mt-1 text-xs leading-5 text-blue-800">{{ \Illuminate\Support\Str::limit((string) data_get($entity, 'description'), 120, '...') }}</p>
+                                            @endif
+                                            </span>
+                                        </label>
+                                    @empty
+                                        <span class="text-sm text-gray-500">{{ __('admin.common.none') }}</span>
+                                    @endforelse
+                                </div>
+                            </div>
+                            <div class="rounded-xl border border-gray-200 p-5" data-select-card>
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.cases') }}</h4>
+                                    <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+                                        <input type="checkbox" data-select-card-all checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                        全选
+                                    </label>
+                                </div>
+                                <div class="mt-4 space-y-3">
+                                    @forelse (array_slice($caseCandidates, 0, 6) as $index => $case)
+                                        <label class="flex gap-3 rounded-lg bg-emerald-50 px-3 py-2">
+                                            <input type="checkbox" form="url-import-commit-form" name="selected[cases][]" value="{{ $index }}" checked class="mt-1 rounded border-emerald-200 text-emerald-600 focus:ring-emerald-500">
+                                            <span>
+                                            <div class="text-sm font-semibold text-emerald-900">{{ data_get($case, 'title') }}</div>
+                                            <div class="mt-1 text-xs text-emerald-700">{{ data_get($case, 'case_type') }}</div>
+                                            @if (trim((string) data_get($case, 'summary')) !== '')
+                                                <p class="mt-1 text-xs leading-5 text-emerald-800">{{ \Illuminate\Support\Str::limit((string) data_get($case, 'summary'), 140, '...') }}</p>
+                                            @endif
+                                            </span>
+                                        </label>
+                                    @empty
+                                        <span class="text-sm text-gray-500">{{ __('admin.common.none') }}</span>
+                                    @endforelse
+                                </div>
+                            </div>
+                        </div>
+                    @endif
 
                     <div class="rounded-xl border border-gray-200 p-5">
                         <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.raw_json') }}</h4>
@@ -271,6 +357,19 @@
             }
 
             const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            document.querySelectorAll('[data-select-card-all]').forEach((toggle) => {
+                toggle.addEventListener('change', () => {
+                    const card = toggle.closest('[data-select-card]');
+                    if (!card) {
+                        return;
+                    }
+                    card.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+                        if (checkbox !== toggle) {
+                            checkbox.checked = toggle.checked;
+                        }
+                    });
+                });
+            });
             const progressBar = root.querySelector('[data-progress-bar]');
             const progressNumber = root.querySelector('[data-progress-number]');
             const statusLabel = root.querySelector('[data-status-label]');

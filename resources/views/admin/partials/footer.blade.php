@@ -7,7 +7,7 @@
         : 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md';
 @endphp
 <footer class="bg-white border-t border-gray-200 mt-12">
-    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-[1600px] py-6 px-4 sm:px-6 lg:px-8">
         <div class="flex flex-col md:flex-row md:flex-wrap justify-center items-center gap-3 md:gap-4 text-sm text-gray-500 text-center">
             <span>{{ __('admin.footer.copyright') }}</span>
             <span>|</span>

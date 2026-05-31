@@ -11,6 +11,8 @@ use App\Models\Category;
 use App\Models\DistributionChannel;
 use App\Models\Image;
 use App\Models\ImageLibrary;
+use App\Models\Keyword;
+use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\Task;
@@ -259,9 +261,11 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('data-tag-label-selector', false)
             ->assertSee('data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2"', false)
             ->assertSee('data-tag-label-search autocomplete="off"', false)
+            ->assertSee('data-tag-label-search-scope="knowledge"', false)
+            ->assertSee(route('admin.material-tags.search'), false)
             ->assertDontSee('data-tag-label-selected class="flex min-h-[2.5rem] w-full flex-wrap items-center gap-2 rounded-md border', false)
-            ->assertSee('行业:制造业')
-            ->assertSee(__('admin.task_create.option.knowledge_tag_count', ['count' => 2]));
+            ->assertDontSee('行业:制造业')
+            ->assertDontSee(__('admin.task_create.option.knowledge_tag_count', ['count' => 2]));
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
@@ -341,8 +345,10 @@ class AdminTasksPageTest extends TestCase
             ->assertSee(__('admin.task_create.field.image_tags'))
             ->assertSee('data-field-name="image_tag_filters"', false)
             ->assertSee('data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2"', false)
-            ->assertSee('场景:产品图')
-            ->assertSee(__('admin.task_create.option.image_tag_count', ['count' => 1]));
+            ->assertSee('data-tag-label-search-scope="images"', false)
+            ->assertSee(route('admin.material-tags.search'), false)
+            ->assertDontSee('场景:产品图')
+            ->assertDontSee(__('admin.task_create.option.image_tag_count', ['count' => 1]));
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
@@ -371,6 +377,97 @@ class AdminTasksPageTest extends TestCase
             ->assertOk()
             ->assertSee('name="image_tag_filters[]"', false)
             ->assertSee('value="场景:产品图"', false);
+    }
+
+    public function test_task_form_can_select_industry_tags_and_filter_material_options(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_industry_filter_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-industry-filter@example.com',
+            'display_name' => 'Tasks Industry Filter Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => '行业筛选测试模型',
+            'model_id' => 'industry-filter-model',
+            'model_type' => 'chat',
+            'status' => 'active',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => '行业筛选提示词',
+            'type' => 'content',
+            'content' => '请写 {{title}}',
+        ]);
+        $keywordLibrary = KeywordLibrary::query()->create(['name' => '自动化关键词库']);
+        $keyword = Keyword::query()->create([
+            'library_id' => (int) $keywordLibrary->id,
+            'keyword' => 'SJ4060',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => '自动化标题库',
+            'keyword_library_id' => (int) $keywordLibrary->id,
+        ]);
+        $category = Category::query()->create([
+            'name' => '行业筛选分类',
+            'slug' => 'industry-filter-category',
+        ]);
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '自动化知识库',
+            'content' => 'SJ4060 是自动化设备。',
+            'file_type' => 'markdown',
+        ]);
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '自动化图库',
+            'image_count' => 1,
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'automation.png',
+            'original_name' => 'automation.png',
+            'file_path' => 'storage/uploads/images/automation.png',
+        ]);
+        app(TagService::class)->sync($keyword, '行业领域:自动化设备');
+        app(TagService::class)->sync($knowledgeBase, '行业领域:自动化设备');
+        app(TagService::class)->sync($image, '行业领域:自动化设备');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.create'))
+            ->assertOk()
+            ->assertSee(__('admin.task_create.field.industry_tags'))
+            ->assertSee('data-field-name="industry_tag_filters"', false)
+            ->assertSee('data-tag-label-search-scope="industry"', false)
+            ->assertSee('data-industry-tags="行业领域:自动化设备"', false);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '行业筛选任务',
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $aiModel->id,
+                'fixed_category_id' => $category->id,
+                'status' => 'paused',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+                'knowledge_base_id' => $knowledgeBase->id,
+                'image_library_id' => $imageLibrary->id,
+                'image_count' => 1,
+                'industry_tag_filters' => ['行业领域:自动化设备'],
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $task = Task::query()->where('name', '行业筛选任务')->firstOrFail();
+        $this->assertSame('行业领域:自动化设备', (string) $task->industry_tag_filter);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.edit', ['taskId' => (int) $task->id]))
+            ->assertOk()
+            ->assertSee('name="industry_tag_filters[]"', false)
+            ->assertSee('value="行业领域:自动化设备"', false);
     }
 
     public function test_task_article_action_links_to_filtered_article_list(): void

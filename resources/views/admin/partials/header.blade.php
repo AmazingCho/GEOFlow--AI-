@@ -123,7 +123,7 @@
     }
 @endphp
 <nav class="bg-white shadow-sm border-b">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 items-center gap-3 lg:gap-4 min-w-0">
             <a href="{{ route('admin.dashboard') }}" class="shrink-0 text-lg sm:text-xl font-semibold text-gray-900">{{ $adminBrandName }}</a>
             <nav class="hidden md:flex flex-1 min-w-0 items-center">

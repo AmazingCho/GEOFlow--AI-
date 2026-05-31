@@ -49,11 +49,11 @@
                     <div class="px-6 py-6 space-y-6">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_name') }}</label>
-                            <input type="text" name="name" required value="{{ old('name', (string) ($knowledgeForm['name'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="{{ __('admin.knowledge_bases.field_name') }}">
+                            <input type="text" name="name" required value="{{ old('name', (string) ($knowledgeForm['name'] ?? '')) }}" data-tag-source="knowledge-form" class="{{ $fieldClass }}" placeholder="{{ __('admin.knowledge_bases.field_name') }}">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_description') }}</label>
-                            <textarea name="description" rows="3" class="{{ $textareaClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}">{{ old('description', (string) ($knowledgeForm['description'] ?? '')) }}</textarea>
+                            <textarea name="description" rows="3" data-tag-source="knowledge-form" class="{{ $textareaClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}">{{ old('description', (string) ($knowledgeForm['description'] ?? '')) }}</textarea>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">标签</label>
@@ -61,6 +61,9 @@
                                 'name' => 'tag_ids',
                                 'tagOptions' => $tagOptions ?? [],
                                 'selectedTagIds' => old('tag_ids', $selectedTagIds ?? []),
+                                'recommendedTags' => $recommendedTags ?? [],
+                                'recommendationUrl' => route('admin.material-tags.recommendations'),
+                                'recommendationSourceSelector' => '[data-tag-source="knowledge-form"]',
                                 'tone' => 'orange',
                             ])
                         </div>
@@ -74,7 +77,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_content') }}</label>
-                            <textarea name="content" rows="18" required class="{{ $textareaClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_content') }}">{{ old('content', (string) ($knowledgeForm['content'] ?? '')) }}</textarea>
+                            <textarea name="content" rows="18" required data-tag-source="knowledge-form" class="{{ $textareaClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_content') }}">{{ old('content', (string) ($knowledgeForm['content'] ?? '')) }}</textarea>
                         </div>
 
                         <div class="text-xs text-gray-500">
@@ -99,12 +102,12 @@
                             <div class="grid grid-cols-1 gap-5 px-6 py-6 lg:grid-cols-2">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_name_import') }}</label>
-                                    <input type="text" name="name" value="{{ old('name', (string) ($knowledgeForm['name'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_name_auto') }}" data-knowledge-name-input>
+                                    <input type="text" name="name" value="{{ old('name', (string) ($knowledgeForm['name'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_name_auto') }}" data-knowledge-name-input data-tag-source="knowledge-import">
                                     <p class="mt-1 text-xs text-gray-500">{{ __('admin.knowledge_bases.name_auto_hint') }}</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_description') }}</label>
-                                    <textarea name="description" rows="3" class="{{ $textareaClass }} min-h-[104px]" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}" data-knowledge-description-input>{{ old('description', (string) ($knowledgeForm['description'] ?? '')) }}</textarea>
+                                    <textarea name="description" rows="3" class="{{ $textareaClass }} min-h-[104px]" placeholder="{{ __('admin.knowledge_bases.placeholder_description') }}" data-knowledge-description-input data-tag-source="knowledge-import">{{ old('description', (string) ($knowledgeForm['description'] ?? '')) }}</textarea>
                                 </div>
                                 <div class="lg:col-span-2">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">标签</label>
@@ -112,6 +115,9 @@
                                         'name' => 'tag_ids',
                                         'tagOptions' => $tagOptions ?? [],
                                         'selectedTagIds' => old('tag_ids', $selectedTagIds ?? []),
+                                        'recommendedTags' => $recommendedTags ?? [],
+                                        'recommendationUrl' => route('admin.material-tags.recommendations'),
+                                        'recommendationSourceSelector' => '[data-tag-source="knowledge-import"]',
                                         'tone' => 'orange',
                                     ])
                                 </div>
@@ -151,7 +157,7 @@
                                         </div>
                                         <span class="shrink-0 rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700" data-content-counter>0</span>
                                     </div>
-                                    <textarea id="knowledge-content" name="content" rows="12" class="{{ $textareaClass }} min-h-[260px]" placeholder="{{ __('admin.knowledge_bases.placeholder_content_import') }}">{{ old('content', (string) ($knowledgeForm['content'] ?? '')) }}</textarea>
+                                    <textarea id="knowledge-content" name="content" rows="12" data-tag-source="knowledge-import" class="{{ $textareaClass }} min-h-[260px]" placeholder="{{ __('admin.knowledge_bases.placeholder_content_import') }}">{{ old('content', (string) ($knowledgeForm['content'] ?? '')) }}</textarea>
                                 </div>
                             </div>
                         </div>

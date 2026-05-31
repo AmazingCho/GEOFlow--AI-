@@ -206,6 +206,7 @@ class TaskController extends Controller
                 'image_tag_filter' => (string) ($task['image_tag_filter'] ?? ''),
                 'knowledge_base_id' => (string) (($task['knowledge_base_id'] ?? '') ?: ''),
                 'knowledge_tag_filter' => (string) ($task['knowledge_tag_filter'] ?? ''),
+                'industry_tag_filter' => (string) ($task['industry_tag_filter'] ?? ''),
                 'fixed_category_id' => (string) (($task['fixed_category_id'] ?? '') ?: ''),
                 'status' => (string) ($task['status'] ?? 'active'),
                 'article_limit' => (string) ($task['article_limit'] ?? 10),
@@ -417,6 +418,7 @@ class TaskController extends Controller
      *     imageTags: list<array{id:int,label:string,count:int}>,
      *     knowledgeBases: list<array{id:int,name:string}>,
      *     knowledgeTags: list<array{id:int,label:string,count:int}>,
+     *     industryTags: list<array{id:int,label:string,count:int}>,
      *     authors: list<array{id:int,name:string}>,
      *     categories: list<array{id:int,name:string}>,
      *     distributionChannels: list<array{id:int,name:string,domain:string}>
@@ -426,15 +428,17 @@ class TaskController extends Controller
     {
         // 直接附带标题数，避免 Blade 层再次查询。
         $titleLibraries = TitleLibrary::query()
+            ->with(['keywordLibrary.keywords.tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
             ->select(['id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM titles WHERE titles.library_id = title_libraries.id) AS title_count')
             ->orderByDesc('id')
             ->get()
-            ->map(static function (TitleLibrary $row): array {
+            ->map(function (TitleLibrary $row): array {
                 return [
                     'id' => (int) $row->id,
                     'name' => (string) $row->name,
                     'count' => (int) ($row->title_count ?? 0),
+                    'industry_tags' => $this->industryLabelsFromTitleLibrary($row),
                 ];
             })
             ->all();
@@ -463,59 +467,55 @@ class TaskController extends Controller
 
         // 兼容上游展示：图库名称 + 图片数量。
         $imageLibraries = ImageLibrary::query()
+            ->with(['images.tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
             ->select(['id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM images WHERE images.library_id = image_libraries.id) AS image_count')
             ->orderBy('name')
             ->get()
-            ->map(static function (ImageLibrary $row): array {
+            ->map(function (ImageLibrary $row): array {
                 return [
                     'id' => (int) $row->id,
                     'name' => (string) $row->name,
                     'count' => (int) ($row->image_count ?? 0),
+                    'industry_tags' => $this->industryLabelsFromTaggedItems($row->images ?? collect()),
                 ];
             })
             ->all();
 
         $knowledgeBases = KnowledgeBase::query()
+            ->with(['tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
             ->select(['id', 'name'])
             ->orderBy('name')
             ->get()
-            ->map(static fn (KnowledgeBase $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
-            ->all();
-
-        $imageTags = Tag::query()
-            ->withCount('images')
-            ->whereHas('images')
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get()
-            ->map(static fn (Tag $row): array => [
+            ->map(fn (KnowledgeBase $row): array => [
                 'id' => (int) $row->id,
-                'label' => $row->displayName(),
-                'count' => (int) ($row->images_count ?? 0),
+                'name' => (string) $row->name,
+                'industry_tags' => $this->industryLabelsFromTaggedItems(collect([$row])),
             ])
-            ->filter(static fn (array $row): bool => $row['label'] !== '')
-            ->values()
             ->all();
 
-        $knowledgeTags = Tag::query()
-            ->withCount(['knowledgeBases', 'entities', 'caseRecords'])
-            ->where(function ($query): void {
-                $query
-                    ->whereHas('knowledgeBases')
-                    ->orWhereHas('entities')
-                    ->orWhereHas('caseRecords');
+        $imageTags = [];
+        $knowledgeTags = [];
+        $industryTags = Tag::query()
+            ->where('type', 'material')
+            ->where('group_name', '行业领域')
+            ->withCount(['keywords', 'images', 'knowledgeBases', 'entities', 'caseRecords'])
+            ->orderBy('name')
+            ->get(['id', 'group_name', 'name'])
+            ->map(static function (Tag $tag): array {
+                $count = (int) ($tag->keywords_count ?? 0)
+                    + (int) ($tag->images_count ?? 0)
+                    + (int) ($tag->knowledge_bases_count ?? 0)
+                    + (int) ($tag->entities_count ?? 0)
+                    + (int) ($tag->case_records_count ?? 0);
+
+                return [
+                    'id' => (int) $tag->id,
+                    'label' => $tag->displayName(),
+                    'count' => $count,
+                    'meta' => __('admin.task_create.option.industry_tag_count', ['count' => $count]),
+                ];
             })
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get()
-            ->map(static fn (Tag $row): array => [
-                'id' => (int) $row->id,
-                'label' => $row->displayName(),
-                'count' => (int) ($row->knowledge_bases_count ?? 0) + (int) ($row->entities_count ?? 0) + (int) ($row->case_records_count ?? 0),
-            ])
-            ->filter(static fn (array $row): bool => $row['label'] !== '')
-            ->values()
             ->all();
 
         $authors = Author::query()
@@ -553,10 +553,46 @@ class TaskController extends Controller
             'imageTags' => $imageTags,
             'knowledgeBases' => $knowledgeBases,
             'knowledgeTags' => $knowledgeTags,
+            'industryTags' => $industryTags,
             'authors' => $authors,
             'categories' => $categories,
             'distributionChannels' => $distributionChannels,
         ];
+    }
+
+    private function industryLabelsFromTitleLibrary(TitleLibrary $library): array
+    {
+        $keywordLibrary = $library->keywordLibrary;
+        if (! $keywordLibrary || ! $keywordLibrary->relationLoaded('keywords')) {
+            return [];
+        }
+
+        return $this->industryLabelsFromTaggedItems($keywordLibrary->keywords);
+    }
+
+    private function industryLabelsFromTaggedItems(iterable $items): array
+    {
+        $labels = [];
+        foreach ($items as $item) {
+            if (! method_exists($item, 'relationLoaded') || ! $item->relationLoaded('tags')) {
+                continue;
+            }
+            $tags = method_exists($item, 'getRelation') ? $item->getRelation('tags') : [];
+            foreach ($tags as $tag) {
+                if ((string) ($tag->type ?? '') !== 'material' || (string) ($tag->group_name ?? '') !== '行业领域') {
+                    continue;
+                }
+                $label = $tag->displayName();
+                if ($label !== '') {
+                    $labels[] = $label;
+                }
+            }
+        }
+
+        return collect($labels)
+            ->unique(static fn (string $label): string => mb_strtolower($label, 'UTF-8'))
+            ->values()
+            ->all();
     }
 
     /**
@@ -593,6 +629,9 @@ class TaskController extends Controller
             'image_tag_filters' => ['nullable', 'array'],
             'image_tag_filters.*' => ['string', 'max:220'],
             'image_tag_filter_present' => ['nullable', 'string'],
+            'industry_tag_filters' => ['nullable', 'array'],
+            'industry_tag_filters.*' => ['string', 'max:220'],
+            'industry_tag_filter_present' => ['nullable', 'string'],
             'knowledge_base_id' => ['nullable', 'integer', 'min:1'],
             'knowledge_tag_filters' => ['nullable', 'array'],
             'knowledge_tag_filters.*' => ['string', 'max:220'],
@@ -627,6 +666,7 @@ class TaskController extends Controller
             'image_library_id' => isset($payload['image_library_id']) ? (int) $payload['image_library_id'] : null,
             'image_count' => (int) ($payload['image_count'] ?? 0),
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
+            'industry_tag_filter' => $this->normalizeTagLabelFilters($request, 'industry_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,

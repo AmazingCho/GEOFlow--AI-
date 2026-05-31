@@ -128,7 +128,7 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        @foreach (['knowledge', 'keywords', 'titles'] as $output)
+                        @foreach (['knowledge', 'keywords', 'titles', 'entities', 'cases'] as $output)
                             <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-4">
                                 <input type="checkbox" name="outputs[]" value="{{ $output }}" checked class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                 <span>

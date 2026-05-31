@@ -187,6 +187,7 @@
                                         'name' => 'tag_ids',
                                         'tagOptions' => $tagOptions ?? [],
                                         'selectedTagIds' => $keywordTagIds,
+                                        'recommendedTags' => $tagRecommendationsByKeyword[(int) $keyword->id] ?? [],
                                         'tone' => 'blue',
                                         'autoSubmit' => true,
                                     ])
@@ -226,7 +227,7 @@
                     <div class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.keyword_detail.field_keyword') }}</label>
-                            <input type="text" name="keyword" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="{{ __('admin.keyword_detail.placeholder_keyword') }}">
+                            <input type="text" name="keyword" required data-tag-source="keyword-add" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="{{ __('admin.keyword_detail.placeholder_keyword') }}">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">标签</label>
@@ -234,6 +235,8 @@
                                 'name' => 'tag_ids',
                                 'tagOptions' => $tagOptions ?? [],
                                 'selectedTagIds' => [],
+                                'recommendationUrl' => route('admin.material-tags.recommendations'),
+                                'recommendationSourceSelector' => '[data-tag-source="keyword-add"]',
                                 'tone' => 'blue',
                             ])
                         </div>

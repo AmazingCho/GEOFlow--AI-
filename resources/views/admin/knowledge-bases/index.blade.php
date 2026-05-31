@@ -90,20 +90,19 @@
         <form method="GET" action="{{ route('admin.knowledge-bases.index') }}" class="mb-6 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
                 <div class="flex-1">
+                    <label for="knowledge-search-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.search_label') }}</label>
+                    <input id="knowledge-search-filter" type="text" name="search" value="{{ $search ?? '' }}" placeholder="{{ __('admin.knowledge_bases.search_placeholder') }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                </div>
+                <div class="flex-1">
                     <label for="knowledge-tag-filter" class="block text-sm font-medium text-gray-700 mb-2">标签筛选</label>
-                    <select id="knowledge-tag-filter" name="tag" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
-                        <option value="">全部标签</option>
-                        @foreach (($tagOptions ?? []) as $tagOption)
-                            <option value="{{ $tagOption['label'] }}" @selected((string) ($tagFilter ?? '') === (string) $tagOption['label'])>{{ $tagOption['label'] }}</option>
-                        @endforeach
-                    </select>
+                    <input id="knowledge-tag-filter" type="text" name="tag" value="{{ $tagFilter ?? '' }}" placeholder="{{ __('admin.knowledge_bases.tag_filter_placeholder') }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
                 </div>
                 <div class="flex gap-2">
                     <button type="submit" class="inline-flex items-center justify-center rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">
                         <i data-lucide="search" class="mr-2 h-4 w-4"></i>
                         筛选
                     </button>
-                    @if ((string) ($tagFilter ?? '') !== '')
+                    @if ((string) ($tagFilter ?? '') !== '' || (string) ($search ?? '') !== '')
                         <a href="{{ route('admin.knowledge-bases.index') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             清除
                         </a>
@@ -116,7 +115,7 @@
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_bases.list_title') }}</h3>
             </div>
-            @if (empty($knowledgeBases))
+            @if ($knowledgeBases->isEmpty())
                 <div class="px-6 py-8 text-center">
                     <i data-lucide="brain" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">{{ __('admin.knowledge_bases.empty') }}</h3>
@@ -251,6 +250,20 @@
                             </div>
                         </div>
                     @endforeach
+                </div>
+                <div class="flex flex-col gap-3 border-t border-gray-200 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="text-sm text-gray-600">
+                        {{ __('admin.knowledge_bases.pagination_summary', [
+                            'from' => $knowledgeBases->firstItem() ?? 0,
+                            'to' => $knowledgeBases->lastItem() ?? 0,
+                            'total' => $knowledgeBases->total(),
+                        ]) }}
+                    </div>
+                    @if ($knowledgeBases->lastPage() > 1)
+                        <div>
+                            {{ $knowledgeBases->links() }}
+                        </div>
+                    @endif
                 </div>
             @endif
         </div>

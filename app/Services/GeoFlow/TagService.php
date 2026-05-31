@@ -7,6 +7,7 @@ use App\Models\Tag;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -72,7 +73,7 @@ class TagService
             throw new \InvalidArgumentException('Tag name cannot be empty.');
         }
 
-        return Tag::query()->firstOrCreate(
+        $tag = Tag::query()->firstOrCreate(
             [
                 'type' => $type,
                 'group_name' => $groupName,
@@ -83,6 +84,9 @@ class TagService
                 'color' => '',
             ]
         );
+        $this->flushTagStatsCache();
+
+        return $tag;
     }
 
     /**
@@ -108,6 +112,7 @@ class TagService
         $tagIds = $this->existingTagIds($tagIds, $type);
         $model->tags()->sync($tagIds);
         $model->unsetRelation('tags');
+        $this->flushTagStatsCache();
 
         return $this->labelsFor($model);
     }
@@ -121,6 +126,62 @@ class TagService
             ->where('type', $type)
             ->orderBy('group_name')
             ->orderBy('name')
+            ->get(['id', 'group_name', 'name'])
+            ->map(static fn (Tag $tag): array => [
+                'id' => (int) $tag->id,
+                'label' => $tag->displayName(),
+            ])
+            ->filter(static fn (array $tag): bool => $tag['label'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $tagIds
+     * @return list<array{id:int,label:string}>
+     */
+    public function tagOptionsForIds(array $tagIds, string $type = 'material'): array
+    {
+        $tagIds = $this->existingTagIds($tagIds, $type);
+        if ($tagIds === []) {
+            return [];
+        }
+
+        return Tag::query()
+            ->where('type', $type)
+            ->whereIn('id', $tagIds)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get(['id', 'group_name', 'name'])
+            ->map(static fn (Tag $tag): array => [
+                'id' => (int) $tag->id,
+                'label' => $tag->displayName(),
+            ])
+            ->filter(static fn (array $tag): bool => $tag['label'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{id:int,label:string}>
+     */
+    public function searchTagOptions(string $query, string $type = 'material', int $limit = 20): array
+    {
+        $query = trim($query);
+        $limit = min(50, max(1, $limit));
+
+        return Tag::query()
+            ->where('type', $type)
+            ->when($query !== '', function (Builder $builder) use ($query): void {
+                $builder->where(function (Builder $nested) use ($query): void {
+                    $nested
+                        ->where('name', 'like', '%'.$query.'%')
+                        ->orWhere('group_name', 'like', '%'.$query.'%');
+                });
+            })
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->limit($limit)
             ->get(['id', 'group_name', 'name'])
             ->map(static fn (Tag $tag): array => [
                 'id' => (int) $tag->id,
@@ -243,6 +304,7 @@ class TagService
             ->where('taggable_type', $model->getMorphClass())
             ->whereIn('taggable_id', $ids)
             ->delete();
+        $this->flushTagStatsCache();
     }
 
     public function applyFilter(Builder $query, string $tagFilter): void
@@ -314,5 +376,11 @@ class TagService
         $slug = Str::slug($base);
 
         return $slug !== '' ? mb_substr($slug, 0, 160, 'UTF-8') : 'tag-'.substr(sha1($base), 0, 16);
+    }
+
+    private function flushTagStatsCache(): void
+    {
+        Cache::forget('admin.material_tags.stats');
+        Cache::forget('tag_recommendations:material_tags');
     }
 }

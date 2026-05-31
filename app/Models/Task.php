@@ -37,6 +37,7 @@ class Task extends Model
         'loop_count',
         'knowledge_base_id',
         'knowledge_tag_filter',
+        'industry_tag_filter',
         'category_mode',
         'fixed_category_id',
         'last_run_at',

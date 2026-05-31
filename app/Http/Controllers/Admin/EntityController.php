@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EntityRecord;
+use App\Services\GeoFlow\MaterialFormAnalysisService;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,7 +18,11 @@ class EntityController extends Controller
 {
     private const PER_PAGE = 20;
 
-    public function __construct(private readonly TagService $tagService) {}
+    public function __construct(
+        private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService,
+        private readonly MaterialFormAnalysisService $materialFormAnalysisService
+    ) {}
 
     public function index(Request $request): View
     {
@@ -63,8 +70,25 @@ class EntityController extends Controller
             'isEdit' => false,
             'entityId' => 0,
             'entityForm' => $this->emptyEntityForm(),
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'tagOptions' => [],
             'selectedTagIds' => [],
+            'recommendedTags' => [],
+            'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
+        ]);
+    }
+
+    public function analyze(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'content' => ['required', 'string', 'max:20000'],
+            'ai_model_id' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        return response()->json([
+            'fields' => $this->materialFormAnalysisService->analyzeEntity(
+                (string) $payload['content'],
+                (int) ($payload['ai_model_id'] ?? 0)
+            ),
         ]);
     }
 
@@ -83,6 +107,7 @@ class EntityController extends Controller
     public function edit(int $entityId): View
     {
         $entity = EntityRecord::query()->with('tags')->whereKey($entityId)->firstOrFail();
+        $selectedTagIds = $this->tagService->selectedTagIdsFor($entity);
 
         return view('admin.entities.form', [
             'pageTitle' => __('admin.entities.page_title'),
@@ -98,8 +123,10 @@ class EntityController extends Controller
                 'attributes_json' => (string) ($entity->attributes_json ?? ''),
                 'source_url' => (string) ($entity->source_url ?? ''),
             ],
-            'tagOptions' => $this->tagService->existingTagOptions(),
-            'selectedTagIds' => $this->tagService->selectedTagIdsFor($entity),
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'selectedTagIds' => $selectedTagIds,
+            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->entityRecommendationText($entity), $selectedTagIds),
+            'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
     }
 
@@ -192,5 +219,16 @@ class EntityController extends Controller
             'attributes_json' => '{}',
             'source_url' => '',
         ];
+    }
+
+    private function entityRecommendationText(EntityRecord $entity): string
+    {
+        return implode(' ', [
+            (string) $entity->name,
+            (string) ($entity->entity_type ?? ''),
+            (string) ($entity->aliases ?? ''),
+            (string) ($entity->description ?? ''),
+            (string) ($entity->attributes_json ?? ''),
+        ]);
     }
 }

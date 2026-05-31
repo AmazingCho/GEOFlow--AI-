@@ -232,6 +232,7 @@ class TaskMonitoringQueryService
                 'ai_model_id' => $this->nullableInt($task->ai_model_id),
                 'knowledge_base_id' => $this->nullableInt($task->knowledge_base_id),
                 'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),
+                'industry_tag_filter' => (string) ($task->industry_tag_filter ?? ''),
                 'author_id' => $this->nullableInt($task->author_id),
                 'image_library_id' => $this->nullableInt($task->image_library_id),
                 'image_count' => (int) ($task->image_count ?? 0),

@@ -183,15 +183,24 @@
                 </div>
 
                 <div class="p-6">
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                         @foreach ($images as $image)
                             @php
                                 $imageUrl = \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($image->file_path ?? ''));
                                 $imageTagIds = collect($image->getRelation('tags'))->pluck('id')->map(static fn ($id) => (int) $id)->all();
                             @endphp
-                            <div class="image-item relative overflow-hidden rounded-lg border-2 border-transparent transition-all hover:border-purple-500" data-image-id="{{ (int) $image->id }}">
-                                <input type="checkbox" form="batch-form" name="image_ids[]" value="{{ (int) $image->id }}" class="image-checkbox hidden absolute top-2 left-2 rounded border-gray-300 text-purple-600 shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50 z-10">
-                                <div class="group relative">
+                            <div class="image-item rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-image-id="{{ (int) $image->id }}">
+                                <div class="mb-3 flex items-start justify-between gap-3">
+                                    <input type="checkbox" form="batch-form" name="image_ids[]" value="{{ (int) $image->id }}" class="image-checkbox hidden mt-1 rounded border-gray-300 text-purple-600 shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50">
+                                    <form method="POST" action="{{ route('admin.image-libraries.images.title', ['libraryId' => (int) $library->id, 'imageId' => (int) $image->id]) }}" class="min-w-0 flex-1">
+                                        @csrf
+                                        <input type="hidden" name="search" value="{{ $search }}">
+                                        <input type="hidden" name="tag" value="{{ $tagFilter ?? '' }}">
+                                        <label class="sr-only">图片标题</label>
+                                        <input type="text" name="title" value="{{ (string) ($image->original_name ?? '') }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500" onchange="this.form.submit()" title="修改图片标题">
+                                    </form>
+                                </div>
+                                <div class="group relative overflow-hidden rounded-md border border-gray-100">
                                     <img
                                         src="{{ $imageUrl }}"
                                         alt="{{ (string) ($image->original_name ?? '') }}"
@@ -204,7 +213,7 @@
                                         <p class="text-xs text-gray-300">{{ $formatSize((int) ($image->file_size ?? 0)) }}</p>
                                     </div>
                                 </div>
-                                <div class="relative z-10 border-t border-gray-100 bg-white p-2">
+                                <div class="mt-3">
                                     <div class="text-[11px] font-medium text-gray-500">{{ $urlLabel }}</div>
                                     <a href="{{ $imageUrl }}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-xs text-blue-600 hover:text-blue-800" title="{{ $imageUrl }}">
                                         {{ $imageUrl }}
@@ -217,6 +226,7 @@
                                             'name' => 'tag_ids',
                                             'tagOptions' => $tagOptions ?? [],
                                             'selectedTagIds' => $imageTagIds,
+                                            'recommendedTags' => $tagRecommendationsByImage[(int) $image->id] ?? [],
                                             'tone' => 'purple',
                                             'autoSubmit' => true,
                                         ])
@@ -227,18 +237,26 @@
                     </div>
                 </div>
 
-                @if ($images->lastPage() > 1)
-                    <div class="px-6 py-4 border-t border-gray-200">
-                        <div class="flex items-center justify-between">
-                            <div class="text-sm text-gray-700">
-                                {{ __('admin.image_detail.pagination_summary', ['from' => $images->firstItem(), 'to' => $images->lastItem(), 'total' => $images->total()]) }}
-                            </div>
-                            <div>
-                                {{ $images->links() }}
-                            </div>
+                <div class="border-t border-gray-200 px-6 py-4">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="text-sm text-gray-700">
+                            {{ __('admin.image_detail.pagination_summary', ['from' => $images->firstItem() ?? 0, 'to' => $images->lastItem() ?? 0, 'total' => $images->total()]) }}
                         </div>
+                        <form method="GET" class="flex items-center gap-2">
+                            <input type="hidden" name="search" value="{{ $search }}">
+                            <input type="hidden" name="tag" value="{{ $tagFilter ?? '' }}">
+                            <input type="hidden" name="page" value="1">
+                            <label for="image-per-page-input" class="text-sm text-gray-600">{{ __('admin.articles.pagination.per_page') }}</label>
+                            <input id="image-per-page-input" type="number" name="per_page" min="12" max="96" step="1" value="{{ $images->perPage() }}" class="w-20 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 shadow-sm">
+                            <button type="submit" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">{{ __('admin.button.apply') }}</button>
+                        </form>
                     </div>
-                @endif
+                    @if ($images->lastPage() > 1)
+                        <div class="mt-4">
+                            {{ $images->links() }}
+                        </div>
+                    @endif
+                    </div>
             @endif
         </div>
     </div>

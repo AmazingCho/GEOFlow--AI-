@@ -9,6 +9,8 @@ use App\Models\Author;
 use App\Models\Category;
 use App\Models\DistributionChannel;
 use App\Models\SiteSetting;
+use App\Models\Task;
+use App\Models\TaskRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -185,6 +187,57 @@ class AdminArticlesPageTest extends TestCase
             ->get(route('admin.articles.index'))
             ->assertOk()
             ->assertSee(__('admin.distribution.article_status.synced'));
+    }
+
+    public function test_article_list_shows_quality_score_for_manual_review(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_quality_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-quality@example.com',
+            'display_name' => 'Articles Quality Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '质量分类',
+            'slug' => 'quality-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Quality Author']);
+        $task = Task::query()->create(['name' => 'Quality Task']);
+        $article = Article::query()->create([
+            'title' => '质量评分测试文章',
+            'slug' => 'quality-score-article',
+            'excerpt' => '短摘要',
+            'content' => '这是一篇很短的文章，没有 FAQ，也没有案例。',
+            'keywords' => 'GEOFlow质量',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'task_id' => $task->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+            'is_ai_generated' => 1,
+        ]);
+        TaskRun::query()->create([
+            'task_id' => $task->id,
+            'status' => 'completed',
+            'article_id' => $article->id,
+            'duration_ms' => 100,
+            'meta' => [
+                'generation_trace' => [
+                    'knowledge' => ['context_length' => 0, 'chunks' => []],
+                    'images' => [],
+                ],
+            ],
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index'))
+            ->assertOk()
+            ->assertSee(__('admin.articles.column.quality'))
+            ->assertSee(__('admin.articles.quality.suggestions.knowledge'));
     }
 
     public function test_admin_brand_stays_geoflow_when_public_site_name_changes(): void

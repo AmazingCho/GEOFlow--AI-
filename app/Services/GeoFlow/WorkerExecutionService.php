@@ -30,11 +30,29 @@ use Throwable;
 class WorkerExecutionService
 {
     /**
+     * 最近一次生成链路的知识检索追踪，随 executeTask 写入 task_runs.meta。
+     *
+     * @var array<string,mixed>
+     */
+    private array $lastKnowledgeTrace = [];
+
+    /**
+     * @var list<array<string,mixed>>
+     */
+    private array $lastKnowledgeChunkTrace = [];
+
+    /**
+     * @var array{entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}
+     */
+    private array $lastEntityCaseTrace = ['entities' => [], 'cases' => []];
+
+    /**
      * 复用统一 API Key 解密组件，确保 worker 与后台配置端解密行为一致。
      */
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
         private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
+        private readonly RagRetrievalService $ragRetrievalService,
         private readonly DistributionOrchestrator $distributionOrchestrator,
         private readonly TagService $tagService
     ) {}
@@ -75,28 +93,170 @@ class WorkerExecutionService
             ];
         }
 
+        $pipeline = $this->runArticleGenerationPipeline($task);
+        $articleId = $this->persistGeneratedDraft($task, $pipeline);
+        /** @var Title $titleRow */
+        $titleRow = $pipeline['titleRow'];
+        /** @var AiModel $aiModel */
+        $aiModel = $pipeline['aiModel'];
+        /** @var Author|null $author */
+        $author = $pipeline['author'];
+        /** @var Category|null $category */
+        $category = $pipeline['category'];
+
+        return [
+            'article_id' => $articleId,
+            'title' => (string) $titleRow->title,
+            'message' => '草稿生成成功',
+            'meta' => [
+                'task_id' => (int) $task->id,
+                'action' => 'generate_draft',
+                'title_id' => (int) $titleRow->id,
+                'author_id' => $author?->id,
+                'category_id' => $category?->id,
+                'knowledge_length' => mb_strlen((string) $pipeline['knowledgeContext'], 'UTF-8'),
+                'image_count' => count($pipeline['selectedImages']),
+                'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
+                'used_model_id' => (int) $aiModel->id,
+                'used_model_name' => (string) $aiModel->name,
+                'model_attempts' => $pipeline['generationAttempts'],
+                'generation_trace' => $this->buildGenerationTrace(
+                    task: $task,
+                    titleRow: $titleRow,
+                    keyword: (string) $pipeline['keyword'],
+                    author: $author,
+                    category: $category,
+                    prompt: $pipeline['prompt'],
+                    aiModel: $aiModel,
+                    generationAttempts: $pipeline['generationAttempts'],
+                    knowledgeContext: (string) $pipeline['knowledgeContext'],
+                    selectedImages: $pipeline['selectedImages'],
+                    pipelineSteps: $pipeline['pipelineSteps']
+                ),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *   titleRow:Title,
+     *   author:Author|null,
+     *   category:Category|null,
+     *   prompt:Prompt|null,
+     *   keyword:string,
+     *   knowledgeContext:string,
+     *   contentPrompt:string,
+     *   generatedContent:string,
+     *   content:string,
+     *   excerpt:string,
+     *   workflow:array{status:string,review_status:string,published_at:null},
+     *   aiModel:AiModel,
+     *   generationAttempts:list<array<string,mixed>>,
+     *   selectedImages:list<Image>,
+     *   pipelineSteps:list<array<string,mixed>>
+     * }
+     */
+    private function runArticleGenerationPipeline(Task $task): array
+    {
+        $pipelineSteps = [];
+
         $titleRow = $this->pickTitle($task);
         $author = $this->pickAuthor($task);
         $category = $this->pickCategory($task);
         $prompt = $task->prompt_id ? Prompt::query()->find((int) $task->prompt_id) : null;
-
         $keyword = (string) ($titleRow->keyword ?? '');
+        $pipelineSteps[] = $this->pipelineStep('select_sources', [
+            'title_id' => (int) $titleRow->id,
+            'author_id' => $author?->id,
+            'category_id' => $category?->id,
+            'prompt_id' => $prompt?->id,
+        ]);
+
         $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
+        $pipelineSteps[] = $this->pipelineStep('retrieve_context', [
+            'strategy' => (string) ($this->lastKnowledgeTrace['strategy'] ?? 'none'),
+            'context_length' => mb_strlen($knowledgeContext, 'UTF-8'),
+            'chunks' => count($this->lastKnowledgeTrace['chunks'] ?? []),
+            'entities' => count($this->lastKnowledgeTrace['entities'] ?? []),
+            'cases' => count($this->lastKnowledgeTrace['cases'] ?? []),
+        ]);
+
         $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext);
+        $pipelineSteps[] = $this->pipelineStep('compose_prompt', [
+            'prompt_length' => mb_strlen($contentPrompt, 'UTF-8'),
+            'has_custom_prompt' => $prompt !== null,
+        ]);
+
         $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
+        /** @var AiModel $aiModel */
         $aiModel = $generation['model'];
-        $generatedContent = $generation['content'];
+        $generatedContent = (string) $generation['content'];
+        $generationAttempts = is_array($generation['attempts'] ?? null) ? $generation['attempts'] : [];
+        $pipelineSteps[] = $this->pipelineStep('generate_article', [
+            'model_id' => (int) $aiModel->id,
+            'model_name' => (string) $aiModel->name,
+            'content_length' => mb_strlen($generatedContent, 'UTF-8'),
+            'attempts' => count($generationAttempts),
+        ]);
+
         $imageResult = $this->insertTaskImagesIntoContent($task, $generatedContent);
-        $content = $imageResult['content'];
+        $content = (string) $imageResult['content'];
         $selectedImages = $imageResult['images'];
+        $pipelineSteps[] = $this->pipelineStep('attach_images', [
+            'image_count' => count($selectedImages),
+            'content_length' => mb_strlen($content, 'UTF-8'),
+        ]);
+
         $excerpt = $this->buildExcerpt($content);
         $workflow = [
             'status' => 'draft',
             'review_status' => (int) ($task->need_review ?? 1) === 1 ? 'pending' : 'approved',
             'published_at' => null,
         ];
+        $pipelineSteps[] = $this->pipelineStep('prepare_draft', [
+            'excerpt_length' => mb_strlen($excerpt, 'UTF-8'),
+            'review_status' => $workflow['review_status'],
+        ]);
 
-        $articleId = DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages): int {
+        return [
+            'titleRow' => $titleRow,
+            'author' => $author,
+            'category' => $category,
+            'prompt' => $prompt,
+            'keyword' => $keyword,
+            'knowledgeContext' => $knowledgeContext,
+            'contentPrompt' => $contentPrompt,
+            'generatedContent' => $generatedContent,
+            'content' => $content,
+            'excerpt' => $excerpt,
+            'workflow' => $workflow,
+            'aiModel' => $aiModel,
+            'generationAttempts' => $generationAttempts,
+            'selectedImages' => $selectedImages,
+            'pipelineSteps' => $pipelineSteps,
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $pipeline
+     */
+    private function persistGeneratedDraft(Task $task, array $pipeline): int
+    {
+        /** @var Title $titleRow */
+        $titleRow = $pipeline['titleRow'];
+        /** @var Author|null $author */
+        $author = $pipeline['author'];
+        /** @var Category|null $category */
+        $category = $pipeline['category'];
+        $keyword = (string) $pipeline['keyword'];
+        $content = (string) $pipeline['content'];
+        $excerpt = (string) $pipeline['excerpt'];
+        /** @var array{status:string,review_status:string,published_at:null} $workflow */
+        $workflow = $pipeline['workflow'];
+        /** @var list<Image> $selectedImages */
+        $selectedImages = $pipeline['selectedImages'];
+
+        return DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages): int {
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
@@ -156,25 +316,110 @@ class WorkerExecutionService
 
             return (int) $article->id;
         });
+    }
 
+    /**
+     * @param  array<string,mixed>  $meta
+     * @return array<string,mixed>
+     */
+    private function pipelineStep(string $name, array $meta = []): array
+    {
         return [
-            'article_id' => $articleId,
-            'title' => (string) $titleRow->title,
-            'message' => '草稿生成成功',
-            'meta' => [
-                'task_id' => (int) $task->id,
-                'action' => 'generate_draft',
-                'title_id' => (int) $titleRow->id,
-                'author_id' => $author?->id,
-                'category_id' => $category?->id,
-                'knowledge_length' => mb_strlen($knowledgeContext, 'UTF-8'),
-                'image_count' => count($selectedImages),
-                'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
-                'used_model_id' => (int) $aiModel->id,
-                'used_model_name' => (string) $aiModel->name,
-                'model_attempts' => $generation['attempts'],
-            ],
+            'name' => $name,
+            'status' => 'completed',
+            'meta' => $meta,
         ];
+    }
+
+    /**
+     * @param  list<Image>  $selectedImages
+     * @param  list<array<string,mixed>>  $generationAttempts
+     * @param  list<array<string,mixed>>  $pipelineSteps
+     * @return array<string,mixed>
+     */
+    private function buildGenerationTrace(
+        Task $task,
+        Title $titleRow,
+        string $keyword,
+        ?Author $author,
+        ?Category $category,
+        ?Prompt $prompt,
+        AiModel $aiModel,
+        array $generationAttempts,
+        string $knowledgeContext,
+        array $selectedImages,
+        array $pipelineSteps = []
+    ): array {
+        return [
+            'version' => 1,
+            'generated_at' => now()->toDateTimeString(),
+            'pipeline' => $pipelineSteps,
+            'task' => [
+                'id' => (int) $task->id,
+                'name' => (string) ($task->name ?? ''),
+                'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),
+                'image_tag_filter' => (string) ($task->image_tag_filter ?? ''),
+                'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
+            ],
+            'title' => [
+                'id' => (int) $titleRow->id,
+                'text' => (string) $titleRow->title,
+                'keyword' => $keyword,
+            ],
+            'author' => $author ? ['id' => (int) $author->id, 'name' => (string) $author->name] : null,
+            'category' => $category ? ['id' => (int) $category->id, 'name' => (string) $category->name] : null,
+            'prompt' => $prompt ? ['id' => (int) $prompt->id, 'name' => (string) $prompt->name, 'type' => (string) $prompt->type] : null,
+            'language' => [
+                'code' => $this->detectPromptLanguage(implode("\n", [
+                    (string) $titleRow->title,
+                    $keyword,
+                    (string) ($prompt?->content ?? ''),
+                ])),
+            ],
+            'model' => [
+                'id' => (int) $aiModel->id,
+                'name' => (string) $aiModel->name,
+                'model_id' => (string) ($aiModel->model_id ?? ''),
+                'provider' => (string) ($aiModel->provider ?? ''),
+            ],
+            'model_attempts' => $generationAttempts,
+            'knowledge' => array_merge($this->lastKnowledgeTrace, [
+                'context_length' => mb_strlen($knowledgeContext, 'UTF-8'),
+            ]),
+            'images' => array_map(static fn (Image $image): array => [
+                'id' => (int) $image->id,
+                'library_id' => (int) ($image->library_id ?? 0),
+                'filename' => (string) ($image->filename ?? ''),
+                'original_name' => (string) ($image->original_name ?? ''),
+                'file_path' => (string) ($image->file_path ?? ''),
+            ], $selectedImages),
+        ];
+    }
+
+    private function detectPromptLanguage(string $text): string
+    {
+        $text = mb_strtolower(trim($text), 'UTF-8');
+        if ($text === '') {
+            return 'unknown';
+        }
+        $han = preg_match_all('/\p{Han}/u', $text);
+        if ($han > 10) {
+            return 'zh';
+        }
+
+        $scores = [
+            'es' => preg_match_all('/\b(?:que|para|como|con|por|una|los|las|del|servicio|cliente|empresa)\b/u', $text),
+            'pt' => preg_match_all('/\b(?:que|para|como|com|por|uma|dos|das|serviço|cliente|empresa|você)\b/u', $text),
+            'fr' => preg_match_all('/\b(?:que|pour|avec|une|les|des|service|client|entreprise|dans)\b/u', $text),
+            'de' => preg_match_all('/\b(?:und|für|mit|eine|der|die|das|kunde|unternehmen|dienst)\b/u', $text),
+            'it' => preg_match_all('/\b(?:che|per|con|una|gli|delle|servizio|cliente|azienda)\b/u', $text),
+            'nl' => preg_match_all('/\b(?:voor|met|een|het|de|klant|bedrijf|dienst)\b/u', $text),
+            'en' => preg_match_all('/\b(?:the|and|for|with|how|what|why|service|customer|business|company)\b/u', $text),
+        ];
+        arsort($scores);
+        $top = array_key_first($scores);
+
+        return ($top !== null && (int) $scores[$top] > 0) ? (string) $top : 'unknown';
     }
 
     /**
@@ -609,40 +854,16 @@ class WorkerExecutionService
      */
     private function resolveKnowledgeContext(Task $task, string $title, string $keyword): string
     {
-        $tagFilters = $this->taskTagFilters($task);
-        $knowledgeBaseIds = $this->resolveKnowledgeBaseIds($task);
-        $knowledgeContext = '';
+        $result = $this->ragRetrievalService->retrieveForTask($task, $title, $keyword);
+        $trace = is_array($result['trace'] ?? null) ? $result['trace'] : [];
+        $this->lastKnowledgeChunkTrace = is_array($trace['chunks'] ?? null) ? $trace['chunks'] : [];
+        $this->lastEntityCaseTrace = [
+            'entities' => is_array($trace['entities'] ?? null) ? $trace['entities'] : [],
+            'cases' => is_array($trace['cases'] ?? null) ? $trace['cases'] : [],
+        ];
+        $this->lastKnowledgeTrace = $trace;
 
-        if ($knowledgeBaseIds !== []) {
-            $knowledgeBases = KnowledgeBase::query()
-                ->whereIn('id', $knowledgeBaseIds)
-                ->orderBy('id')
-                ->get(['id', 'name', 'content'])
-                ->sortBy(static fn (KnowledgeBase $knowledgeBase): int => array_search((int) $knowledgeBase->id, $knowledgeBaseIds, true) ?: 0)
-                ->values()
-                ->filter(static fn (KnowledgeBase $knowledgeBase): bool => trim((string) ($knowledgeBase->content ?? '')) !== '')
-                ->values();
-
-            foreach ($knowledgeBases as $knowledgeBase) {
-                $knowledgeBaseId = (int) $knowledgeBase->id;
-                $chunkCount = KnowledgeChunk::query()->where('knowledge_base_id', $knowledgeBaseId)->count();
-                if ($chunkCount <= 0) {
-                    $this->knowledgeChunkSyncService->sync($knowledgeBaseId, trim((string) $knowledgeBase->content));
-                }
-            }
-
-            if ($knowledgeBases->isNotEmpty()) {
-                $query = trim($title."\n".$keyword);
-                $knowledgeContext = $this->fetchKnowledgeContextFromChunks($knowledgeBases->pluck('id')->map(static fn ($id): int => (int) $id)->all(), $query, 6, 3200);
-                if ($knowledgeContext === '') {
-                    $knowledgeContext = $this->composeFallbackKnowledgeContent($knowledgeBases->all(), 3200);
-                }
-            }
-        }
-
-        $entityCaseContext = $this->composeTaggedEntityCaseContext($tagFilters, 2200);
-
-        return trim(implode("\n\n", array_filter([$knowledgeContext, $entityCaseContext], static fn (string $part): bool => trim($part) !== '')));
+        return (string) ($result['context'] ?? '');
     }
 
     /**
@@ -736,6 +957,27 @@ class WorkerExecutionService
         if ($entities->isEmpty() && $cases->isEmpty()) {
             return '';
         }
+
+        $this->lastEntityCaseTrace = [
+            'entities' => $entities
+                ->map(static fn (EntityRecord $entity): array => [
+                    'id' => (int) $entity->id,
+                    'name' => (string) $entity->name,
+                    'type' => (string) ($entity->entity_type ?? ''),
+                ])
+                ->values()
+                ->all(),
+            'cases' => $cases
+                ->map(static fn (CaseRecord $caseRecord): array => [
+                    'id' => (int) $caseRecord->id,
+                    'title' => (string) $caseRecord->title,
+                    'type' => (string) ($caseRecord->case_type ?? ''),
+                    'entity_id' => $caseRecord->entity_id !== null ? (int) $caseRecord->entity_id : null,
+                    'entity_name' => (string) ($caseRecord->entity?->name ?? ''),
+                ])
+                ->values()
+                ->all(),
+        ];
 
         $lines = [];
         if ($entities->isNotEmpty()) {
@@ -1271,11 +1513,20 @@ class WorkerExecutionService
     private function composeKnowledgeContext(array $scored, int $limit, int $maxChars): string
     {
         if ($scored === []) {
+            $this->lastKnowledgeChunkTrace = [];
+
             return '';
         }
 
         $selected = array_slice($scored, 0, max(1, $limit));
         usort($selected, static fn (array $a, array $b): int => (($a['knowledge_base_id'] ?? 0) <=> ($b['knowledge_base_id'] ?? 0)) ?: ($a['chunk_index'] <=> $b['chunk_index']));
+        $this->lastKnowledgeChunkTrace = array_map(static fn (array $chunk): array => [
+            'knowledge_base_id' => (int) ($chunk['knowledge_base_id'] ?? 0),
+            'knowledge_base_name' => (string) ($chunk['knowledge_base_name'] ?? ''),
+            'chunk_index' => (int) ($chunk['chunk_index'] ?? 0),
+            'score' => round((float) ($chunk['score'] ?? 0), 6),
+            'preview' => mb_substr(trim((string) ($chunk['content'] ?? '')), 0, 160, 'UTF-8'),
+        ], $selected);
 
         $parts = [];
         $charCount = 0;

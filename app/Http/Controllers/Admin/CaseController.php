@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CaseRecord;
 use App\Models\EntityRecord;
+use App\Services\GeoFlow\MaterialFormAnalysisService;
+use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,7 +19,11 @@ class CaseController extends Controller
 {
     private const PER_PAGE = 20;
 
-    public function __construct(private readonly TagService $tagService) {}
+    public function __construct(
+        private readonly TagService $tagService,
+        private readonly TagRecommendationService $tagRecommendationService,
+        private readonly MaterialFormAnalysisService $materialFormAnalysisService
+    ) {}
 
     public function index(Request $request): View
     {
@@ -67,8 +74,25 @@ class CaseController extends Controller
             'caseId' => 0,
             'caseForm' => $this->emptyCaseForm(),
             'entityOptions' => $this->entityOptions(),
-            'tagOptions' => $this->tagService->existingTagOptions(),
+            'tagOptions' => [],
             'selectedTagIds' => [],
+            'recommendedTags' => [],
+            'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
+        ]);
+    }
+
+    public function analyze(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'content' => ['required', 'string', 'max:20000'],
+            'ai_model_id' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        return response()->json([
+            'fields' => $this->materialFormAnalysisService->analyzeCase(
+                (string) $payload['content'],
+                (int) ($payload['ai_model_id'] ?? 0)
+            ),
         ]);
     }
 
@@ -87,6 +111,7 @@ class CaseController extends Controller
     public function edit(int $caseId): View
     {
         $caseRecord = CaseRecord::query()->with('tags')->whereKey($caseId)->firstOrFail();
+        $selectedTagIds = $this->tagService->selectedTagIdsFor($caseRecord);
 
         return view('admin.cases.form', [
             'pageTitle' => __('admin.cases.page_title'),
@@ -106,8 +131,10 @@ class CaseController extends Controller
                 'source_url' => (string) ($caseRecord->source_url ?? ''),
             ],
             'entityOptions' => $this->entityOptions(),
-            'tagOptions' => $this->tagService->existingTagOptions(),
-            'selectedTagIds' => $this->tagService->selectedTagIdsFor($caseRecord),
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
+            'selectedTagIds' => $selectedTagIds,
+            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->caseRecommendationText($caseRecord), $selectedTagIds),
+            'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
     }
 
@@ -222,5 +249,18 @@ class CaseController extends Controller
             'metrics' => '',
             'source_url' => '',
         ];
+    }
+
+    private function caseRecommendationText(CaseRecord $caseRecord): string
+    {
+        return implode(' ', [
+            (string) $caseRecord->title,
+            (string) ($caseRecord->case_type ?? ''),
+            (string) ($caseRecord->summary ?? ''),
+            (string) ($caseRecord->challenge ?? ''),
+            (string) ($caseRecord->solution ?? ''),
+            (string) ($caseRecord->result ?? ''),
+            (string) ($caseRecord->metrics ?? ''),
+        ]);
     }
 }

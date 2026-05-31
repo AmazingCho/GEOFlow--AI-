@@ -28,8 +28,12 @@
     $selectedMap = array_fill_keys($selectedLabels, true);
     $placeholder = (string) ($placeholder ?? __('admin.material_tags.selector_search_placeholder'));
     $emptyText = (string) ($emptyText ?? __('admin.material_tags.selector_empty'));
+    $loadingText = (string) ($loadingText ?? __('admin.material_tags.selector_loading'));
     $noneSelectedText = (string) ($noneSelectedText ?? __('admin.material_tags.selector_none_selected'));
     $removeText = (string) ($removeText ?? __('admin.material_tags.selector_remove'));
+    $searchUrl = (string) ($searchUrl ?? route('admin.material-tags.search'));
+    $searchScope = (string) ($searchScope ?? '');
+    $industrySourceSelector = (string) ($industrySourceSelector ?? '');
     $tone = (string) ($tone ?? 'blue');
     $toneClasses = match ($tone) {
         'purple' => [
@@ -56,26 +60,27 @@
     };
 @endphp
 
-<div data-tag-label-selector data-field-name="{{ $fieldName }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-remove-title="{{ $removeText }}" data-chip-class="{{ $toneClasses['chip'] }}" data-chip-button-class="{{ $toneClasses['chipButton'] }}" class="space-y-2">
-    @if ($tagOptions->isEmpty() && $selectedLabels === [])
-        <div class="rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500">{{ $emptyText }}</div>
-    @else
-        <div data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2">
-            @foreach ($selectedLabels as $label)
-                <span data-tag-label-chip data-tag-label="{{ $label }}" class="group relative inline-flex items-center rounded-full {{ $toneClasses['chip'] }} px-2.5 py-1 text-xs font-medium">
-                    {{ $label }}
-                    <button type="button" data-tag-label-remove data-tag-label="{{ $label }}" class="absolute -right-1 -top-1 hidden rounded-full {{ $toneClasses['chipButton'] }} p-0.5 text-white group-hover:inline-flex" title="{{ $removeText }}">
-                        <i data-lucide="x" class="h-3 w-3"></i>
-                    </button>
-                    <input type="hidden" name="{{ $fieldName }}[]" value="{{ $label }}">
-                </span>
-            @endforeach
-            <span data-tag-label-empty class="{{ $selectedLabels === [] ? 'inline' : 'hidden' }} text-xs text-gray-400">{{ $noneSelectedText }}</span>
+<div data-tag-label-selector data-field-name="{{ $fieldName }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-remove-title="{{ $removeText }}" data-chip-class="{{ $toneClasses['chip'] }}" data-chip-button-class="{{ $toneClasses['chipButton'] }}" data-tag-label-search-url="{{ $searchUrl }}" data-tag-label-search-scope="{{ $searchScope }}" data-tag-label-industry-source="{{ $industrySourceSelector }}" data-tag-label-option-class="{{ $toneClasses['option'] }}" class="space-y-2">
+    <div data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2">
+        @foreach ($selectedLabels as $label)
+            <span data-tag-label-chip data-tag-label="{{ $label }}" class="group relative inline-flex items-center rounded-full {{ $toneClasses['chip'] }} px-2.5 py-1 text-xs font-medium">
+                {{ $label }}
+                <button type="button" data-tag-label-remove data-tag-label="{{ $label }}" class="absolute -right-1 -top-1 hidden rounded-full {{ $toneClasses['chipButton'] }} p-0.5 text-white group-hover:inline-flex" title="{{ $removeText }}">
+                    <i data-lucide="x" class="h-3 w-3"></i>
+                </button>
+                <input type="hidden" name="{{ $fieldName }}[]" value="{{ $label }}">
+            </span>
+        @endforeach
+        <span data-tag-label-empty class="{{ $selectedLabels === [] ? 'inline' : 'hidden' }} text-xs text-gray-400">{{ $noneSelectedText }}</span>
+    </div>
+    <div class="relative">
+        <div class="flex min-h-[2.5rem] items-center rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm {{ $toneClasses['focus'] }} focus-within:ring-1">
+            <input type="search" data-tag-label-search autocomplete="off" placeholder="{{ $placeholder }}" class="min-w-0 flex-1 border-0 p-0 text-sm outline-none focus:ring-0">
         </div>
-        <div class="relative">
-            <input type="search" data-tag-label-search autocomplete="off" placeholder="{{ $placeholder }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm {{ $toneClasses['focus'] }} focus:ring-1">
-            <div data-tag-label-menu class="absolute left-0 right-0 z-40 mt-1 hidden max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                @forelse ($tagOptions as $tag)
+        <div data-tag-label-menu class="absolute left-0 right-0 z-40 mt-1 hidden max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+            <div data-tag-label-loading class="hidden px-3 py-2 text-sm text-gray-400">{{ $loadingText }}</div>
+            <div data-tag-label-options>
+                @foreach ($tagOptions as $tag)
                     <button type="button" data-tag-label-option data-tag-label="{{ $tag['label'] }}" data-tag-search-label="{{ mb_strtolower($tag['label'], 'UTF-8') }}" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-gray-700 {{ $toneClasses['option'] }}">
                         <span class="min-w-0">
                             <span class="block truncate font-medium" title="{{ $tag['label'] }}">{{ $tag['label'] }}</span>
@@ -85,12 +90,11 @@
                         </span>
                         <i data-lucide="check" data-tag-label-option-check class="{{ empty($selectedMap[$tag['label']]) ? 'hidden' : '' }} h-4 w-4 shrink-0"></i>
                     </button>
-                @empty
-                    <div class="px-3 py-2 text-sm text-gray-400">{{ $emptyText }}</div>
-                @endforelse
+                @endforeach
             </div>
+            <div data-tag-label-menu-empty class="{{ $tagOptions->isEmpty() ? '' : 'hidden' }} px-3 py-2 text-sm text-gray-400">{{ $emptyText }}</div>
         </div>
-    @endif
+    </div>
 </div>
 
 @once
@@ -108,6 +112,9 @@
                         selected: selector.querySelector('[data-tag-label-selected]'),
                         search: selector.querySelector('[data-tag-label-search]'),
                         menu: selector.querySelector('[data-tag-label-menu]'),
+                        loading: selector.querySelector('[data-tag-label-loading]'),
+                        optionsContainer: selector.querySelector('[data-tag-label-options]'),
+                        menuEmpty: selector.querySelector('[data-tag-label-menu-empty]'),
                         empty: selector.querySelector('[data-tag-label-empty]'),
                         options: Array.from(selector.querySelectorAll('[data-tag-label-option]')),
                     };
@@ -147,10 +154,84 @@
                     });
                 }
 
+                function escapeHtml(value) {
+                    return String(value).replace(/[&<>"']/g, function (char) {
+                        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'}[char] || char;
+                    });
+                }
+
+                function renderOptions(selector, items) {
+                    const selectorParts = parts(selector);
+                    if (!selectorParts.optionsContainer) {
+                        return;
+                    }
+
+                    selectorParts.optionsContainer.innerHTML = '';
+                    (items || []).forEach((item) => {
+                        if (!item || !item.label) {
+                            return;
+                        }
+
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.setAttribute('data-tag-label-option', '');
+                        button.setAttribute('data-tag-label', String(item.label));
+                        button.setAttribute('data-tag-search-label', String(item.label).toLowerCase());
+                        button.className = 'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-gray-700 ' + (selector.getAttribute('data-tag-label-option-class') || 'hover:bg-blue-50 hover:text-blue-700');
+                        const meta = item.meta ? '<span class="block text-xs text-gray-400">' + escapeHtml(item.meta) + '</span>' : '';
+                        button.innerHTML = '<span class="min-w-0"><span class="block truncate font-medium" title="' + escapeHtml(item.label) + '">' + escapeHtml(item.label) + '</span>' + meta + '</span><i data-lucide="check" data-tag-label-option-check class="hidden h-4 w-4 shrink-0"></i>';
+                        selectorParts.optionsContainer.appendChild(button);
+                    });
+
+                    selectorParts.menuEmpty?.classList.toggle('hidden', selectorParts.optionsContainer.children.length > 0);
+                    updateSelector(selector);
+                }
+
+                function searchOptions(selector) {
+                    const selectorParts = parts(selector);
+                    const url = selector.getAttribute('data-tag-label-search-url') || '';
+                    if (!url) {
+                        filterOptions(selector);
+                        return;
+                    }
+
+                    const requestUrl = new URL(url, window.location.origin);
+                    requestUrl.searchParams.set('q', (selectorParts.search?.value || '').trim());
+                    requestUrl.searchParams.set('limit', '20');
+                    const scope = selector.getAttribute('data-tag-label-search-scope') || '';
+                    if (scope !== '') {
+                        requestUrl.searchParams.set('scope', scope);
+                    }
+                    const industrySource = selector.getAttribute('data-tag-label-industry-source') || '';
+                    if (industrySource !== '') {
+                        document.querySelectorAll(industrySource).forEach((input) => {
+                            if (input.value) {
+                                requestUrl.searchParams.append('industry_labels[]', input.value);
+                            }
+                        });
+                    }
+
+                    selectorParts.loading?.classList.remove('hidden');
+                    selectorParts.menuEmpty?.classList.add('hidden');
+                    fetch(requestUrl.toString(), {
+                        headers: {'Accept': 'application/json'},
+                        credentials: 'same-origin',
+                    })
+                        .then((response) => response.ok ? response.json() : {items: []})
+                        .then((payload) => renderOptions(selector, payload.items || []))
+                        .catch(() => renderOptions(selector, []))
+                        .finally(() => selectorParts.loading?.classList.add('hidden'));
+                }
+
+                function debounceSearch(selector, delay = 180) {
+                    window.clearTimeout(selector._tagLabelSearchTimer);
+                    selector._tagLabelSearchTimer = window.setTimeout(() => searchOptions(selector), delay);
+                }
+
                 function showMenu(selector) {
                     const selectorParts = parts(selector);
                     selectorParts.menu?.classList.remove('hidden');
-                    filterOptions(selector);
+                    debounceSearch(selector, 0);
                     updateSelector(selector);
                 }
 
@@ -189,6 +270,7 @@
                     selectorParts.search.focus();
                     filterOptions(selector);
                     updateSelector(selector);
+                    document.dispatchEvent(new CustomEvent('geoflow:tag-label-selection-changed', {detail: {selector}}));
                 }
 
                 document.addEventListener('focusin', function (event) {
@@ -196,7 +278,8 @@
                     if (search) {
                         const selector = search.closest('[data-tag-label-selector]');
                         if (selector) {
-                            showMenu(selector);
+                            parts(selector).menu?.classList.remove('hidden');
+                            debounceSearch(selector);
                         }
                     }
                 });
@@ -227,6 +310,7 @@
                         remove.closest('[data-tag-label-chip]')?.remove();
                         if (selector) {
                             updateSelector(selector);
+                            document.dispatchEvent(new CustomEvent('geoflow:tag-label-selection-changed', {detail: {selector}}));
                         }
                         event.preventDefault();
                         return;

@@ -122,6 +122,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('create', [ArticleController::class, 'store'])->name('store');
             Route::post('{articleId}/restore', [ArticleController::class, 'restore'])->name('restore')->whereNumber('articleId');
             Route::post('{articleId}/force-delete', [ArticleController::class, 'forceDelete'])->name('force-delete')->whereNumber('articleId');
+            Route::post('{articleId}/publish', [ArticleController::class, 'publish'])->name('publish')->whereNumber('articleId');
             Route::get('{articleId}/edit', [ArticleController::class, 'edit'])->name('edit');
             Route::put('{articleId}', [ArticleController::class, 'update'])->name('update');
         });
@@ -187,6 +188,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{libraryId}/edit', [ImageLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [ImageLibraryController::class, 'detail'])->name('detail');
             Route::post('{libraryId}/images/upload', [ImageLibraryController::class, 'uploadImages'])->name('images.upload');
+            Route::post('{libraryId}/images/{imageId}/title', [ImageLibraryController::class, 'updateImageTitle'])->name('images.title')->whereNumber('imageId');
             Route::post('{libraryId}/images/{imageId}/tags', [ImageLibraryController::class, 'updateImageTags'])->name('images.tags')->whereNumber('imageId');
             Route::post('{libraryId}/images/delete', [ImageLibraryController::class, 'destroyImages'])->name('images.delete');
             Route::put('{libraryId}/detail', [ImageLibraryController::class, 'updateFromDetail'])->name('detail.update');
@@ -214,6 +216,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('/', [EntityController::class, 'index'])->name('index');
             Route::get('create', [EntityController::class, 'create'])->name('create');
             Route::post('create', [EntityController::class, 'store'])->name('store');
+            Route::post('analyze', [EntityController::class, 'analyze'])->name('analyze');
             Route::get('{entityId}/edit', [EntityController::class, 'edit'])->name('edit')->whereNumber('entityId');
             Route::put('{entityId}', [EntityController::class, 'update'])->name('update')->whereNumber('entityId');
             Route::post('{entityId}/delete', [EntityController::class, 'destroy'])->name('delete')->whereNumber('entityId');
@@ -224,6 +227,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('/', [CaseController::class, 'index'])->name('index');
             Route::get('create', [CaseController::class, 'create'])->name('create');
             Route::post('create', [CaseController::class, 'store'])->name('store');
+            Route::post('analyze', [CaseController::class, 'analyze'])->name('analyze');
             Route::get('{caseId}/edit', [CaseController::class, 'edit'])->name('edit')->whereNumber('caseId');
             Route::put('{caseId}', [CaseController::class, 'update'])->name('update')->whereNumber('caseId');
             Route::post('{caseId}/delete', [CaseController::class, 'destroy'])->name('delete')->whereNumber('caseId');
@@ -232,8 +236,11 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         // 业务页面
         Route::get('materials', [MaterialsController::class, 'index'])->name('materials.index');
         Route::get('material-tags', [TagController::class, 'index'])->name('material-tags.index');
+        Route::get('material-tags/recommendations', [TagController::class, 'recommendations'])->name('material-tags.recommendations');
+        Route::get('material-tags/search', [TagController::class, 'search'])->name('material-tags.search');
         Route::post('material-tags', [TagController::class, 'store'])->name('material-tags.store');
         Route::post('material-tags/bulk', [TagController::class, 'bulk'])->name('material-tags.bulk');
+        Route::get('material-tags/{tagId}/references', [TagController::class, 'references'])->name('material-tags.references')->whereNumber('tagId');
         Route::put('material-tags/{tagId}', [TagController::class, 'update'])->name('material-tags.update')->whereNumber('tagId');
         Route::post('material-tags/{tagId}/delete', [TagController::class, 'destroy'])->name('material-tags.delete')->whereNumber('tagId');
         Route::get('url-import', [UrlImportController::class, 'index'])->name('url-import');

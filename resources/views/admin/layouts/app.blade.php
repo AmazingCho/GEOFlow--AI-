@@ -19,7 +19,7 @@
     'pageTitle' => $pageTitle ?? '',
     'activeMenu' => $activeMenu ?? '',
 ])
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+    <main class="mx-auto max-w-[1600px] py-6 sm:px-6 lg:px-8">
         @if (session('message'))
             <div class="admin-flash-alert mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
                 <span class="block sm:inline">{{ session('message') }}</span>
