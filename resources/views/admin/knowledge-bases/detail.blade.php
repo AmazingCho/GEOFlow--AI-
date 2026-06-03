@@ -1,5 +1,11 @@
 @extends('admin.layouts.app')
 
+@php
+    $fieldClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm leading-6 shadow-sm transition focus:border-orange-500 focus:ring-2 focus:ring-orange-200';
+    $textareaClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm leading-6 shadow-sm transition focus:border-orange-500 focus:ring-2 focus:ring-orange-200';
+    $labelClass = 'block text-sm font-semibold text-gray-800 mb-2';
+@endphp
+
 @section('content')
     <div class="px-4 sm:px-0">
         <div class="mb-8 flex items-center justify-between">
@@ -10,38 +16,113 @@
                 <div>
                     <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.knowledge_detail.heading') }}</h1>
                     <p class="mt-1 text-sm text-gray-600">{{ $knowledgeBase->name }}</p>
+                    <div class="mt-2">
+                        <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {{ $knowledgeBase->collection?->name ?? __('admin.collections.badge_unassigned') }}
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg mb-6">
-            <div class="px-6 py-4 border-b border-gray-200">
+        <div class="mb-8 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div class="px-8 py-5 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_detail.content_title') }}</h3>
             </div>
-            <form method="POST" action="{{ route('admin.knowledge-bases.detail.update', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" class="p-6 space-y-4">
+            <form method="POST" action="{{ route('admin.knowledge-bases.detail.update', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" class="space-y-7 p-8" data-ai-analysis-form data-ai-analysis-url="{{ route('admin.knowledge-bases.analyze') }}">
                 @csrf
                 @method('PUT')
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="rounded-xl border border-orange-200 bg-orange-50/80 p-5">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h3 class="text-base font-semibold text-orange-950">{{ __('admin.knowledge_bases.ai_classify_title') }}</h3>
+                            <p class="mt-1 text-sm text-orange-800">{{ __('admin.knowledge_bases.ai_classify_desc') }}</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <select data-ai-analysis-model class="rounded-lg border border-orange-300 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-orange-500 focus:ring-2 focus:ring-orange-200">
+                                <option value="0">{{ __('admin.knowledge_bases.ai_classify_auto_model') }}</option>
+                                @foreach ($aiModelOptions ?? [] as $modelOption)
+                                    <option value="{{ (int) $modelOption['id'] }}">{{ $modelOption['name'] }}</option>
+                                @endforeach
+                            </select>
+                            <button type="button" data-ai-analysis-submit class="inline-flex items-center justify-center rounded-md border border-transparent bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">
+                                <i data-lucide="sparkles" class="mr-2 h-4 w-4"></i>
+                                {{ __('admin.knowledge_bases.ai_classify_button') }}
+                            </button>
+                        </div>
+                    </div>
+                    <textarea data-ai-analysis-content rows="5" class="mt-5 block w-full rounded-lg border border-orange-300 bg-white px-3 py-3 text-sm leading-6 shadow-sm transition focus:border-orange-500 focus:ring-2 focus:ring-orange-200" placeholder="{{ __('admin.knowledge_bases.ai_classify_placeholder') }}"></textarea>
+                    <p data-ai-analysis-status class="mt-2 hidden text-sm text-orange-800"></p>
+                    <p data-ai-analysis-tags class="mt-2 hidden text-xs text-orange-700"></p>
+                </div>
+                <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_name') }}</label>
-                        <input type="text" name="name" value="{{ old('name', (string) $knowledgeBase->name) }}" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>
+                        <label class="{{ $labelClass }}">{{ __('admin.knowledge_detail.field_name') }}</label>
+                        <input type="text" name="name" value="{{ old('name', (string) $knowledgeBase->name) }}" data-tag-source="knowledge-detail" class="{{ $fieldClass }}" required>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_bases.field_doc_type') }}</label>
-                        <select name="file_type" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>
+                        <label class="{{ $labelClass }}">{{ __('admin.knowledge_bases.field_doc_type') }}</label>
+                        <select name="file_type" class="{{ $fieldClass }}" required>
                             <option value="markdown" @selected(old('file_type', (string) ($knowledgeBase->file_type ?? 'markdown')) === 'markdown')>{{ __('admin.status.markdown') }}</option>
                             <option value="word" @selected(old('file_type', (string) ($knowledgeBase->file_type ?? 'markdown')) === 'word')>{{ __('admin.status.word_document') }}</option>
                             <option value="text" @selected(old('file_type', (string) ($knowledgeBase->file_type ?? 'markdown')) === 'text')>{{ __('admin.status.text') }}</option>
                         </select>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_description') }}</label>
-                    <textarea name="description" rows="3" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm">{{ old('description', (string) ($knowledgeBase->description ?? '')) }}</textarea>
+                @include('admin.partials.collection-select', [
+                    'selectedId' => (string) ((int) ($knowledgeBase->collection_id ?? 0) ?: ''),
+                    'collectionOptions' => $collectionOptions ?? [],
+                    'class' => $fieldClass,
+                ])
+                @include('admin.knowledge-bases.partials.metadata-fields', [
+                    'class' => $fieldClass,
+                    'knowledgeBase' => $knowledgeBase,
+                    'knowledgeTypeOptions' => $knowledgeTypeOptions ?? [],
+                    'knowledgeRoleOptions' => $knowledgeRoleOptions ?? [],
+                    'importanceOptions' => $importanceOptions ?? [],
+                    'showRoleHelp' => true,
+                ])
+                <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                    <div>
+                        <label class="{{ $labelClass }}">{{ __('admin.knowledge_bases.field_source_url') }}</label>
+                        <input type="url" name="source_url" value="{{ old('source_url', (string) ($knowledgeBase->source_url ?? '')) }}" data-tag-source="knowledge-detail" class="{{ $fieldClass }}" placeholder="https://example.com/source">
+                    </div>
+                    <div>
+                        <label class="{{ $labelClass }}">{{ __('admin.common.status') }}</label>
+                        <select name="status" class="{{ $fieldClass }}">
+                            @foreach ($statusOptions ?? [] as $option)
+                                <option value="{{ $option['value'] }}" @selected(old('status', (string) ($knowledgeBase->status ?? 'active')) === $option['value'])>{{ $option['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ __('admin.knowledge_detail.field_content') }}</label>
-                    <textarea name="content" rows="18" data-tag-source="knowledge-detail" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm" required>{{ old('content', (string) ($knowledgeBase->content ?? '')) }}</textarea>
+                    <label class="{{ $labelClass }}">{{ __('admin.knowledge_detail.field_description') }}</label>
+                    <textarea name="description" rows="3" data-tag-source="knowledge-detail" class="{{ $textareaClass }}">{{ old('description', (string) ($knowledgeBase->description ?? '')) }}</textarea>
+                </div>
+                <div>
+                    <label class="{{ $labelClass }}">{{ __('admin.knowledge_bases.field_summary') }}</label>
+                    <textarea name="summary" rows="3" data-tag-source="knowledge-detail" class="{{ $textareaClass }}" placeholder="{{ __('admin.knowledge_bases.placeholder_summary') }}">{{ old('summary', (string) ($knowledgeBase->summary ?? '')) }}</textarea>
+                </div>
+                <div>
+                    <label class="{{ $labelClass }}">{{ __('admin.knowledge_bases.field_entity_relation') }}</label>
+                    <p class="mb-3 text-xs leading-5 text-gray-500">{{ __('admin.knowledge_bases.entity_relation_help') }}</p>
+                    <select name="entity_relation_type" class="{{ $fieldClass }} mb-3">
+                        @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
+                            <option value="{{ $relationTypeOption['value'] }}" @selected(old('entity_relation_type', (string) ($entityRelationType ?? 'supporting_reference')) === $relationTypeOption['value'])>
+                                {{ $relationTypeOption['label'] }}
+                            </option>
+                        @endforeach
+                    </select>
+                    @include('admin.partials.entity-selector', [
+                        'entityOptions' => $entityOptions ?? [],
+                        'selectedEntityIds' => old('entity_ids', $selectedEntityIds ?? []),
+                        'tone' => 'orange',
+                    ])
+                </div>
+                <div>
+                    <label class="{{ $labelClass }}">{{ __('admin.knowledge_detail.field_content') }}</label>
+                    <textarea name="content" rows="18" data-tag-source="knowledge-detail" class="{{ $textareaClass }}" required>{{ old('content', (string) ($knowledgeBase->content ?? '')) }}</textarea>
                 </div>
                 <div class="flex justify-end">
                     <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm text-white bg-orange-600 hover:bg-orange-700">
@@ -62,9 +143,6 @@
                     'name' => 'tag_ids',
                     'tagOptions' => $tagOptions ?? [],
                     'selectedTagIds' => $selectedTagIds ?? [],
-                    'recommendedTags' => $recommendedTags ?? [],
-                    'recommendationUrl' => route('admin.material-tags.recommendations'),
-                    'recommendationSourceSelector' => '[data-tag-source="knowledge-detail"]',
                     'tone' => 'orange',
                     'autoSubmit' => true,
                 ])
@@ -171,3 +249,5 @@
         </div>
     </div>
 @endsection
+
+@include('admin.partials.material-ai-analysis-script')

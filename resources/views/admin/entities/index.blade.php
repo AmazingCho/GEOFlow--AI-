@@ -39,6 +39,13 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[260px_minmax(0,1fr)]" data-collection-scoped-list>
+            @include('admin.partials.collection-sidebar', [
+                'routeName' => 'admin.entities.index',
+                'selectedId' => (string) ($collectionId ?? ''),
+                'collectionOptions' => $collectionOptions ?? [],
+            ])
+            <div class="min-w-0">
         <div class="mb-6 rounded-lg bg-white shadow">
             <div class="px-6 py-4">
                 <form method="GET" class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)_auto_auto] lg:items-center">
@@ -77,6 +84,9 @@
                                         @if ((string) ($entity->entity_type ?? '') !== '')
                                             <span class="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{{ $entity->entity_type }}</span>
                                         @endif
+                                        <span class="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                            {{ $entity->collection?->name ?? __('admin.collections.badge_unassigned') }}
+                                        </span>
                                         <span class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ __('admin.entities.case_count', ['count' => (int) ($entity->cases_count ?? 0)]) }}</span>
                                     </div>
                                     @if ((string) ($entity->aliases ?? '') !== '')
@@ -117,6 +127,8 @@
                     </div>
                 @endif
             @endif
+        </div>
+            </div>
         </div>
     </div>
 @endsection

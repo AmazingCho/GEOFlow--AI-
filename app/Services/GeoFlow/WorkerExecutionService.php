@@ -181,10 +181,12 @@ class WorkerExecutionService
             'cases' => count($this->lastKnowledgeTrace['cases'] ?? []),
         ]);
 
-        $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext);
+        $targetLanguage = $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $prompt?->content);
+        $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext, $targetLanguage);
         $pipelineSteps[] = $this->pipelineStep('compose_prompt', [
             'prompt_length' => mb_strlen($contentPrompt, 'UTF-8'),
             'has_custom_prompt' => $prompt !== null,
+            'target_language' => $targetLanguage,
         ]);
 
         $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
@@ -255,8 +257,9 @@ class WorkerExecutionService
         $workflow = $pipeline['workflow'];
         /** @var list<Image> $selectedImages */
         $selectedImages = $pipeline['selectedImages'];
+        $contextMetadata = $this->articleContextMetadataFromTrace($this->lastKnowledgeTrace);
 
-        return DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages): int {
+        return DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages, $contextMetadata): int {
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
@@ -277,6 +280,12 @@ class WorkerExecutionService
                 'category_id' => $category?->id,
                 'author_id' => $author?->id,
                 'task_id' => (int) $task->id,
+                'selected_collection_id' => $contextMetadata['selected_collection_id'],
+                'selected_entity_ids' => $contextMetadata['selected_entity_ids'],
+                'selected_case_ids' => $contextMetadata['selected_case_ids'],
+                'used_knowledge_base_ids' => $contextMetadata['used_knowledge_base_ids'],
+                'used_tags' => $contextMetadata['used_tags'],
+                'context_snapshot' => $contextMetadata['context_snapshot'],
                 'original_keyword' => $keyword,
                 'keywords' => $keyword,
                 'meta_description' => mb_substr($excerpt, 0, 120),
@@ -357,7 +366,9 @@ class WorkerExecutionService
             'task' => [
                 'id' => (int) $task->id,
                 'name' => (string) ($task->name ?? ''),
+                'collection_id' => $task->collection_id !== null ? (int) $task->collection_id : null,
                 'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),
+                'entity_filter' => (string) ($task->entity_filter ?? ''),
                 'image_tag_filter' => (string) ($task->image_tag_filter ?? ''),
                 'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
             ],
@@ -370,11 +381,7 @@ class WorkerExecutionService
             'category' => $category ? ['id' => (int) $category->id, 'name' => (string) $category->name] : null,
             'prompt' => $prompt ? ['id' => (int) $prompt->id, 'name' => (string) $prompt->name, 'type' => (string) $prompt->type] : null,
             'language' => [
-                'code' => $this->detectPromptLanguage(implode("\n", [
-                    (string) $titleRow->title,
-                    $keyword,
-                    (string) ($prompt?->content ?? ''),
-                ])),
+                'code' => $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $prompt?->content),
             ],
             'model' => [
                 'id' => (int) $aiModel->id,
@@ -396,6 +403,52 @@ class WorkerExecutionService
         ];
     }
 
+    /**
+     * @param  array<string,mixed>  $trace
+     * @return array{selected_collection_id:int|null,selected_entity_ids:list<int>,selected_case_ids:list<int>,used_knowledge_base_ids:list<int>,used_tags:list<string>,context_snapshot:array<string,mixed>}
+     */
+    private function articleContextMetadataFromTrace(array $trace): array
+    {
+        $package = is_array($trace['context_package'] ?? null) ? $trace['context_package'] : $trace;
+
+        return [
+            'selected_collection_id' => isset($package['selected_collection_id'])
+                ? ((int) $package['selected_collection_id'] ?: null)
+                : (isset($trace['collection_id']) ? ((int) $trace['collection_id'] ?: null) : null),
+            'selected_entity_ids' => $this->integerList($package['selected_entity_ids'] ?? $trace['entity_filter_ids'] ?? []),
+            'selected_case_ids' => $this->integerList($package['selected_case_ids'] ?? $trace['case_filter_ids'] ?? []),
+            'used_knowledge_base_ids' => $this->integerList($package['used_knowledge_base_ids'] ?? $trace['knowledge_base_ids'] ?? []),
+            'used_tags' => $this->stringList($package['used_tags'] ?? $trace['tag_filters'] ?? []),
+            'context_snapshot' => $package,
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function integerList(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : [])
+            ->map(static fn (mixed $item): int => (int) $item)
+            ->filter(static fn (int $item): bool => $item > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stringList(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : [])
+            ->map(static fn (mixed $item): string => trim((string) $item))
+            ->filter(static fn (string $item): bool => $item !== '')
+            ->unique(static fn (string $item): string => mb_strtolower($item, 'UTF-8'))
+            ->values()
+            ->all();
+    }
+
     private function detectPromptLanguage(string $text): string
     {
         $text = mb_strtolower(trim($text), 'UTF-8');
@@ -405,6 +458,24 @@ class WorkerExecutionService
         $han = preg_match_all('/\p{Han}/u', $text);
         if ($han > 10) {
             return 'zh';
+        }
+        preg_match_all('/[A-Za-z]/', $text, $latinMatches);
+        if ($han === 0 && count($latinMatches[0] ?? []) > 20) {
+            $scoresForExplicitLatinLanguages = [
+                'es' => preg_match_all('/\b(?:que|para|como|con|por|una|los|las|del|servicio|cliente|empresa)\b/u', $text),
+                'pt' => preg_match_all('/\b(?:que|para|como|com|por|uma|dos|das|serviço|cliente|empresa|você)\b/u', $text),
+                'fr' => preg_match_all('/\b(?:que|pour|avec|une|les|des|service|client|entreprise|dans)\b/u', $text),
+                'de' => preg_match_all('/\b(?:und|für|mit|eine|der|die|das|kunde|unternehmen|dienst)\b/u', $text),
+                'it' => preg_match_all('/\b(?:che|per|con|una|gli|delle|servizio|cliente|azienda)\b/u', $text),
+                'nl' => preg_match_all('/\b(?:voor|met|een|het|de|klant|bedrijf|dienst)\b/u', $text),
+            ];
+            arsort($scoresForExplicitLatinLanguages);
+            $topLatinLanguage = array_key_first($scoresForExplicitLatinLanguages);
+            if ($topLatinLanguage !== null && (int) $scoresForExplicitLatinLanguages[$topLatinLanguage] > 0) {
+                return (string) $topLatinLanguage;
+            }
+
+            return 'en';
         }
 
         $scores = [
@@ -420,6 +491,18 @@ class WorkerExecutionService
         $top = array_key_first($scores);
 
         return ($top !== null && (int) $scores[$top] > 0) ? (string) $top : 'unknown';
+    }
+
+    private function determineGenerationLanguage(string $title, string $keyword, ?string $promptContent): string
+    {
+        $titleKeywordLanguage = $this->detectPromptLanguage(trim($title."\n".$keyword));
+        if ($titleKeywordLanguage !== 'unknown') {
+            return $titleKeywordLanguage;
+        }
+
+        $promptLanguage = $this->detectPromptLanguage((string) $promptContent);
+
+        return $promptLanguage !== 'unknown' ? $promptLanguage : 'zh';
     }
 
     /**
@@ -722,12 +805,14 @@ class WorkerExecutionService
     /**
      * 构造正文提示词：优先精确替换变量；无变量的自定义提示词自动补齐任务上下文。
      */
-    private function buildContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext): string
+    private function buildContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext, string $targetLanguage): string
     {
         $prompt = trim((string) $promptContent);
         $isFallbackPrompt = false;
         if ($prompt === '') {
-            $prompt = "请围绕标题“{$title}”和关键词“{$keyword}”生成一篇结构清晰、语言自然的中文文章。";
+            $prompt = $targetLanguage === 'zh'
+                ? "请围绕标题“{$title}”和关键词“{$keyword}”生成一篇结构清晰、语言自然的中文文章。"
+                : "Write a clear, well-structured article around the title \"{$title}\" and the keyword \"{$keyword}\".";
             $isFallbackPrompt = true;
         }
 
@@ -739,10 +824,10 @@ class WorkerExecutionService
         ]);
 
         if (! $hasExplicitContextVariables) {
-            $renderedPrompt = $this->appendSmartPromptContext($renderedPrompt, $title, $keyword, $knowledgeContext);
+            $renderedPrompt = $this->appendSmartPromptContext($renderedPrompt, $title, $keyword, $knowledgeContext, $targetLanguage);
         }
 
-        return trim($renderedPrompt)."\n\n".$this->finalPromptInstruction($renderedPrompt);
+        return trim($renderedPrompt)."\n\n".$this->finalPromptInstruction($targetLanguage);
     }
 
     private function promptHasKnownContextVariables(string $prompt): bool
@@ -795,9 +880,9 @@ class WorkerExecutionService
         return in_array(mb_strtolower($name, 'UTF-8'), ['title', 'keyword', 'knowledge'], true);
     }
 
-    private function appendSmartPromptContext(string $prompt, string $title, string $keyword, string $knowledgeContext): string
+    private function appendSmartPromptContext(string $prompt, string $title, string $keyword, string $knowledgeContext, string $targetLanguage): string
     {
-        if ($this->isLikelyEnglishPrompt($prompt)) {
+        if ($targetLanguage !== 'zh') {
             $lines = [
                 'Task context:',
                 '- Article title: '.$title,
@@ -828,13 +913,18 @@ class WorkerExecutionService
         return trim($prompt)."\n\n".implode("\n", $lines);
     }
 
-    private function finalPromptInstruction(string $prompt): string
+    private function finalPromptInstruction(string $targetLanguage): string
     {
-        if ($this->isLikelyEnglishPrompt($prompt)) {
-            return 'Please output only the final article body in Markdown. Do not repeat the prompt or output placeholders.';
-        }
-
-        return '请直接输出最终文章正文（Markdown），不要重复提示词、不要输出占位符。';
+        return match ($targetLanguage) {
+            'en' => 'The final article must be written entirely in English. Output only the final article body in Markdown. Do not repeat the prompt or output placeholders.',
+            'es' => 'El artículo final debe estar escrito completamente en español. Devuelve solo el cuerpo final del artículo en Markdown. No repitas el prompt ni muestres marcadores de posición.',
+            'pt' => 'O artigo final deve ser escrito inteiramente em português. Retorne apenas o corpo final do artigo em Markdown. Não repita o prompt nem mostre placeholders.',
+            'fr' => 'L’article final doit être entièrement rédigé en français. Retourne uniquement le corps final de l’article en Markdown. Ne répète pas le prompt et n’affiche aucun placeholder.',
+            'de' => 'Der finale Artikel muss vollständig auf Deutsch geschrieben sein. Gib nur den finalen Artikeltext in Markdown aus. Wiederhole den Prompt nicht und gib keine Platzhalter aus.',
+            'it' => 'L’articolo finale deve essere scritto interamente in italiano. Restituisci solo il corpo finale dell’articolo in Markdown. Non ripetere il prompt e non mostrare placeholder.',
+            'nl' => 'Het uiteindelijke artikel moet volledig in het Nederlands zijn geschreven. Geef alleen de definitieve artikeltekst in Markdown terug. Herhaal de prompt niet en toon geen placeholders.',
+            default => '请直接输出最终中文文章正文（Markdown）。全文必须使用中文，不要重复提示词、不要输出占位符。',
+        };
     }
 
     private function isLikelyEnglishPrompt(string $prompt): bool

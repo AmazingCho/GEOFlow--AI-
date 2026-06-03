@@ -7,9 +7,10 @@ use App\Models\ArticleImage;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Task;
-use App\Services\GeoFlow\TagRecommendationService;
+use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -30,20 +31,24 @@ class ImageLibraryController extends Controller
 
     public function __construct(
         private readonly TagService $tagService,
-        private readonly TagRecommendationService $tagRecommendationService
+        private readonly EntityMaterialLinkService $entityMaterialLinkService
     ) {}
 
     /**
      * 列表页。
      */
-    public function index(): View
+    public function index(Request $request): View
     {
+        $collectionId = $this->selectedCollectionId($request);
+
         return view('admin.image-libraries.index', [
             'pageTitle' => __('admin.image_libraries.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
-            'libraries' => $this->loadLibraries(),
+            'libraries' => $this->loadLibraries($collectionId),
             'stats' => $this->loadStats(),
+            'collectionOptions' => CollectionOptions::all(),
+            'collectionId' => $collectionId,
         ]);
     }
 
@@ -52,22 +57,17 @@ class ImageLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = ImageLibrary::query()->with('collection')->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
         $tagFilter = trim((string) $request->query('tag', ''));
         $perPage = min(96, max(12, (int) $request->query('per_page', self::DETAIL_PER_PAGE) ?: self::DETAIL_PER_PAGE));
         $images = $this->loadDetailImages($libraryId, $search, $tagFilter, $perPage);
-        $imageRecommendationInputs = [];
         $selectedTagIdsByImage = [];
+        $selectedEntityIdsByImage = [];
         foreach ($images as $image) {
-            $imageRecommendationInputs[(int) $image->id] = implode(' ', [
-                (string) ($image->original_name ?? ''),
-                (string) ($image->filename ?? ''),
-                (string) ($image->file_name ?? ''),
-                (string) ($image->file_path ?? ''),
-            ]);
             $selectedTagIdsByImage[(int) $image->id] = collect($image->getRelation('tags'))->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $selectedEntityIdsByImage[(int) $image->id] = $this->entityMaterialLinkService->selectedEntityIdsFor($image);
         }
         $selectedTagIds = collect($selectedTagIdsByImage)->flatten()->map(static fn ($id): int => (int) $id)->unique()->values()->all();
         $usageTotal = (int) ArticleImage::query()
@@ -86,8 +86,10 @@ class ImageLibraryController extends Controller
             'images' => $images,
             'usageTotal' => $usageTotal,
             'totalImages' => Image::query()->where('library_id', $libraryId)->count(),
+            'collectionOptions' => CollectionOptions::all(),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
+            'selectedEntityIdsByImage' => $selectedEntityIdsByImage,
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
-            'tagRecommendationsByImage' => $this->tagRecommendationService->recommendForItems($imageRecommendationInputs, $selectedTagIdsByImage),
         ]);
     }
 
@@ -101,11 +103,13 @@ class ImageLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
         ], [
             'name.required' => __('admin.image_libraries.error.name_required'),
         ]);
 
         $library->update([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
@@ -128,6 +132,8 @@ class ImageLibraryController extends Controller
             ],
             'tag_ids' => ['nullable', 'array'],
             'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'images.required' => __('admin.image_detail.error.select_images'),
         ]);
@@ -142,8 +148,9 @@ class ImageLibraryController extends Controller
         $skippedCount = 0;
         $uploadErrors = [];
         $tagIds = $this->selectedTagIds($request);
+        $entityIds = $this->selectedEntityIds($request);
         $tagsText = $this->tagService->tagTextForIds($tagIds);
-        DB::transaction(function () use ($uploadedFiles, $libraryId, $tagIds, $tagsText, &$uploadedCount, &$skippedCount, &$uploadErrors): void {
+        DB::transaction(function () use ($uploadedFiles, $libraryId, $tagIds, $tagsText, $entityIds, &$uploadedCount, &$skippedCount, &$uploadErrors): void {
             foreach ($uploadedFiles as $uploadedFile) {
                 try {
                     $stored = $this->storeUploadedImageFile($uploadedFile);
@@ -162,6 +169,7 @@ class ImageLibraryController extends Controller
                         'usage_count' => 0,
                     ]);
                     $this->tagService->syncExisting($image, $tagIds);
+                    $this->entityMaterialLinkService->syncEntities($image, $entityIds);
                     $uploadedCount++;
                 } catch (\Throwable $exception) {
                     $skippedCount++;
@@ -220,6 +228,30 @@ class ImageLibraryController extends Controller
             ->with('message', '图片标签已更新');
     }
 
+    public function updateImageEntities(Request $request, int $libraryId, int $imageId): RedirectResponse
+    {
+        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $image = Image::query()
+            ->where('library_id', (int) $library->id)
+            ->whereKey($imageId)
+            ->firstOrFail();
+
+        $request->validate([
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
+        ]);
+
+        $this->entityMaterialLinkService->syncEntities($image, $this->selectedEntityIds($request));
+
+        return redirect()
+            ->route('admin.image-libraries.detail', [
+                'libraryId' => $libraryId,
+                'search' => trim((string) $request->input('search', '')),
+                'tag' => trim((string) $request->input('tag', '')),
+            ])
+            ->with('message', __('admin.entities.message.image_links_updated'));
+    }
+
     public function updateImageTitle(Request $request, int $libraryId, int $imageId): RedirectResponse
     {
         $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
@@ -251,6 +283,19 @@ class ImageLibraryController extends Controller
     private function selectedTagIds(Request $request): array
     {
         return collect($request->input('tag_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedEntityIds(Request $request): array
+    {
+        return collect($request->input('entity_ids', []))
             ->map(static fn ($id): int => (int) $id)
             ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
@@ -315,6 +360,9 @@ class ImageLibraryController extends Controller
             'isEdit' => false,
             'libraryId' => 0,
             'libraryForm' => $this->emptyForm(),
+            'collectionOptions' => CollectionOptions::all(true),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
+            'selectedEntityIds' => [],
         ]);
     }
 
@@ -326,16 +374,21 @@ class ImageLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.image_libraries.error.name_required'),
         ]);
 
-        ImageLibrary::query()->create([
+        $library = ImageLibrary::query()->create([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'image_count' => 0,
             'used_task_count' => 0,
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.image-libraries.index')->with('message', __('admin.image_libraries.message.create_success'));
     }
@@ -354,9 +407,13 @@ class ImageLibraryController extends Controller
             'isEdit' => true,
             'libraryId' => (int) $library->id,
             'libraryForm' => [
+                'collection_id' => (string) ((int) ($library->collection_id ?? 0) ?: ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
             ],
+            'collectionOptions' => CollectionOptions::all(),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
+            'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($library),
         ]);
     }
 
@@ -370,14 +427,19 @@ class ImageLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.image_libraries.error.name_required'),
         ]);
 
         $library->update([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.image-libraries.index')->with('message', __('admin.image_libraries.message.update_success'));
     }
@@ -417,17 +479,24 @@ class ImageLibraryController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function loadLibraries(): array
+    private function loadLibraries(?int $collectionId = null): array
     {
         $query = ImageLibrary::query()
-            ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->select(['id', 'collection_id', 'name', 'description', 'created_at', 'updated_at'])
+            ->with('collection:id,name,status')
             ->withCount('images as actual_count')
             ->withSum('images as total_size', 'file_size')
             ->orderByDesc('created_at');
 
+        if ($collectionId !== null) {
+            $query->where('collection_id', $collectionId);
+        }
+
         return $query->get()->map(static function (ImageLibrary $library): array {
             return [
                 'id' => (int) $library->id,
+                'collection_id' => (int) ($library->collection_id ?? 0),
+                'collection_name' => (string) ($library->collection?->name ?? ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
                 'actual_count' => (int) ($library->actual_count ?? 0),
@@ -509,9 +578,27 @@ class ImageLibraryController extends Controller
     private function emptyForm(): array
     {
         return [
+            'collection_id' => '',
             'name' => '',
             'description' => '',
         ];
+    }
+
+    private function selectedCollectionId(Request $request): ?int
+    {
+        $collectionId = (int) $request->query('collection_id', 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizeCollectionId(array $payload): ?int
+    {
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
     }
 
     /**

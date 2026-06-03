@@ -14,21 +14,10 @@
         ->values()
         ->all();
     $selectedTagMap = array_fill_keys($selectedTagIds, true);
-    $recommendedTags = collect($recommendedTags ?? [])
-        ->map(static fn ($tag): array => [
-            'id' => (int) ($tag['id'] ?? 0),
-            'label' => (string) ($tag['label'] ?? ''),
-        ])
-        ->filter(static fn (array $tag): bool => $tag['id'] > 0 && $tag['label'] !== '' && empty($selectedTagMap[$tag['id']]))
-        ->unique('id')
-        ->values();
     $tone = (string) ($tone ?? 'blue');
     $autoSubmit = (bool) ($autoSubmit ?? false);
     $includePresence = (bool) ($includePresence ?? true);
-    $recommendationUrl = (string) ($recommendationUrl ?? '');
-    $recommendationSourceSelector = (string) ($recommendationSourceSelector ?? '');
     $searchUrl = (string) ($searchUrl ?? route('admin.material-tags.search'));
-    $hasRecommendationBox = $recommendedTags->isNotEmpty() || ($recommendationUrl !== '' && $recommendationSourceSelector !== '');
     $selectedTagOptions = $tagOptions->filter(static fn (array $tag): bool => !empty($selectedTagMap[$tag['id']]))->values();
     $toneClasses = match ($tone) {
         'purple' => [
@@ -58,7 +47,7 @@
     };
 @endphp
 
-<div data-tag-selector data-tag-selector-auto-submit="{{ $autoSubmit ? '1' : '0' }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-tag-recommendation-url="{{ $recommendationUrl }}" data-tag-recommendation-source="{{ $recommendationSourceSelector }}" data-tag-search-url="{{ $searchUrl }}" data-tag-field-name="{{ $fieldName }}" data-tag-option-class="{{ $toneClasses['option'] }}" class="space-y-2">
+<div data-tag-selector data-tag-selector-auto-submit="{{ $autoSubmit ? '1' : '0' }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-tag-search-url="{{ $searchUrl }}" data-tag-field-name="{{ $fieldName }}" data-tag-option-class="{{ $toneClasses['option'] }}" class="space-y-2">
     @if ($includePresence)
         <input type="hidden" name="{{ $fieldName }}_present" value="1">
     @endif
@@ -80,20 +69,6 @@
             @endforeach
             <span data-tag-selector-empty class="{{ $selectedTagIds === [] ? 'inline' : 'hidden' }} text-xs text-gray-400">{{ __('admin.material_tags.selector_none_selected') }}</span>
         </div>
-
-        @if ($hasRecommendationBox)
-            <div data-tag-selector-recommendations class="{{ $recommendedTags->isEmpty() ? 'hidden' : 'flex' }} flex-wrap items-center gap-1.5">
-                <span class="text-xs text-gray-500">{{ __('admin.material_tags.selector_recommended') }}</span>
-                <span data-tag-recommendation-items class="contents">
-                    @foreach ($recommendedTags as $tag)
-                        <button type="button" data-tag-recommendation data-tag-id="{{ $tag['id'] }}" class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-                            <i data-lucide="sparkles" class="mr-1 h-3 w-3"></i>
-                            {{ $tag['label'] }}
-                        </button>
-                    @endforeach
-                </span>
-            </div>
-        @endif
 
         <div class="relative">
             <div class="flex min-h-[2.5rem] items-center rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm {{ $toneClasses['focus'] }} focus-within:ring-1">
@@ -133,7 +108,6 @@
                         options: Array.from(selector.querySelectorAll('[data-tag-option]')),
                         chips: Array.from(selector.querySelectorAll('[data-tag-selector-chip]')),
                         checkboxes: Array.from(selector.querySelectorAll('[data-tag-checkbox]')),
-                        recommendations: Array.from(selector.querySelectorAll('[data-tag-recommendation]')),
                     };
                 }
 
@@ -220,11 +194,6 @@
                         option.querySelector('[data-tag-option-check]')?.classList.toggle('hidden', !isSelected);
                     });
 
-                    parts.recommendations.forEach((recommendation) => {
-                        const isSelected = selected.includes(recommendation.getAttribute('data-tag-id'));
-                        recommendation.classList.toggle('hidden', isSelected);
-                    });
-
                     if (parts.empty) {
                         parts.empty.classList.toggle('hidden', selected.length > 0);
                         parts.empty.classList.toggle('inline', selected.length === 0);
@@ -232,79 +201,10 @@
                     refreshIcons();
                 }
 
-                function sourceText(selector) {
-                    const sourceSelector = selector.getAttribute('data-tag-recommendation-source') || '';
-                    if (!sourceSelector) {
-                        return '';
-                    }
-
-                    return Array.from(document.querySelectorAll(sourceSelector))
-                        .map((input) => input.value || input.textContent || '')
-                        .join(' ')
-                        .trim();
-                }
-
                 function escapeHtml(value) {
                     return String(value).replace(/[&<>"']/g, function (char) {
                         return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'}[char] || char;
                     });
-                }
-
-                function renderRecommendations(selector, items) {
-                    const box = selector.querySelector('[data-tag-selector-recommendations]');
-                    const target = selector.querySelector('[data-tag-recommendation-items]');
-                    if (!box || !target) {
-                        return;
-                    }
-
-                    target.innerHTML = '';
-                    (items || []).forEach((item) => {
-                        if (!item || !item.id || !item.label) {
-                            return;
-                        }
-
-                        const button = document.createElement('button');
-                        button.type = 'button';
-                        button.setAttribute('data-tag-recommendation', '');
-                        button.setAttribute('data-tag-id', String(item.id));
-                        button.className = 'inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700';
-                        button.innerHTML = '<i data-lucide="sparkles" class="mr-1 h-3 w-3"></i>' + escapeHtml(item.label);
-                        target.appendChild(button);
-                    });
-
-                    const hasItems = target.querySelector('[data-tag-recommendation]') !== null;
-                    box.classList.toggle('hidden', !hasItems);
-                    box.classList.toggle('flex', hasItems);
-                    updateSelector(selector);
-                }
-
-                function refreshRecommendations(selector) {
-                    const url = selector.getAttribute('data-tag-recommendation-url') || '';
-                    if (!url) {
-                        return;
-                    }
-                    const text = sourceText(selector);
-                    if (!text) {
-                        renderRecommendations(selector, []);
-                        return;
-                    }
-
-                    const requestUrl = new URL(url, window.location.origin);
-                    requestUrl.searchParams.set('text', text);
-                    checkedIds(selector).forEach((id) => requestUrl.searchParams.append('selected_ids[]', id));
-
-                    fetch(requestUrl.toString(), {
-                        headers: {'Accept': 'application/json'},
-                        credentials: 'same-origin',
-                    })
-                        .then((response) => response.ok ? response.json() : {items: []})
-                        .then((payload) => renderRecommendations(selector, payload.items || []))
-                        .catch(() => renderRecommendations(selector, []));
-                }
-
-                function debounceRefresh(selector) {
-                    window.clearTimeout(selector._tagRecommendationTimer);
-                    selector._tagRecommendationTimer = window.setTimeout(() => refreshRecommendations(selector), 250);
                 }
 
                 function renderOptions(selector, items) {
@@ -490,7 +390,6 @@
 	                        }
 	                        if (selector) {
 	                            debounceSearch(selector, 0);
-	                            debounceRefresh(selector);
 	                        }
 	                        return;
 	                    }
@@ -506,27 +405,12 @@
                         }
                         if (selector) {
                             updateSelector(selector);
-                            debounceRefresh(selector);
                             if (changed) {
                                 autoSubmitSelector(selector);
                             }
                         }
                         event.preventDefault();
                         return;
-                    }
-
-                    const recommendation = event.target.closest('[data-tag-recommendation]');
-                    if (recommendation) {
-	                        const selector = recommendation.closest('[data-tag-selector]');
-	                        const tagId = recommendation.getAttribute('data-tag-id');
-	                        const label = recommendation.textContent || tagId || '';
-	                        selectTagOption(selector, {id: tagId || '', label: label.trim()});
-	                        recommendation.classList.add('hidden');
-	                        if (selector) {
-	                            debounceRefresh(selector);
-	                        }
-	                        event.preventDefault();
-	                        return;
                     }
 
                     document.querySelectorAll('[data-tag-selector]').forEach((selector) => {
@@ -536,21 +420,7 @@
                     });
                 });
 
-                document.addEventListener('input', function (event) {
-                    document.querySelectorAll('[data-tag-selector][data-tag-recommendation-source]').forEach((selector) => {
-                        const sourceSelector = selector.getAttribute('data-tag-recommendation-source') || '';
-                        if (sourceSelector && event.target.matches(sourceSelector)) {
-                            debounceRefresh(selector);
-                        }
-                    });
-                });
-
 	                document.querySelectorAll('[data-tag-selector]').forEach(updateSelector);
-	                document.querySelectorAll('[data-tag-selector][data-tag-recommendation-url]').forEach((selector) => {
-	                    if (selector.getAttribute('data-tag-recommendation-url')) {
-	                        debounceRefresh(selector);
-	                    }
-	                });
 	                window.GeoFlowTagSelector = Object.assign(window.GeoFlowTagSelector || {}, {
 	                    selectLabels,
 	                });

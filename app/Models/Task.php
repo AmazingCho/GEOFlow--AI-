@@ -13,6 +13,8 @@ class Task extends Model
 
     protected $fillable = [
         'name',
+        'collection_id',
+        'cross_collection_mode',
         'title_library_id',
         'image_library_id',
         'image_count',
@@ -37,7 +39,8 @@ class Task extends Model
         'loop_count',
         'knowledge_base_id',
         'knowledge_tag_filter',
-        'industry_tag_filter',
+        'entity_filter',
+        'case_filter',
         'category_mode',
         'fixed_category_id',
         'last_run_at',
@@ -54,6 +57,8 @@ class Task extends Model
     {
         return [
             'title_library_id' => 'integer',
+            'collection_id' => 'integer',
+            'cross_collection_mode' => 'integer',
             'image_library_id' => 'integer',
             'image_count' => 'integer',
             'prompt_id' => 'integer',
@@ -85,6 +90,11 @@ class Task extends Model
     public function titleLibrary(): BelongsTo
     {
         return $this->belongsTo(TitleLibrary::class, 'title_library_id');
+    }
+
+    public function collection(): BelongsTo
+    {
+        return $this->belongsTo(CollectionRecord::class, 'collection_id');
     }
 
     public function imageLibrary(): BelongsTo

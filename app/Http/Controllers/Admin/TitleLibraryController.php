@@ -9,8 +9,11 @@ use App\Models\KeywordLibrary;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
+use App\Services\GeoFlow\EntityMaterialLinkService;
+use App\Services\GeoFlow\TagService;
 use App\Services\GeoFlow\TitleAiGenerationService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -27,20 +30,26 @@ class TitleLibraryController extends Controller
     private const DETAIL_PER_PAGE = 20;
 
     public function __construct(
-        private TitleAiGenerationService $titleAiGenerationService
+        private TitleAiGenerationService $titleAiGenerationService,
+        private readonly EntityMaterialLinkService $entityMaterialLinkService,
+        private readonly TagService $tagService
     ) {}
 
     /**
      * 列表页。
      */
-    public function index(): View
+    public function index(Request $request): View
     {
+        $collectionId = $this->selectedCollectionId($request);
+
         return view('admin.title-libraries.index', [
             'pageTitle' => __('admin.title_libraries.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
-            'libraries' => $this->loadLibraries(),
+            'libraries' => $this->loadLibraries($collectionId),
             'stats' => $this->loadStats(),
+            'collectionOptions' => CollectionOptions::all(),
+            'collectionId' => $collectionId,
         ]);
     }
 
@@ -49,7 +58,7 @@ class TitleLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = TitleLibrary::query()->with('collection')->whereKey($libraryId)->firstOrFail();
 
         $titles = $this->loadDetailTitles($libraryId, '');
         $usageTotal = (int) (Title::query()->where('library_id', $libraryId)->sum('used_count') ?? 0);
@@ -292,6 +301,48 @@ class TitleLibraryController extends Controller
     }
 
     /**
+     * 更新单条标题及其关联关键词。
+     */
+    public function updateTitle(Request $request, int $libraryId, int $titleId): RedirectResponse
+    {
+        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $titleRow = Title::query()
+            ->where('library_id', (int) $library->id)
+            ->whereKey($titleId)
+            ->firstOrFail();
+
+        $payload = $request->validate([
+            'title' => ['required', 'string', 'max:500'],
+            'keyword' => ['nullable', 'string', 'max:200'],
+        ], [
+            'title.required' => __('admin.title_detail.error.title_required'),
+        ]);
+
+        $title = trim((string) $payload['title']);
+        if ($title === '') {
+            return back()->withErrors(__('admin.title_detail.error.title_required'));
+        }
+
+        $exists = Title::query()
+            ->where('library_id', (int) $library->id)
+            ->where('title', $title)
+            ->whereKeyNot((int) $titleRow->id)
+            ->exists();
+        if ($exists) {
+            return back()->withErrors(__('admin.title_detail.error.title_exists'));
+        }
+
+        $titleRow->update([
+            'title' => $title,
+            'keyword' => trim((string) ($payload['keyword'] ?? '')),
+        ]);
+
+        return redirect()
+            ->route('admin.title-libraries.detail', ['libraryId' => (int) $library->id])
+            ->with('message', __('admin.title_detail.message.update_success'));
+    }
+
+    /**
      * 删除标题（支持单条/批量）。
      */
     public function destroyTitles(Request $request, int $libraryId): RedirectResponse
@@ -387,6 +438,9 @@ class TitleLibraryController extends Controller
             'isEdit' => false,
             'libraryId' => 0,
             'libraryForm' => $this->emptyForm(),
+            'collectionOptions' => CollectionOptions::all(true),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
+            'selectedEntityIds' => [],
         ]);
     }
 
@@ -398,11 +452,15 @@ class TitleLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.title_libraries.error.name_required'),
         ]);
 
-        TitleLibrary::query()->create([
+        $library = TitleLibrary::query()->create([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'title_count' => 0,
@@ -410,6 +468,7 @@ class TitleLibraryController extends Controller
             'generation_rounds' => 1,
             'is_ai_generated' => 0,
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.create_success'));
     }
@@ -420,6 +479,7 @@ class TitleLibraryController extends Controller
     public function edit(int $libraryId): View|RedirectResponse
     {
         $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $selectedTagIds = $this->tagService->selectedTagIdsFor($library);
 
         return view('admin.title-libraries.form', [
             'pageTitle' => __('admin.title_libraries.page_title'),
@@ -428,9 +488,15 @@ class TitleLibraryController extends Controller
             'isEdit' => true,
             'libraryId' => (int) $library->id,
             'libraryForm' => [
+                'collection_id' => (string) ((int) ($library->collection_id ?? 0) ?: ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
             ],
+            'collectionOptions' => CollectionOptions::all(),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
+            'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($library),
+            'selectedTagIds' => $selectedTagIds,
+            'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
         ]);
     }
 
@@ -444,14 +510,24 @@ class TitleLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
+            'tag_ids' => ['nullable', 'array'],
+            'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
             'name.required' => __('admin.title_libraries.error.name_required'),
         ]);
 
         $library->update([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
+        if ($this->requestHasTagSelection($request)) {
+            $this->tagService->syncExisting($library, $this->selectedTagIds($request));
+        }
 
         return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.update_success'));
     }
@@ -477,19 +553,26 @@ class TitleLibraryController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function loadLibraries(): array
+    private function loadLibraries(?int $collectionId = null): array
     {
         $query = TitleLibrary::query()
-            ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->select(['id', 'collection_id', 'name', 'description', 'created_at', 'updated_at'])
+            ->with('collection:id,name,status')
             ->withCount([
                 'titles as actual_count',
                 'titles as ai_count' => fn ($builder) => $builder->where('is_ai_generated', true),
             ])
             ->orderByDesc('created_at');
 
+        if ($collectionId !== null) {
+            $query->where('collection_id', $collectionId);
+        }
+
         return $query->get()->map(static function (TitleLibrary $library): array {
             return [
                 'id' => (int) $library->id,
+                'collection_id' => (int) ($library->collection_id ?? 0),
+                'collection_name' => (string) ($library->collection?->name ?? ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
                 'actual_count' => (int) ($library->actual_count ?? 0),
@@ -523,9 +606,58 @@ class TitleLibraryController extends Controller
     private function emptyForm(): array
     {
         return [
+            'collection_id' => '',
             'name' => '',
             'description' => '',
         ];
+    }
+
+    private function selectedCollectionId(Request $request): ?int
+    {
+        $collectionId = (int) $request->query('collection_id', 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedEntityIds(Request $request): array
+    {
+        return collect($request->input('entity_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedTagIds(Request $request): array
+    {
+        return collect($request->input('tag_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function requestHasTagSelection(Request $request): bool
+    {
+        return $request->has('tag_ids') || $request->has('tag_ids_present');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizeCollectionId(array $payload): ?int
+    {
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
     }
 
     /**

@@ -9,11 +9,6 @@ use Illuminate\Support\Str;
 
 class EntityExtractionService
 {
-    public function __construct(
-        private readonly TagRecommendationService $tagRecommendationService,
-        private readonly TagService $tagService
-    ) {}
-
     /**
      * @param  array<string,mixed>  $analysis
      * @param  array<string,mixed>  $page
@@ -30,7 +25,6 @@ class EntityExtractionService
 
         $entities = [];
         foreach ($entityNames as $name) {
-            $entityText = implode("\n", array_filter([$name, $summary, implode("\n", $facts)]));
             $entities[] = [
                 'name' => $name,
                 'entity_type' => $this->inferEntityType($name, $coreBusiness),
@@ -44,11 +38,6 @@ class EntityExtractionService
                     'core_business' => $coreBusiness,
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'source_url' => $sourceUrl,
-                'recommended_tag_ids' => collect($this->tagRecommendationService->recommendForText($entityText, [], 5))
-                    ->pluck('id')
-                    ->map(static fn ($id): int => (int) $id)
-                    ->values()
-                    ->all(),
             ];
         }
 
@@ -62,11 +51,12 @@ class EntityExtractionService
 
     /**
      * @param  array{entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}  $candidates
-     * @return array{entities:int,cases:int}
+     * @return array{entities:int,cases:int,entity_ids:list<int>,case_ids:list<int>}
      */
     public function persistCandidates(array $candidates): array
     {
         $entityMap = [];
+        $entityIds = [];
         $entityCount = 0;
         foreach ($candidates['entities'] ?? [] as $candidate) {
             $name = $this->normalize((string) ($candidate['name'] ?? ''));
@@ -88,13 +78,11 @@ class EntityExtractionService
                 $entityCount++;
             }
 
-            $tagIds = $this->tagIds($candidate['recommended_tag_ids'] ?? []);
-            if ($tagIds !== []) {
-                $this->tagService->syncExisting($entity, $tagIds);
-            }
             $entityMap[$name] = $entity;
+            $entityIds[] = (int) $entity->id;
         }
 
+        $caseIds = [];
         $caseCount = 0;
         foreach ($candidates['cases'] ?? [] as $candidate) {
             $title = $this->normalize((string) ($candidate['title'] ?? ''));
@@ -125,13 +113,15 @@ class EntityExtractionService
                 $caseCount++;
             }
 
-            $tagIds = $this->tagIds($candidate['recommended_tag_ids'] ?? []);
-            if ($tagIds !== []) {
-                $this->tagService->syncExisting($caseRecord, $tagIds);
-            }
+            $caseIds[] = (int) $caseRecord->id;
         }
 
-        return ['entities' => $entityCount, 'cases' => $caseCount];
+        return [
+            'entities' => $entityCount,
+            'cases' => $caseCount,
+            'entity_ids' => array_values(array_unique($entityIds)),
+            'case_ids' => array_values(array_unique($caseIds)),
+        ];
     }
 
     /**
@@ -154,8 +144,6 @@ class EntityExtractionService
         $challenge = $this->businessValue($coreBusiness, 'target_audience') ?: $this->businessValue($coreBusiness, 'commercial_scenarios');
         $solution = $this->businessValue($coreBusiness, 'products_services') ?: $this->businessValue($coreBusiness, 'value_proposition');
         $result = implode("\n", array_slice($facts, 0, 4));
-        $caseText = implode("\n", array_filter([$caseTitle, $summary, $challenge, $solution, $result]));
-
         return [[
             'entity_name' => (string) ($entities[0]['name'] ?? ''),
             'title' => $caseTitle,
@@ -166,11 +154,6 @@ class EntityExtractionService
             'result' => $result,
             'metrics' => $this->extractMetrics($facts),
             'source_url' => (string) ($job->normalized_url ?: $job->url),
-            'recommended_tag_ids' => collect($this->tagRecommendationService->recommendForText($caseText, [], 5))
-                ->pluck('id')
-                ->map(static fn ($id): int => (int) $id)
-                ->values()
-                ->all(),
         ]];
     }
 
@@ -318,20 +301,4 @@ class EntityExtractionService
         return is_array($decoded) ? json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '{}';
     }
 
-    /**
-     * @return list<int>
-     */
-    private function tagIds(mixed $value): array
-    {
-        if (! is_array($value)) {
-            return [];
-        }
-
-        return collect($value)
-            ->map(static fn ($id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-    }
 }

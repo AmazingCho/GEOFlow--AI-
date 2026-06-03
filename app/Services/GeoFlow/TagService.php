@@ -381,6 +381,5 @@ class TagService
     private function flushTagStatsCache(): void
     {
         Cache::forget('admin.material_tags.stats');
-        Cache::forget('tag_recommendations:material_tags');
     }
 }

@@ -5,11 +5,13 @@ namespace Tests\Feature;
 use App\Jobs\SyncKnowledgeBaseChunksJob;
 use App\Models\Admin;
 use App\Models\AiModel;
+use App\Models\CollectionRecord;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
+use App\Models\EntityRecord;
 use App\Models\Prompt;
 use App\Models\Tag;
 use App\Models\TitleLibrary;
@@ -21,6 +23,7 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -105,6 +108,7 @@ class AdminMaterialsPagesTest extends TestCase
                 __('admin.materials.knowledge_hub_vector_config'),
             ])
             ->assertSee(__('admin.materials.foundation_title'))
+            ->assertSee(__('admin.materials.governance_title'))
             ->assertSee(__('admin.materials.author_manage_title'))
             ->assertSee(__('admin.materials.url_import'));
 
@@ -209,6 +213,50 @@ class AdminMaterialsPagesTest extends TestCase
             ->assertJsonPath('sections.keywords.0.meta', '测试关键词库');
     }
 
+    public function test_admin_can_manage_controlled_tag_groups_without_deleting_tags(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'controlled_group_admin',
+            'password' => 'secret-123',
+            'email' => 'controlled-group-admin@example.com',
+            'display_name' => 'Controlled Group Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $tag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Application',
+            'name' => 'Battery',
+            'slug' => 'application-battery',
+            'color' => '',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.material-tags.index'))
+            ->assertOk()
+            ->assertSee(__('admin.material_tags.controlled_groups_title'))
+            ->assertSee('Topic')
+            ->assertSee('Audience')
+            ->assertSee('Intent');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.material-tags.controlled-groups.store'), ['name' => 'Application'])
+            ->assertRedirect();
+        $groupId = (int) DB::table('controlled_tag_groups')->where('name', 'Application')->value('id');
+        $this->assertGreaterThan(0, $groupId);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.material-tags.controlled-groups.update', ['groupId' => $groupId]), ['name' => 'Application Scenario'])
+            ->assertRedirect();
+        $this->assertDatabaseHas('controlled_tag_groups', ['id' => $groupId, 'name' => 'Application Scenario']);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.material-tags.controlled-groups.delete', ['groupId' => $groupId]))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('controlled_tag_groups', ['id' => $groupId]);
+        $this->assertDatabaseHas('tags', ['id' => (int) $tag->id, 'group_name' => 'Application']);
+    }
+
     public function test_material_tag_search_supports_scoped_remote_selectors(): void
     {
         $admin = Admin::query()->create([
@@ -277,85 +325,6 @@ class AdminMaterialsPagesTest extends TestCase
             ->assertJsonMissing(['label' => '图片:产品图']);
     }
 
-    public function test_material_tag_search_can_be_scoped_by_industry_labels(): void
-    {
-        $admin = Admin::query()->create([
-            'username' => 'material_industry_search_admin',
-            'password' => 'secret-123',
-            'email' => 'material-industry-search@example.com',
-            'display_name' => 'Material Industry Search Admin',
-            'role' => 'admin',
-            'status' => 'active',
-        ]);
-        $automationIndustry = Tag::query()->firstOrCreate([
-            'type' => 'material',
-            'group_name' => '行业领域',
-            'name' => '自动化设备',
-        ], [
-            'slug' => 'industry-automation',
-            'color' => '',
-        ]);
-        $coolingIndustry = Tag::query()->firstOrCreate([
-            'type' => 'material',
-            'group_name' => '行业领域',
-            'name' => '制冷设备',
-        ], [
-            'slug' => 'industry-cooling',
-            'color' => '',
-        ]);
-        $automationTag = Tag::query()->create([
-            'type' => 'material',
-            'group_name' => '知识',
-            'name' => '自动化售后',
-            'slug' => 'knowledge-automation-support',
-            'color' => '',
-        ]);
-        $coolingTag = Tag::query()->create([
-            'type' => 'material',
-            'group_name' => '知识',
-            'name' => '制冷售后',
-            'slug' => 'knowledge-cooling-support',
-            'color' => '',
-        ]);
-        $automationKb = KnowledgeBase::query()->create([
-            'name' => '自动化知识库',
-            'description' => '',
-            'content' => '自动化售后说明',
-            'character_count' => 7,
-            'file_type' => 'markdown',
-            'word_count' => 7,
-        ]);
-        $coolingKb = KnowledgeBase::query()->create([
-            'name' => '制冷知识库',
-            'description' => '',
-            'content' => '制冷售后说明',
-            'character_count' => 6,
-            'file_type' => 'markdown',
-            'word_count' => 6,
-        ]);
-        $automationKb->tags()->attach([(int) $automationIndustry->id, (int) $automationTag->id]);
-        $coolingKb->tags()->attach([(int) $coolingIndustry->id, (int) $coolingTag->id]);
-
-        $this->actingAs($admin, 'admin')
-            ->getJson(route('admin.material-tags.search', [
-                'scope' => 'industry',
-                'q' => '自动',
-            ]))
-            ->assertOk()
-            ->assertJsonFragment(['label' => '行业领域:自动化设备'])
-            ->assertJsonMissing(['label' => '行业领域:制冷设备']);
-
-        $this->actingAs($admin, 'admin')
-            ->getJson(route('admin.material-tags.search', [
-                'scope' => 'knowledge',
-                'q' => '售后',
-                'industry_labels' => ['行业领域:自动化设备'],
-            ]))
-            ->assertOk()
-            ->assertJsonFragment(['label' => '知识:自动化售后'])
-            ->assertJsonMissing(['label' => '知识:制冷售后']);
-    }
-
     public function test_admin_can_create_knowledge_base_from_form(): void
     {
         $admin = Admin::query()->create([
@@ -381,6 +350,473 @@ class AdminMaterialsPagesTest extends TestCase
             'file_type' => 'markdown',
         ]);
         $this->assertGreaterThan(0, KnowledgeBase::query()->count());
+    }
+
+    public function test_admin_can_save_knowledge_metadata_and_case_study_is_not_allowed(): void
+    {
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_metadata_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-metadata-admin@example.com',
+            'display_name' => 'Knowledge Metadata Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.store'), [
+                'name' => 'SJ4060 产品手册',
+                'description' => '产品资料',
+                'file_type' => 'markdown',
+                'knowledge_type' => 'product_manual',
+                'knowledge_role' => 'primary_source',
+                'importance' => 5,
+                'content' => "SJ4060 支持高精度视觉定位。\n\n适合自动点胶场景。",
+            ])
+            ->assertRedirect(route('admin.knowledge-bases.index'));
+
+        $this->assertDatabaseHas('knowledge_bases', [
+            'name' => 'SJ4060 产品手册',
+            'knowledge_type' => 'product_manual',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.store'), [
+                'name' => '重复案例资料',
+                'description' => '',
+                'file_type' => 'markdown',
+                'knowledge_type' => 'case_study',
+                'knowledge_role' => 'supporting_context',
+                'importance' => 3,
+                'content' => '案例资料应进入 Case DB。',
+            ])
+            ->assertSessionHasErrors('knowledge_type');
+
+        $this->assertDatabaseMissing('knowledge_bases', [
+            'name' => '重复案例资料',
+        ]);
+    }
+
+    public function test_admin_can_filter_and_bulk_manage_knowledge_governance(): void
+    {
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_governance_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-governance-admin@example.com',
+            'display_name' => 'Knowledge Governance Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Automation Equipment',
+            'slug' => 'automation-equipment-governance',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+        $entity = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060',
+            'entity_type' => 'Product Model',
+            'description' => 'Vision doming model',
+        ]);
+        $productTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Product Model',
+            'name' => 'SJ4060',
+            'slug' => 'product-model-sj4060-governance',
+            'color' => '',
+        ]);
+        $caseMaterialTag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Content Type',
+            'name' => 'Case Material',
+            'slug' => 'content-type-case-material-governance',
+            'color' => '',
+        ]);
+        $manual = KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Manual Governance',
+            'description' => 'Manual source',
+            'summary' => 'Manual summary',
+            'source_url' => 'https://manual.example.com/sj4060',
+            'content' => 'SJ4060 manual content',
+            'character_count' => 21,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'product_manual',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+            'word_count' => 21,
+        ]);
+        $manual->tags()->attach((int) $productTag->id);
+        DB::table('entity_material_links')->insert([
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $manual->id,
+            'link_role' => 'primary_subject',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $faq = KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 FAQ Governance',
+            'description' => '',
+            'content' => 'SJ4060 FAQ content',
+            'character_count' => 18,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'faq',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'status' => 'active',
+            'word_count' => 18,
+        ]);
+        $caseMaterial = KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Case Material Governance',
+            'description' => '',
+            'content' => 'Case source notes should stay in knowledge when they are raw material.',
+            'character_count' => 66,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'reference',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'status' => 'active',
+            'word_count' => 66,
+        ]);
+        $caseMaterial->tags()->attach((int) $caseMaterialTag->id);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.index', ['view' => 'product_manuals']))
+            ->assertOk()
+            ->assertSee(__('admin.knowledge_bases.saved_views.title'))
+            ->assertSee('SJ4060 Manual Governance')
+            ->assertDontSee('SJ4060 FAQ Governance');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.index', [
+                'entity_id' => (int) $entity->id,
+                'search' => 'manual.example.com',
+                'tag_group' => 'Product Model',
+                'knowledge_purpose' => 'product_manual',
+                'status' => 'active',
+            ]))
+            ->assertOk()
+            ->assertSee('https://manual.example.com/sj4060')
+            ->assertSee('SJ4060 / Product Model')
+            ->assertSee(__('admin.knowledge_bases.bulk.title'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.bulk'), [
+                'knowledge_ids' => [(int) $manual->id],
+                'bulk_action' => 'assign_purpose',
+                'knowledge_purpose' => 'faq',
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('knowledge_bases', [
+            'id' => (int) $manual->id,
+            'knowledge_type' => 'faq',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 4,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.bulk'), [
+                'knowledge_ids' => [(int) $manual->id],
+                'bulk_action' => 'set_status',
+                'status' => 'inactive',
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('knowledge_bases', [
+            'id' => (int) $manual->id,
+            'status' => 'inactive',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.bulk'), [
+                'knowledge_ids' => [(int) $faq->id],
+                'bulk_action' => 'add_tags',
+                'bulk_tag_ids' => [(int) $productTag->id],
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('taggables', [
+            'tag_id' => (int) $productTag->id,
+            'taggable_type' => KnowledgeBase::class,
+            'taggable_id' => (int) $faq->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.bulk'), [
+                'knowledge_ids' => [(int) $faq->id],
+                'bulk_action' => 'link_entity',
+                'entity_ids' => [(int) $entity->id],
+                'entity_relation_type' => 'supporting_reference',
+            ])
+            ->assertRedirect();
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $faq->id,
+            'link_role' => 'supporting_reference',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.materials.index'))
+            ->assertOk()
+            ->assertSee(__('admin.materials.governance_title'));
+    }
+
+    public function test_admin_can_ai_classify_knowledge_base_and_review_before_saving(): void
+    {
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_ai_classify_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-ai-classify-admin@example.com',
+            'display_name' => 'Knowledge AI Classify Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->firstOrCreate(
+            ['slug' => 'automation-equipment'],
+            [
+                'name' => 'Automation Equipment',
+                'description' => '',
+                'status' => 'active',
+                'sort_order' => 1,
+            ]
+        );
+        $entity = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060',
+            'entity_type' => '产品型号',
+            'description' => '视觉点胶设备型号',
+        ]);
+        Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Product Model',
+            'name' => 'SJ4060',
+            'slug' => 'product-model-sj4060',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.create'))
+            ->assertOk()
+            ->assertSee('data-ai-analysis-form', false)
+            ->assertSee('name="summary"', false)
+            ->assertSee('archive', false);
+
+        $response = $this->actingAs($admin, 'admin')->postJson(route('admin.knowledge-bases.analyze'), [
+            'title' => 'SJ4060 产品手册',
+            'content' => 'Automation Equipment 的 SJ4060 product manual，包含视觉点胶参数和 FAQ。',
+            'ai_model_id' => 0,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('fields.collection_id', (int) $collection->id)
+            ->assertJsonPath('fields.knowledge_type', 'faq')
+            ->assertJsonPath('fields.knowledge_role', 'supporting_context')
+            ->assertJsonPath('fields.content', 'Automation Equipment 的 SJ4060 product manual，包含视觉点胶参数和 FAQ。')
+            ->assertJsonPath('fields.entity_ids.0', (int) $entity->id)
+            ->assertJsonPath('fields.tags.0', 'Product Model:SJ4060');
+
+        $this->assertDatabaseMissing('knowledge_bases', [
+            'name' => 'SJ4060 产品手册',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.store'), [
+                'name' => 'SJ4060 产品手册',
+                'description' => '产品资料',
+                'summary' => 'SJ4060 视觉点胶产品手册摘要',
+                'file_type' => 'markdown',
+                'knowledge_type' => 'product_manual',
+                'knowledge_role' => 'archive',
+                'importance' => 2,
+                'collection_id' => (int) $collection->id,
+                'entity_ids' => [(int) $entity->id],
+                'entity_relation_type' => 'primary_subject',
+                'content' => 'SJ4060 支持视觉定位。',
+            ])
+            ->assertRedirect(route('admin.knowledge-bases.index'));
+
+        $knowledgeBase = KnowledgeBase::query()->where('name', 'SJ4060 产品手册')->firstOrFail();
+        $this->assertDatabaseHas('knowledge_bases', [
+            'id' => (int) $knowledgeBase->id,
+            'summary' => 'SJ4060 视觉点胶产品手册摘要',
+            'knowledge_role' => 'archive',
+        ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'primary_subject',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
+            ->assertOk()
+            ->assertSee('data-ai-analysis-form', false)
+            ->assertSee('name="summary"', false);
+    }
+
+    public function test_admin_can_link_entities_from_entity_and_material_forms(): void
+    {
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'entity_link_admin',
+            'password' => 'secret-123',
+            'email' => 'entity-link-admin@example.com',
+            'display_name' => 'Entity Link Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => 'SJ4060 手册',
+            'description' => '',
+            'content' => 'SJ4060 产品资料',
+            'character_count' => 10,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'product_manual',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'word_count' => 10,
+        ]);
+        $entity = EntityRecord::query()->create([
+            'name' => 'SJ4060',
+            'entity_type' => '产品型号',
+            'description' => '视觉点胶设备型号',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.keyword-libraries.store'), [
+                'name' => 'SJ4060 关键词库',
+                'description' => '',
+                'entity_ids' => [(int) $entity->id],
+            ])
+            ->assertRedirect(route('admin.keyword-libraries.index'));
+
+        $keywordLibrary = KeywordLibrary::query()->where('name', 'SJ4060 关键词库')->firstOrFail();
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KeywordLibrary::class,
+            'linkable_id' => (int) $keywordLibrary->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.entities.store'), [
+                'name' => 'SJ4060 Pro',
+                'entity_type' => '产品型号',
+                'description' => '升级型号',
+                'attributes_json' => '{}',
+                'knowledge_base_ids' => [(int) $knowledgeBase->id],
+                'knowledge_relation_type' => 'primary_subject',
+            ])
+            ->assertRedirect(route('admin.entities.index'));
+
+        $linkedEntity = EntityRecord::query()->where('name', 'SJ4060 Pro')->firstOrFail();
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $linkedEntity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'primary_subject',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
+            ->assertOk()
+            ->assertSee('name="entity_relation_type"', false)
+            ->assertSee('primary_subject', false);
+    }
+
+    public function test_admin_can_edit_library_level_tags_only_for_title_libraries(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'library_tag_admin',
+            'password' => 'secret-123',
+            'email' => 'library-tag-admin@example.com',
+            'display_name' => 'Library Tag Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $tag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Product Line',
+            'name' => 'Vision Doming Machine',
+            'slug' => 'product-line-vision-doming-library',
+            'color' => '',
+        ]);
+        $keywordLibrary = KeywordLibrary::query()->create([
+            'name' => '库级关键词库',
+            'description' => '',
+            'keyword_count' => 0,
+        ]);
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => '库级标题库',
+            'description' => '',
+            'title_count' => 0,
+        ]);
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => '库级图库',
+            'description' => '',
+            'image_count' => 0,
+            'used_task_count' => 0,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.title-libraries.index'))
+            ->assertOk()
+            ->assertSee(route('admin.title-libraries.edit', ['libraryId' => (int) $titleLibrary->id]), false);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.title-libraries.update', ['libraryId' => (int) $titleLibrary->id]), [
+                'name' => '库级标题库更新',
+                'description' => 'title desc',
+                'tag_ids' => [(int) $tag->id],
+                'tag_ids_present' => '1',
+            ])
+            ->assertRedirect(route('admin.title-libraries.index'));
+
+        $this->assertDatabaseHas('taggables', [
+            'tag_id' => (int) $tag->id,
+            'taggable_type' => TitleLibrary::class,
+            'taggable_id' => (int) $titleLibrary->id,
+        ]);
+        $this->assertDatabaseMissing('taggables', [
+            'tag_id' => (int) $tag->id,
+            'taggable_type' => KeywordLibrary::class,
+            'taggable_id' => (int) $keywordLibrary->id,
+        ]);
+        $this->assertDatabaseMissing('taggables', [
+            'tag_id' => (int) $tag->id,
+            'taggable_type' => ImageLibrary::class,
+            'taggable_id' => (int) $imageLibrary->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.keyword-libraries.edit', ['libraryId' => (int) $keywordLibrary->id]))
+            ->assertOk()
+            ->assertDontSee('data-tag-selector', false)
+            ->assertDontSee('Vision Doming Machine');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.image-libraries.edit', ['libraryId' => (int) $imageLibrary->id]))
+            ->assertOk()
+            ->assertDontSee('data-tag-selector', false)
+            ->assertDontSee('Vision Doming Machine');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.title-libraries.edit', ['libraryId' => (int) $titleLibrary->id]))
+            ->assertOk()
+            ->assertSee('data-tag-selector', false)
+            ->assertSee('Vision Doming Machine');
     }
 
     public function test_knowledge_base_chunk_generation_is_queued(): void

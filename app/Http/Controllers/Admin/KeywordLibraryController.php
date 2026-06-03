@@ -6,9 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
-use App\Services\GeoFlow\TagRecommendationService;
+use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -27,20 +28,24 @@ class KeywordLibraryController extends Controller
 
     public function __construct(
         private readonly TagService $tagService,
-        private readonly TagRecommendationService $tagRecommendationService
+        private readonly EntityMaterialLinkService $entityMaterialLinkService
     ) {}
 
     /**
      * 列表页。
      */
-    public function index(): View
+    public function index(Request $request): View
     {
+        $collectionId = $this->selectedCollectionId($request);
+
         return view('admin.keyword-libraries.index', [
             'pageTitle' => __('admin.keyword_libraries.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
-            'libraries' => $this->loadLibraries(),
+            'libraries' => $this->loadLibraries($collectionId),
             'stats' => $this->loadStats(),
+            'collectionOptions' => CollectionOptions::all(),
+            'collectionId' => $collectionId,
         ]);
     }
 
@@ -49,16 +54,14 @@ class KeywordLibraryController extends Controller
      */
     public function detail(Request $request, int $libraryId): View|RedirectResponse
     {
-        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $library = KeywordLibrary::query()->with('collection')->whereKey($libraryId)->firstOrFail();
 
         $search = trim((string) $request->query('search', ''));
         $tagFilter = trim((string) $request->query('tag', ''));
         $keywords = $this->loadDetailKeywords($libraryId, $search, $tagFilter);
         $usageTotal = $this->loadUsageTotal($libraryId);
-        $keywordRecommendationInputs = [];
         $selectedTagIdsByKeyword = [];
         foreach ($keywords as $keyword) {
-            $keywordRecommendationInputs[(int) $keyword->id] = (string) $keyword->keyword;
             $selectedTagIdsByKeyword[(int) $keyword->id] = $keyword->tags->pluck('id')->map(static fn ($id): int => (int) $id)->all();
         }
         $selectedTagIds = collect($selectedTagIdsByKeyword)->flatten()->map(static fn ($id): int => (int) $id)->unique()->values()->all();
@@ -72,8 +75,8 @@ class KeywordLibraryController extends Controller
             'tagFilter' => $tagFilter,
             'keywords' => $keywords,
             'usageTotal' => $usageTotal,
+            'collectionOptions' => CollectionOptions::all(),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
-            'tagRecommendationsByKeyword' => $this->tagRecommendationService->recommendForItems($keywordRecommendationInputs, $selectedTagIdsByKeyword),
         ]);
     }
 
@@ -155,6 +158,19 @@ class KeywordLibraryController extends Controller
     }
 
     /**
+     * @return list<int>
+     */
+    private function selectedEntityIds(Request $request): array
+    {
+        return collect($request->input('entity_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * 在详情页中删除关键词（支持单条/批量）。
      */
     public function destroyKeywords(Request $request, int $libraryId): RedirectResponse
@@ -195,11 +211,13 @@ class KeywordLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
         ], [
             'name.required' => __('admin.keyword_detail.error.library_name_required'),
         ]);
 
         $library->update([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
@@ -272,6 +290,9 @@ class KeywordLibraryController extends Controller
             'isEdit' => false,
             'libraryId' => 0,
             'libraryForm' => $this->emptyForm(),
+            'collectionOptions' => CollectionOptions::all(true),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
+            'selectedEntityIds' => [],
         ]);
     }
 
@@ -283,15 +304,20 @@ class KeywordLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.keyword_libraries.error.name_required'),
         ]);
 
-        KeywordLibrary::query()->create([
+        $library = KeywordLibrary::query()->create([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
             'keyword_count' => 0,
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.keyword-libraries.index')->with('message', __('admin.keyword_libraries.message.create_success'));
     }
@@ -310,9 +336,13 @@ class KeywordLibraryController extends Controller
             'isEdit' => true,
             'libraryId' => (int) $library->id,
             'libraryForm' => [
+                'collection_id' => (string) ((int) ($library->collection_id ?? 0) ?: ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
             ],
+            'collectionOptions' => CollectionOptions::all(),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
+            'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($library),
         ]);
     }
 
@@ -326,14 +356,19 @@ class KeywordLibraryController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.keyword_libraries.error.name_required'),
         ]);
 
         $library->update([
+            'collection_id' => $this->normalizeCollectionId($payload),
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
+        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.keyword-libraries.index')->with('message', __('admin.keyword_libraries.message.update_success'));
     }
@@ -358,18 +393,25 @@ class KeywordLibraryController extends Controller
     }
 
     /**
-     * @return array<int, array{id:int,name:string,description:string,actual_count:int,created_at:?string,updated_at:?string}>
+     * @return array<int, array{id:int,name:string,description:string,collection_name:string,collection_id:int,actual_count:int,created_at:?string,updated_at:?string}>
      */
-    private function loadLibraries(): array
+    private function loadLibraries(?int $collectionId = null): array
     {
         $query = KeywordLibrary::query()
-            ->select(['id', 'name', 'description', 'created_at', 'updated_at'])
+            ->select(['id', 'collection_id', 'name', 'description', 'created_at', 'updated_at'])
+            ->with('collection:id,name,status')
             ->withCount('keywords as actual_count')
             ->orderByDesc('created_at');
+
+        if ($collectionId !== null) {
+            $query->where('collection_id', $collectionId);
+        }
 
         return $query->get()->map(static function (KeywordLibrary $library): array {
             return [
                 'id' => (int) $library->id,
+                'collection_id' => (int) ($library->collection_id ?? 0),
+                'collection_name' => (string) ($library->collection?->name ?? ''),
                 'name' => (string) $library->name,
                 'description' => (string) ($library->description ?? ''),
                 'actual_count' => (int) ($library->actual_count ?? 0),
@@ -400,9 +442,27 @@ class KeywordLibraryController extends Controller
     private function emptyForm(): array
     {
         return [
+            'collection_id' => '',
             'name' => '',
             'description' => '',
         ];
+    }
+
+    private function selectedCollectionId(Request $request): ?int
+    {
+        $collectionId = (int) $request->query('collection_id', 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizeCollectionId(array $payload): ?int
+    {
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
     }
 
     /**

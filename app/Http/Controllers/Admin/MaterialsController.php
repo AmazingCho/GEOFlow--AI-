@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiModel;
 use App\Models\Author;
 use App\Models\CaseRecord;
+use App\Models\CollectionRecord;
 use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\ImageLibrary;
@@ -17,6 +18,7 @@ use App\Models\SiteSetting;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
+use App\Services\GeoFlow\MaterialGovernanceAuditService;
 use App\Support\AdminWeb;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
@@ -26,6 +28,8 @@ use Illuminate\View\View;
  */
 class MaterialsController extends Controller
 {
+    public function __construct(private readonly MaterialGovernanceAuditService $governanceAuditService) {}
+
     /**
      * 展示素材管理总览页。
      */
@@ -36,6 +40,7 @@ class MaterialsController extends Controller
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
             'stats' => $this->loadStats(),
+            'governanceAudit' => $this->governanceAuditService->report(),
         ]);
     }
 
@@ -44,6 +49,7 @@ class MaterialsController extends Controller
      *
      * @return array{
      *     keyword_libraries:int,
+     *     collections:int,
      *     total_keywords:int,
      *     title_libraries:int,
      *     total_titles:int,
@@ -86,6 +92,7 @@ class MaterialsController extends Controller
         $latestKnowledgeUpdatedAt = $this->latestKnowledgeUpdatedAt();
 
         return [
+            'collections' => CollectionRecord::query()->count(),
             'keyword_libraries' => KeywordLibrary::query()->count(),
             'total_keywords' => Keyword::query()->count(),
             'title_libraries' => TitleLibrary::query()->count(),

@@ -24,15 +24,14 @@
         ];
         $foundationCards = [
             [
-                'title' => __('admin.materials.keyword_manage_title'),
-                'summary' => __('admin.materials.keywords_summary'),
-                'icon' => 'key',
-                'tone' => 'bg-blue-50 text-blue-600',
-                'href' => route('admin.keyword-libraries.index'),
-                'action' => __('admin.materials.manage_keyword_libraries'),
+                'title' => __('admin.materials.entity_manage_title'),
+                'summary' => __('admin.materials.entities_summary'),
+                'icon' => 'network',
+                'tone' => 'bg-cyan-50 text-cyan-600',
+                'href' => route('admin.entities.index'),
+                'action' => __('admin.materials.manage_entity_db'),
                 'metrics' => [
-                    __('admin.materials.keyword_library_count') => __('admin.materials.unit_libraries', ['count' => (int) $stats['keyword_libraries']]),
-                    __('admin.materials.keyword_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['total_keywords']]),
+                    __('admin.materials.entity_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['entities']]),
                 ],
             ],
             [
@@ -48,6 +47,18 @@
                 ],
             ],
             [
+                'title' => __('admin.materials.keyword_manage_title'),
+                'summary' => __('admin.materials.keywords_summary'),
+                'icon' => 'key',
+                'tone' => 'bg-blue-50 text-blue-600',
+                'href' => route('admin.keyword-libraries.index'),
+                'action' => __('admin.materials.manage_keyword_libraries'),
+                'metrics' => [
+                    __('admin.materials.keyword_library_count') => __('admin.materials.unit_libraries', ['count' => (int) $stats['keyword_libraries']]),
+                    __('admin.materials.keyword_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['total_keywords']]),
+                ],
+            ],
+            [
                 'title' => __('admin.materials.image_manage_title'),
                 'summary' => __('admin.materials.images_summary'),
                 'icon' => 'image',
@@ -57,6 +68,17 @@
                 'metrics' => [
                     __('admin.materials.image_library_count') => __('admin.materials.unit_libraries', ['count' => (int) $stats['image_libraries']]),
                     __('admin.materials.image_total_count') => __('admin.materials.unit_images', ['count' => (int) $stats['total_images']]),
+                ],
+            ],
+            [
+                'title' => __('admin.materials.case_manage_title'),
+                'summary' => __('admin.materials.cases_summary'),
+                'icon' => 'briefcase-business',
+                'tone' => 'bg-amber-50 text-amber-600',
+                'href' => route('admin.cases.index'),
+                'action' => __('admin.materials.manage_case_db'),
+                'metrics' => [
+                    __('admin.materials.case_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['cases']]),
                 ],
             ],
             [
@@ -71,28 +93,12 @@
                     __('admin.materials.author_usage_label') => __('admin.materials.author_usage_desc'),
                 ],
             ],
-            [
-                'title' => __('admin.materials.entity_manage_title'),
-                'summary' => __('admin.materials.entities_summary'),
-                'icon' => 'network',
-                'tone' => 'bg-cyan-50 text-cyan-600',
-                'href' => route('admin.entities.index'),
-                'action' => __('admin.materials.manage_entity_db'),
-                'metrics' => [
-                    __('admin.materials.entity_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['entities']]),
-                ],
-            ],
-            [
-                'title' => __('admin.materials.case_manage_title'),
-                'summary' => __('admin.materials.cases_summary'),
-                'icon' => 'briefcase-business',
-                'tone' => 'bg-amber-50 text-amber-600',
-                'href' => route('admin.cases.index'),
-                'action' => __('admin.materials.manage_case_db'),
-                'metrics' => [
-                    __('admin.materials.case_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['cases']]),
-                ],
-            ],
+        ];
+        $governanceAudit = $governanceAudit ?? ['summary' => ['issues' => 0, 'warnings' => 0], 'issues' => []];
+        $governanceSeverityStyles = [
+            'danger' => 'border-red-200 bg-red-50 text-red-700',
+            'warning' => 'border-amber-200 bg-amber-50 text-amber-700',
+            'info' => 'border-blue-200 bg-blue-50 text-blue-700',
         ];
     @endphp
 
@@ -219,6 +225,44 @@
                     </div>
                 </div>
             </div>
+        </section>
+
+        <section class="mb-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div class="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <h2 class="text-xl font-bold text-gray-900">{{ __('admin.materials.governance_title') }}</h2>
+                    <p class="mt-1 text-sm leading-6 text-gray-600">{{ __('admin.materials.governance_desc') }}</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {{ __('admin.materials.governance_issue_count', ['count' => (int) ($governanceAudit['summary']['issues'] ?? 0)]) }}
+                    </span>
+                    <span class="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                        {{ __('admin.materials.governance_warning_count', ['count' => (int) ($governanceAudit['summary']['warnings'] ?? 0)]) }}
+                    </span>
+                </div>
+            </div>
+            @if (empty($governanceAudit['issues']))
+                <div class="px-6 py-6">
+                    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                        {{ __('admin.materials.governance_empty') }}
+                    </div>
+                </div>
+            @else
+                <div class="grid grid-cols-1 gap-3 px-6 py-6 md:grid-cols-2 xl:grid-cols-3">
+                    @foreach ($governanceAudit['issues'] as $issue)
+                        @php
+                            $issueClass = $governanceSeverityStyles[(string) ($issue['severity'] ?? 'info')] ?? $governanceSeverityStyles['info'];
+                        @endphp
+                        <a href="{{ $issue['href'] }}" class="block rounded-lg border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm {{ $issueClass }}">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="text-sm font-semibold">{{ $issue['label'] }}</div>
+                                <div class="text-lg font-bold">{{ (int) $issue['count'] }}</div>
+                            </div>
+                        </a>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         <section class="mb-8">

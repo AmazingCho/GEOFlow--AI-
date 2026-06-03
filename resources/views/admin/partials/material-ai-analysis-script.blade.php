@@ -12,9 +12,34 @@
                     if (!field) {
                         return;
                     }
+                    if (field.tagName === 'SELECT' && field.multiple && Array.isArray(value)) {
+                        const selected = new Set(value.map((item) => String(item)));
+                        Array.from(field.options).forEach((option) => {
+                            option.selected = selected.has(String(option.value));
+                        });
+                        field.dispatchEvent(new Event('change', {bubbles: true}));
+                        return;
+                    }
                     field.value = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
                     field.dispatchEvent(new Event('input', {bubbles: true}));
                     field.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+
+                function selectOptionIds(form, fieldName, ids) {
+                    if (!Array.isArray(ids)) {
+                        return;
+                    }
+                    const selector = form.querySelector(`[data-option-multi-selector][data-field-name="${fieldName}"]`);
+                    if (!selector) {
+                        return;
+                    }
+                    ids.map((id) => String(id)).filter(Boolean).forEach((id) => {
+                        const hasSelected = selector.querySelector(`[data-option-chip][data-option-id="${CSS.escape(id)}"]`);
+                        if (hasSelected) {
+                            return;
+                        }
+                        selector.querySelector(`[data-option-item][data-option-id="${CSS.escape(id)}"]`)?.click();
+                    });
                 }
 
                 document.addEventListener('click', (event) => {
@@ -49,6 +74,8 @@
                         },
                         body: JSON.stringify({
                             content,
+                            title: form.querySelector('[name="name"]')?.value || form.querySelector('[name="title"]')?.value || '',
+                            source_url: form.querySelector('[name="source_url"]')?.value || '',
                             ai_model_id: form.querySelector('[data-ai-analysis-model]')?.value || 0,
                         }),
                     })
@@ -56,7 +83,9 @@
                         .then((payload) => {
                             const fields = payload.fields || {};
                             Object.keys(fields).forEach((name) => {
-                                if (name !== 'tags') {
+                                if (name === 'entity_ids') {
+                                    selectOptionIds(form, 'entity_ids', fields[name]);
+                                } else if (name !== 'tags') {
                                     fillField(form, name, fields[name]);
                                 }
                             });

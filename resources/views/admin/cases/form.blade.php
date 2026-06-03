@@ -76,6 +76,12 @@
                         </select>
                     </div>
 
+                    @include('admin.partials.collection-select', [
+                        'selectedId' => (string) ($caseForm['collection_id'] ?? ''),
+                        'collectionOptions' => $collectionOptions ?? [],
+                        'class' => 'block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500',
+                    ])
+
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.cases.field_summary') }}</label>
                         <textarea name="summary" rows="4" data-tag-source="case-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="{{ __('admin.cases.placeholder_summary') }}">{{ old('summary', (string) ($caseForm['summary'] ?? '')) }}</textarea>
@@ -110,7 +116,7 @@
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.cases.field_tags') }}</label>
-                        @include('admin.partials.tag-selector', ['tagOptions' => $tagOptions, 'selectedTagIds' => $selectedTagIds, 'recommendedTags' => $recommendedTags ?? [], 'recommendationUrl' => route('admin.material-tags.recommendations'), 'recommendationSourceSelector' => '[data-tag-source="case-form"]', 'tone' => 'blue'])
+                        @include('admin.partials.tag-selector', ['tagOptions' => $tagOptions, 'selectedTagIds' => $selectedTagIds, 'tone' => 'blue'])
                         <p data-ai-analysis-tags class="mt-2 hidden text-xs text-blue-700"></p>
                     </div>
 

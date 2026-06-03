@@ -3,6 +3,10 @@
 @php
     $selectedGroups = collect($selectedGroups ?? [])->map(static fn ($group): string => (string) $group)->values();
     $groupOptions = collect($groupOptions ?? [])->map(static fn ($group): string => (string) $group)->values();
+    $controlledGroupNames = collect($controlledTagGroups ?? [])
+        ->map(static fn ($group): string => is_array($group) ? (string) ($group['name'] ?? '') : (string) $group)
+        ->filter(static fn (string $group): bool => $group !== '')
+        ->values();
     $scope = (string) ($scope ?? '');
     $scopeLabels = $scopeLabels ?? [];
     $baseQuery = array_filter([
@@ -93,6 +97,46 @@
             </div>
         @endif
 
+        <div class="mb-6 rounded-lg border border-blue-100 bg-blue-50/40 shadow-sm">
+            <div class="flex flex-col gap-3 border-b border-blue-100 px-6 py-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900">{{ __('admin.material_tags.controlled_groups_title') }}</h3>
+                    <p class="mt-1 text-sm text-gray-600">{{ __('admin.material_tags.controlled_groups_desc') }}</p>
+                </div>
+                <form method="POST" action="{{ route('admin.material-tags.controlled-groups.store') }}" class="flex w-full gap-2 lg:w-auto">
+                    @csrf
+                    <input type="text" name="name" maxlength="100" placeholder="{{ __('admin.material_tags.controlled_group_placeholder') }}" class="min-w-0 flex-1 rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 lg:w-56">
+                    <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                        <i data-lucide="plus" class="mr-1 h-4 w-4"></i>
+                        {{ __('admin.material_tags.controlled_group_add') }}
+                    </button>
+                </form>
+            </div>
+            <div class="px-6 py-4">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    @foreach (($controlledTagGroups ?? []) as $group)
+                        <div class="rounded-lg border border-blue-100 bg-white px-3 py-3">
+                            <form method="POST" action="{{ route('admin.material-tags.controlled-groups.update', ['groupId' => (int) $group['id']]) }}" class="flex gap-2">
+                                @csrf
+                                @method('PUT')
+                                <input type="text" name="name" value="{{ $group['name'] }}" maxlength="100" class="min-w-0 flex-1 rounded-md border-gray-300 px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <button type="submit" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                    {{ __('admin.material_tags.controlled_group_save') }}
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ route('admin.material-tags.controlled-groups.delete', ['groupId' => (int) $group['id']]) }}" class="mt-2" onsubmit="return confirm(@js(__('admin.material_tags.controlled_group_delete_confirm', ['group' => $group['name']])));">
+                                @csrf
+                                <button type="submit" class="inline-flex items-center text-xs font-medium text-red-600 hover:text-red-700">
+                                    <i data-lucide="trash-2" class="mr-1 h-3.5 w-3.5"></i>
+                                    {{ __('admin.material_tags.controlled_group_delete') }}
+                                </button>
+                            </form>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+
         <div class="mb-6 rounded-lg bg-white shadow">
             <div class="border-b border-gray-200 px-6 py-4">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.material_tags.create_title') }}</h3>
@@ -101,7 +145,12 @@
                 @csrf
                 <div>
                     <label class="block text-sm font-medium text-gray-700">{{ __('admin.material_tags.field_group') }}</label>
-                    <input type="text" name="group_name" value="{{ old('group_name') }}" maxlength="100" placeholder="{{ __('admin.material_tags.placeholder_group') }}" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <select name="group_name" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">{{ __('admin.material_tags.placeholder_group') }}</option>
+                        @foreach ($controlledGroupNames as $groupName)
+                            <option value="{{ $groupName }}" @selected(old('group_name') === $groupName)>{{ $groupName }}</option>
+                        @endforeach
+                    </select>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">{{ __('admin.material_tags.field_name') }}</label>
@@ -176,7 +225,12 @@
                             <option value="move_group">{{ __('admin.material_tags.bulk_move_group') }}</option>
                             <option value="delete">{{ __('admin.material_tags.bulk_delete') }}</option>
                         </select>
-                        <input type="text" name="bulk_group_name" data-bulk-group maxlength="100" placeholder="{{ __('admin.material_tags.bulk_group_placeholder') }}" class="w-40 rounded-md border-gray-300 px-3 py-1.5 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <select name="bulk_group_name" data-bulk-group class="w-40 rounded-md border-gray-300 px-3 py-1.5 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">{{ __('admin.material_tags.bulk_group_placeholder') }}</option>
+                            @foreach ($controlledGroupNames as $groupName)
+                                <option value="{{ $groupName }}">{{ $groupName }}</option>
+                            @endforeach
+                        </select>
                         <input type="hidden" name="delete_confirmation" data-bulk-confirm-hidden value="">
                         <button type="submit" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                             <i data-lucide="layers-3" class="mr-1 h-4 w-4"></i>
@@ -278,7 +332,12 @@
                                 @method('PUT')
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">{{ __('admin.material_tags.field_group') }}</label>
-                                    <input type="text" name="group_name" value="{{ (string) ($tag->group_name ?? '') }}" maxlength="100" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <select name="group_name" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="">{{ __('admin.material_tags.placeholder_group') }}</option>
+                                        @foreach ($controlledGroupNames as $groupName)
+                                            <option value="{{ $groupName }}" @selected((string) ($tag->group_name ?? '') === $groupName)>{{ $groupName }}</option>
+                                        @endforeach
+                                    </select>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">{{ __('admin.material_tags.field_name') }}</label>

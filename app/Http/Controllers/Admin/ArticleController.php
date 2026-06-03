@@ -30,6 +30,8 @@ use Throwable;
  */
 class ArticleController extends Controller
 {
+    private const QUALITY_CACHE_VERSION = 'v2';
+
     public function __construct(
         private readonly DistributionOrchestrator $distributionOrchestrator,
         private readonly ArticleQualityAssessmentService $qualityAssessmentService
@@ -345,7 +347,8 @@ class ArticleController extends Controller
     {
         $runId = (int) data_get($generationTrace, '_run.id', 0);
         $updatedAt = $article->updated_at?->timestamp ?? 0;
-        $key = 'article_quality:'.(int) $article->id.':'.$updatedAt.':'.$runId;
+        $traceHash = md5(json_encode($generationTrace, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+        $key = 'article_quality:'.self::QUALITY_CACHE_VERSION.':'.(int) $article->id.':'.$updatedAt.':'.$runId.':'.$traceHash;
 
         return Cache::remember($key, now()->addMinutes(15), fn (): array => $this->qualityAssessmentService->assess($article, $generationTrace));
     }

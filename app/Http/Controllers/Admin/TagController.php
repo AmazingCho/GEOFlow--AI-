@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ControlledTagGroup;
 use App\Models\Tag;
-use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\ControlledTagGroups;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,8 +31,7 @@ class TagController extends Controller
     ];
 
     public function __construct(
-        private readonly TagService $tagService,
-        private readonly TagRecommendationService $tagRecommendationService
+        private readonly TagService $tagService
     ) {}
 
     public function index(Request $request): View
@@ -75,17 +75,75 @@ class TagController extends Controller
             'scopeGroups' => $this->scopeGroupOptions($scope),
             'perPage' => $perPage,
             'perPageOptions' => self::PER_PAGE_OPTIONS,
+            'controlledTagGroups' => $this->controlledTagGroups(),
             'tags' => $query->paginate($perPage)->withQueryString(),
             'stats' => $this->loadStats(),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function storeControlledGroup(Request $request): RedirectResponse
     {
         $payload = $request->validate([
-            'group_name' => ['nullable', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100', Rule::unique('controlled_tag_groups', 'name')],
+        ], [
+            'name.required' => __('admin.material_tags.error_group_name_required'),
+            'name.unique' => __('admin.material_tags.error_group_name_duplicate'),
+        ]);
+
+        $name = trim((string) $payload['name']);
+        if ($name === '') {
+            return back()->withErrors(__('admin.material_tags.error_group_name_required'));
+        }
+
+        ControlledTagGroup::query()->create([
+            'name' => mb_substr($name, 0, 100, 'UTF-8'),
+            'sort_order' => ((int) ControlledTagGroup::query()->max('sort_order')) + 10,
+        ]);
+        ControlledTagGroups::flush();
+
+        return back()->with('message', __('admin.material_tags.controlled_group_created', ['group' => $name]));
+    }
+
+    public function updateControlledGroup(Request $request, int $groupId): RedirectResponse
+    {
+        $group = ControlledTagGroup::query()->whereKey($groupId)->firstOrFail();
+        $payload = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('controlled_tag_groups', 'name')->ignore((int) $group->id)],
+        ], [
+            'name.required' => __('admin.material_tags.error_group_name_required'),
+            'name.unique' => __('admin.material_tags.error_group_name_duplicate'),
+        ]);
+
+        $name = trim((string) $payload['name']);
+        if ($name === '') {
+            return back()->withErrors(__('admin.material_tags.error_group_name_required'));
+        }
+
+        $group->update(['name' => mb_substr($name, 0, 100, 'UTF-8')]);
+        ControlledTagGroups::flush();
+
+        return back()->with('message', __('admin.material_tags.controlled_group_updated', ['group' => $name]));
+    }
+
+    public function deleteControlledGroup(int $groupId): RedirectResponse
+    {
+        $group = ControlledTagGroup::query()->whereKey($groupId)->firstOrFail();
+        $name = (string) $group->name;
+        $group->delete();
+        ControlledTagGroups::flush();
+
+        return back()->with('message', __('admin.material_tags.controlled_group_deleted', ['group' => $name]));
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $controlledGroups = ControlledTagGroups::names();
+        $payload = $request->validate([
+            'group_name' => ['required', 'string', 'max:100', Rule::in($controlledGroups)],
             'name' => ['required', 'string', 'max:100'],
         ], [
+            'group_name.required' => __('admin.material_tags.error_group_name_required'),
+            'group_name.in' => __('admin.material_tags.error_group_name_not_allowed'),
             'name.required' => __('admin.material_tags.error_name_required'),
         ]);
 
@@ -105,43 +163,22 @@ class TagController extends Controller
             ]));
     }
 
-    public function recommendations(Request $request): JsonResponse
-    {
-        $text = trim((string) $request->query('text', ''));
-        $selectedIds = collect((array) $request->query('selected_ids', []))
-            ->map(static fn ($id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-
-        return response()->json([
-            'items' => $this->tagRecommendationService->recommendForText($text, $selectedIds, 6),
-        ]);
-    }
-
     public function search(Request $request): JsonResponse
     {
         $query = trim((string) $request->query('q', $request->query('search', '')));
         $limit = min(30, max(5, (int) $request->query('limit', 20)));
         $scope = trim((string) $request->query('scope', ''));
-        $industryLabels = $this->industryNamesFromLabels((array) $request->query('industry_labels', []));
-
-        if ($scope === 'industry') {
-            return response()->json([
-                'items' => $this->searchIndustryTagOptions($query, $limit),
-            ]);
-        }
+        $group = trim((string) $request->query('group', ''));
 
         if ($scope === 'images') {
             return response()->json([
-                'items' => $this->searchScopedTagOptions($query, $limit, ['images'], 'admin.task_create.option.image_tag_count', $industryLabels),
+                'items' => $this->searchScopedTagOptions($query, $limit, ['images'], 'admin.task_create.option.image_tag_count', $group),
             ]);
         }
 
         if ($scope === 'knowledge') {
             return response()->json([
-                'items' => $this->searchScopedTagOptions($query, $limit, ['knowledgeBases', 'entities', 'caseRecords'], 'admin.task_create.option.knowledge_tag_count', $industryLabels),
+                'items' => $this->searchScopedTagOptions($query, $limit, ['knowledgeBases', 'entities', 'caseRecords'], 'admin.task_create.option.knowledge_tag_count', $group),
             ]);
         }
 
@@ -226,8 +263,9 @@ class TagController extends Controller
     public function update(Request $request, int $tagId): RedirectResponse
     {
         $tag = Tag::query()->where('type', 'material')->whereKey($tagId)->firstOrFail();
+        $controlledGroups = ControlledTagGroups::names();
         $payload = $request->validate([
-            'group_name' => ['nullable', 'string', 'max:100'],
+            'group_name' => ['required', 'string', 'max:100', Rule::in($controlledGroups)],
             'name' => [
                 'required',
                 'string',
@@ -239,6 +277,8 @@ class TagController extends Controller
                     ->ignore((int) $tag->id),
             ],
         ], [
+            'group_name.required' => __('admin.material_tags.error_group_name_required'),
+            'group_name.in' => __('admin.material_tags.error_group_name_not_allowed'),
             'name.required' => __('admin.material_tags.error_name_required'),
             'name.unique' => __('admin.material_tags.error_duplicate'),
         ]);
@@ -281,14 +321,17 @@ class TagController extends Controller
 
     public function bulk(Request $request): RedirectResponse
     {
+        $controlledGroups = ControlledTagGroups::names();
         $payload = $request->validate([
             'tag_ids' => ['required', 'array'],
             'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where(static fn ($query) => $query->where('type', 'material'))],
             'bulk_action' => ['required', 'string', 'in:delete,move_group'],
-            'bulk_group_name' => ['nullable', 'string', 'max:100'],
+            'bulk_group_name' => ['nullable', 'required_if:bulk_action,move_group', 'string', 'max:100', Rule::in($controlledGroups)],
             'delete_confirmation' => ['nullable', 'string'],
         ], [
             'tag_ids.required' => __('admin.material_tags.error_select_tags'),
+            'bulk_group_name.required_if' => __('admin.material_tags.error_group_name_required'),
+            'bulk_group_name.in' => __('admin.material_tags.error_group_name_not_allowed'),
         ]);
 
         $tagIds = array_values(array_unique(array_map('intval', $payload['tag_ids'] ?? [])));
@@ -371,8 +414,12 @@ class TagController extends Controller
      * @param  list<string>  $relations
      * @return list<array{id:int,label:string,count:int,meta:string}>
      */
-    private function searchScopedTagOptions(string $query, int $limit, array $relations, string $countLabelKey, array $industryNames = []): array
+    private function searchScopedTagOptions(string $query, int $limit, array $relations, string $countLabelKey, string $group = ''): array
     {
+        if ($group !== '' && ! in_array($group, ControlledTagGroups::names(), true)) {
+            return [];
+        }
+
         $builder = Tag::query()
             ->where('type', 'material')
             ->withCount($relations)
@@ -382,19 +429,8 @@ class TagController extends Controller
                 }
             });
 
-        if ($industryNames !== []) {
-            $builder->where(function ($nested) use ($relations, $industryNames): void {
-                foreach ($relations as $relation) {
-                    $nested->orWhereHas($relation, function ($relationQuery) use ($industryNames): void {
-                        $relationQuery->whereHas('tags', function ($tagQuery) use ($industryNames): void {
-                            $tagQuery
-                                ->where('type', 'material')
-                                ->where('group_name', '行业领域')
-                                ->whereIn('name', $industryNames);
-                        });
-                    });
-                }
-            });
+        if ($group !== '') {
+            $builder->where('group_name', $group);
         }
 
         if ($query !== '') {
@@ -427,64 +463,6 @@ class TagController extends Controller
     }
 
     /**
-     * @return list<array{id:int,label:string,count:int,meta:string}>
-     */
-    private function searchIndustryTagOptions(string $query, int $limit): array
-    {
-        $builder = Tag::query()
-            ->where('type', 'material')
-            ->where('group_name', '行业领域')
-            ->withCount(['keywords', 'images', 'knowledgeBases', 'entities', 'caseRecords']);
-
-        if ($query !== '') {
-            $builder->where('name', 'like', '%'.$query.'%');
-        }
-
-        return $builder
-            ->orderBy('name')
-            ->limit($limit)
-            ->get(['id', 'group_name', 'name'])
-            ->map(static function (Tag $tag): array {
-                $count = (int) ($tag->keywords_count ?? 0)
-                    + (int) ($tag->images_count ?? 0)
-                    + (int) ($tag->knowledge_bases_count ?? 0)
-                    + (int) ($tag->entities_count ?? 0)
-                    + (int) ($tag->case_records_count ?? 0);
-
-                return [
-                    'id' => (int) $tag->id,
-                    'label' => $tag->displayName(),
-                    'count' => $count,
-                    'meta' => __('admin.task_create.option.industry_tag_count', ['count' => $count]),
-                ];
-            })
-            ->filter(static fn (array $tag): bool => $tag['label'] !== '')
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  array<int, mixed>  $labels
-     * @return list<string>
-     */
-    private function industryNamesFromLabels(array $labels): array
-    {
-        return collect($labels)
-            ->map(static function ($label): string {
-                $label = trim((string) $label);
-                if (str_starts_with($label, '行业领域:')) {
-                    return trim(str_replace('行业领域:', '', $label));
-                }
-
-                return $label;
-            })
-            ->filter(static fn (string $label): bool => $label !== '')
-            ->unique(static fn (string $label): string => mb_strtolower($label, 'UTF-8'))
-            ->values()
-            ->all();
-    }
-
-    /**
      * @return list<string>
      */
     private function selectedGroups(Request $request): array
@@ -493,10 +471,12 @@ class TagController extends Controller
         if (! is_array($groups)) {
             $groups = [$groups];
         }
+        $allowedGroups = ControlledTagGroups::names();
 
         return collect($groups)
             ->map(static fn ($group): string => trim((string) $group))
             ->filter(static fn (string $group): bool => $group !== '')
+            ->filter(static fn (string $group): bool => in_array($group, $allowedGroups, true))
             ->unique(static fn (string $group): string => mb_strtolower($group, 'UTF-8'))
             ->values()
             ->all();
@@ -521,15 +501,7 @@ class TagController extends Controller
      */
     private function groupOptions(): array
     {
-        return Tag::query()
-            ->where('type', 'material')
-            ->where('group_name', '<>', '')
-            ->distinct()
-            ->orderBy('group_name')
-            ->pluck('group_name')
-            ->map(static fn ($group): string => (string) $group)
-            ->values()
-            ->all();
+        return ControlledTagGroups::names();
     }
 
     /**
@@ -541,9 +513,14 @@ class TagController extends Controller
             return [];
         }
 
+        $allowedGroups = ControlledTagGroups::names();
+        if ($allowedGroups === []) {
+            return [];
+        }
+
         return Tag::query()
             ->where('type', 'material')
-            ->where('group_name', '<>', '')
+            ->whereIn('group_name', $allowedGroups)
             ->whereHas(self::SCOPE_RELATIONS[$scope])
             ->distinct()
             ->orderBy('group_name')
@@ -573,5 +550,22 @@ class TagController extends Controller
         $slug = Str::slug($base);
 
         return $slug !== '' ? mb_substr($slug, 0, 160, 'UTF-8') : 'tag-'.substr(sha1($base), 0, 16);
+    }
+
+    /**
+     * @return list<array{id:int,name:string}>
+     */
+    private function controlledTagGroups(): array
+    {
+        return ControlledTagGroup::query()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(static fn (ControlledTagGroup $group): array => [
+                'id' => (int) $group->id,
+                'name' => (string) $group->name,
+            ])
+            ->values()
+            ->all();
     }
 }

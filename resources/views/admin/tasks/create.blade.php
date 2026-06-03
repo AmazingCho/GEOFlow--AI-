@@ -21,16 +21,6 @@
     $selectedKnowledgeTagFilters = collect($selectedKnowledgeTagFilters)
         ->map(static fn ($value): string => (string) $value)
         ->all();
-    $storedIndustryTagFilter = (string) ($taskForm['industry_tag_filter'] ?? '');
-    $selectedIndustryTagFilters = old('industry_tag_filters', null);
-    if (! is_array($selectedIndustryTagFilters)) {
-        $selectedIndustryTagFilters = $storedIndustryTagFilter !== ''
-            ? preg_split('/\s*,\s*/u', $storedIndustryTagFilter, -1, PREG_SPLIT_NO_EMPTY)
-            : [];
-    }
-    $selectedIndustryTagFilters = collect($selectedIndustryTagFilters)
-        ->map(static fn ($value): string => (string) $value)
-        ->all();
     $storedImageTagFilter = (string) ($taskForm['image_tag_filter'] ?? '');
     $selectedImageTagFilters = old('image_tag_filters', null);
     if (! is_array($selectedImageTagFilters)) {
@@ -41,6 +31,63 @@
     $selectedImageTagFilters = collect($selectedImageTagFilters)
         ->map(static fn ($value): string => (string) $value)
         ->all();
+    $selectedTaskEntityIds = collect(old('entity_ids', $taskForm['entity_ids'] ?? []))
+        ->map(static fn ($id): int => (int) $id)
+        ->filter(static fn (int $id): bool => $id > 0)
+        ->values()
+        ->all();
+    $selectedTaskCaseIds = collect(old('case_ids', $taskForm['case_ids'] ?? []))
+        ->map(static fn ($id): int => (int) $id)
+        ->filter(static fn (int $id): bool => $id > 0)
+        ->values()
+        ->all();
+    $controlledTagGroups = collect($formOptions['controlledTagGroups'] ?? ['Topic', 'Audience', 'Intent'])
+        ->map(static fn ($group): string => (string) $group)
+        ->filter(static fn (string $group): bool => $group !== '')
+        ->values()
+        ->all();
+    $controlledTagFieldName = static function (string $groupName): string {
+        return match ($groupName) {
+            'Product Line' => 'product_line_tag_filters',
+            'Product Model' => 'product_model_tag_filters',
+            'Industry' => 'industry_tag_filters',
+            'Topic' => 'topic_tag_filters',
+            'Content Type' => 'content_type_tag_filters',
+            'Audience' => 'audience_tag_filters',
+            'Intent' => 'intent_tag_filters',
+            default => 'controlled_tag_filters_'.\Illuminate\Support\Str::slug($groupName, '_'),
+        };
+    };
+    $genericKnowledgeTagFilters = collect($selectedKnowledgeTagFilters)
+        ->reject(static function (string $label) use ($controlledTagGroups): bool {
+            foreach ($controlledTagGroups as $groupName) {
+                if (str_starts_with($label, $groupName.':')) {
+                    return true;
+                }
+            }
+
+            return false;
+        })
+        ->values()
+        ->all();
+    $selectedGroupTagFilters = static function (string $fieldName, string $groupName) use ($selectedKnowledgeTagFilters): array {
+        $oldValue = old($fieldName, null);
+        if (is_array($oldValue)) {
+            return collect($oldValue)
+                ->map(static fn ($value): string => trim((string) $value))
+                ->filter(static fn (string $value): bool => $value !== '')
+                ->values()
+                ->all();
+        }
+
+        return collect($selectedKnowledgeTagFilters)
+            ->filter(static fn (string $label): bool => str_starts_with($label, $groupName.':'))
+            ->values()
+            ->all();
+    };
+    $crossCollectionMode = old('cross_collection_mode', (string) ($taskForm['cross_collection_mode'] ?? '0')) === '1';
+    $fieldClass = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
+    $compactFieldClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
 @endphp
 
 @section('content')
@@ -86,15 +133,60 @@
                             <div class="lg:col-span-3">
                                 <label for="task_name" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_name') }} *</label>
                                 <input type="text" name="task_name" id="task_name" required value="{{ old('task_name', (string) ($taskForm['task_name'] ?? '')) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                       class="{{ $fieldClass }}"
                                        placeholder="{{ $t('task_create.placeholder.task_name') }}">
+                            </div>
+                            <div>
+                                @include('admin.partials.collection-select', [
+                                    'name' => 'collection_id',
+                                    'collectionOptions' => $formOptions['collections'] ?? [],
+                                    'selectedId' => old('collection_id', (string) ($taskForm['collection_id'] ?? '')),
+                                    'label' => $t('task_create.field.collection'),
+                                    'help' => $t('task_create.help.collection_required'),
+                                    'required' => true,
+                                    'emptyLabel' => $t('task_create.field.collection'),
+                                    'class' => $fieldClass,
+                                ])
+                                <label class="mt-3 flex items-start gap-2 text-sm text-gray-600">
+                                    <input type="checkbox" name="cross_collection_mode" value="1" @checked($crossCollectionMode) class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span>
+                                        <span class="block font-medium text-gray-800">{{ $t('task_create.field.cross_collection_mode') }}</span>
+                                        <span class="block text-gray-500">{{ $t('task_create.help.cross_collection_mode') }}</span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="lg:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.entities') }}</label>
+                                <div class="mt-1">
+                                    @include('admin.partials.entity-selector', [
+                                        'name' => 'entity_ids',
+                                        'entityOptions' => $formOptions['entityOptions'] ?? [],
+                                        'selectedEntityIds' => $selectedTaskEntityIds,
+                                        'tone' => 'blue',
+                                    ])
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.entities') }}</p>
+                            </div>
+                            <div class="lg:col-span-3">
+                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.cases') }}</label>
+                                <div class="mt-1">
+                                    @include('admin.partials.option-multi-selector', [
+                                        'name' => 'case_ids',
+                                        'options' => $formOptions['caseOptions'] ?? [],
+                                        'selectedIds' => $selectedTaskCaseIds,
+                                        'tone' => 'blue',
+                                        'placeholder' => $t('task_create.field.cases'),
+                                        'emptyText' => $t('task_create.option.no_cases'),
+                                    ])
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.cases') }}</p>
                             </div>
                             <div class="lg:col-span-2">
                                 <label for="title_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.title_library') }} *</label>
-                                <select name="title_library_id" id="title_library_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="title_library_id" id="title_library_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_title_library') }}</option>
                                     @foreach ($formOptions['titleLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" data-industry-tags="{{ implode('|', $library['industry_tags'] ?? []) }}" @selected((string) old('title_library_id', (string) ($taskForm['title_library_id'] ?? '')) === (string) $library['id'])>
+                                        <option value="{{ $library['id'] }}" data-collection-id="{{ (int) ($library['collection_id'] ?? 0) }}" @selected((string) old('title_library_id', (string) ($taskForm['title_library_id'] ?? '')) === (string) $library['id'])>
                                             {{ $t('task_create.option.library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
                                         </option>
                                     @endforeach
@@ -102,27 +194,10 @@
                             </div>
                             <div>
                                 <label for="status" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_status') }}</label>
-                                <select name="status" id="status" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="status" id="status" class="{{ $fieldClass }}">
                                     <option value="active" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'active')>{{ $t('task_create.option.status_active') }}</option>
                                     <option value="paused" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'paused')>{{ $t('task_create.option.status_paused') }}</option>
                                 </select>
-                            </div>
-                            <div class="lg:col-span-3">
-                                <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.industry_tags') }}</label>
-                                <input type="hidden" name="industry_tag_filter_present" value="1">
-                                <div class="mt-1">
-                                    @include('admin.partials.tag-label-selector', [
-                                        'name' => 'industry_tag_filters',
-                                        'tagOptions' => $formOptions['industryTags'],
-                                        'selectedLabels' => $selectedIndustryTagFilters,
-                                        'countLabelKey' => 'admin.task_create.option.industry_tag_count',
-                                        'searchScope' => 'industry',
-                                        'emptyText' => $t('task_create.option.no_industry_tags'),
-                                        'placeholder' => $t('task_create.placeholder.industry_tags'),
-                                        'tone' => 'orange',
-                                    ])
-                                </div>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.industry_tags') }}</p>
                             </div>
                         </div>
                     </div>
@@ -137,7 +212,7 @@
                         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                             <div>
                                 <label for="prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.content_prompt') }} *</label>
-                                <select name="prompt_id" id="prompt_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="prompt_id" id="prompt_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_prompt') }}</option>
                                     @foreach ($formOptions['prompts'] as $prompt)
                                         <option value="{{ $prompt['id'] }}" @selected((string) old('prompt_id', (string) ($taskForm['prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
@@ -146,7 +221,7 @@
                             </div>
                             <div>
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
-                                <select name="ai_model_id" id="ai_model_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="ai_model_id" id="ai_model_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_ai_model') }}</option>
                                     @foreach ($formOptions['aiModels'] as $model)
                                         <option value="{{ $model['id'] }}" @selected((string) old('ai_model_id', (string) ($taskForm['ai_model_id'] ?? '')) === (string) $model['id'])>{{ $model['name'] }}</option>
@@ -155,7 +230,7 @@
                             </div>
                             <div>
                                 <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
-                                <select name="model_selection_mode" id="model_selection_mode" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="model_selection_mode" id="model_selection_mode" class="{{ $fieldClass }}">
                                     <option value="fixed" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
                                     <option value="smart_failover" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'smart_failover')>{{ $t('task_create.option.model_selection_smart_failover') }}</option>
                                 </select>
@@ -163,10 +238,10 @@
                             </div>
                             <div>
                                 <label for="knowledge_base_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_base') }}</label>
-                                <select name="knowledge_base_id" id="knowledge_base_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="knowledge_base_id" id="knowledge_base_id" class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.no_knowledge_base') }}</option>
                                     @foreach ($formOptions['knowledgeBases'] as $kb)
-                                        <option value="{{ $kb['id'] }}" data-industry-tags="{{ implode('|', $kb['industry_tags'] ?? []) }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
+                                        <option value="{{ $kb['id'] }}" data-collection-id="{{ (int) ($kb['collection_id'] ?? 0) }}" @selected((string) old('knowledge_base_id', (string) ($taskForm['knowledge_base_id'] ?? '')) === (string) $kb['id'])>{{ $kb['name'] }}</option>
                                     @endforeach
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_base') !!}</p>
@@ -178,19 +253,44 @@
                                     @include('admin.partials.tag-label-selector', [
                                         'name' => 'knowledge_tag_filters',
                                         'tagOptions' => $formOptions['knowledgeTags'],
-                                        'selectedLabels' => $selectedKnowledgeTagFilters,
+                                        'selectedLabels' => $genericKnowledgeTagFilters,
                                         'countLabelKey' => 'admin.task_create.option.knowledge_tag_count',
                                         'searchScope' => 'knowledge',
-                                        'industrySourceSelector' => 'input[name="industry_tag_filters[]"]',
                                         'emptyText' => $t('task_create.option.no_knowledge_tags'),
                                         'tone' => 'blue',
                                     ])
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_tags') !!}</p>
                             </div>
+                            <div class="lg:col-span-3">
+                                <details class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                                    <summary class="cursor-pointer text-sm font-semibold text-gray-700">{{ $t('task_create.help.controlled_tag_groups_optional') }}</summary>
+                                    <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                                        @foreach ($controlledTagGroups as $controlledGroupName)
+                                            @php($tagGroup = ['field' => $controlledTagFieldName($controlledGroupName), 'group' => $controlledGroupName, 'label' => $controlledGroupName])
+                                            <div>
+                                                <label class="block text-sm font-medium text-gray-700">{{ $tagGroup['label'] }}</label>
+                                                <div class="mt-1">
+                                                    @include('admin.partials.tag-label-selector', [
+                                                        'name' => $tagGroup['field'],
+                                                        'tagOptions' => [],
+                                                        'selectedLabels' => $selectedGroupTagFilters($tagGroup['field'], $tagGroup['group']),
+                                                        'countLabelKey' => 'admin.task_create.option.knowledge_tag_count',
+                                                        'searchScope' => 'knowledge',
+                                                        'searchGroup' => $tagGroup['group'],
+                                                        'emptyText' => $t('task_create.option.no_group_tags'),
+                                                        'placeholder' => $t('task_create.placeholder.group_tag_search'),
+                                                        'tone' => 'blue',
+                                                    ])
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </details>
+                            </div>
                             <div>
                                 <label for="author_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.author') }}</label>
-                                <select name="author_id" id="author_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="author_id" id="author_id" class="{{ $fieldClass }}">
                                     <option value="0">{{ $t('task_create.option.random_author') }}</option>
                                     @foreach ($formOptions['authors'] as $author)
                                         <option value="{{ $author['id'] }}" @selected((string) old('author_id', (string) ($taskForm['author_id'] ?? '0')) === (string) $author['id'])>{{ $author['name'] }}</option>
@@ -211,10 +311,10 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label for="image_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_library') }}</label>
-                                <select name="image_library_id" id="image_library_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">{{ $t('task_create.option.no_images') }}</option>
+                                <select name="image_library_id" id="image_library_id" class="{{ $fieldClass }}">
+                                    <option value="">{{ $t('task_create.option.no_image_library') }}</option>
                                     @foreach ($formOptions['imageLibraries'] as $library)
-                                        <option value="{{ $library['id'] }}" data-industry-tags="{{ implode('|', $library['industry_tags'] ?? []) }}" @selected((string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) === (string) $library['id'])>
+                                        <option value="{{ $library['id'] }}" data-collection-id="{{ (int) ($library['collection_id'] ?? 0) }}" data-entity-ids="{{ implode(',', array_map('intval', $library['entity_ids'] ?? [])) }}" @selected((string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) === (string) $library['id'])>
                                             {{ $t('task_create.option.image_library_count', ['name' => $library['name'], 'count' => $library['count']]) }}
                                         </option>
                                     @endforeach
@@ -222,15 +322,15 @@
                             </div>
                             <div>
                                 <label for="image_count" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_count') }}</label>
-                                <select name="image_count" id="image_count" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select name="image_count" id="image_count" class="{{ $fieldClass }}">
                                     <option value="0" @selected($imageCountValue === '0')>{{ $t('task_create.option.no_image_count') }}</option>
-                                    <option value="1" @selected($imageCountValue === '1')>{{ $t('task_create.option.image_count', ['count' => 1]) }}</option>
+                                    <option value="1" @selected($imageCountValue === '1')>{{ $t('task_create.option.auto_image_count') }}</option>
                                     <option value="2" @selected($imageCountValue === '2')>{{ $t('task_create.option.image_count', ['count' => 2]) }}</option>
                                     <option value="3" @selected($imageCountValue === '3')>{{ $t('task_create.option.image_count', ['count' => 3]) }}</option>
                                     <option value="4" @selected($imageCountValue === '4')>{{ $t('task_create.option.image_count', ['count' => 4]) }}</option>
                                     <option value="5" @selected($imageCountValue === '5')>{{ $t('task_create.option.image_count', ['count' => 5]) }}</option>
                                 </select>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.image_count') }}</p>
+                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.image_count_auto') }}</p>
                             </div>
                             <div class="md:col-span-2" data-image-tag-filter-section>
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.image_tags') }}</label>
@@ -242,7 +342,6 @@
                                         'selectedLabels' => $selectedImageTagFilters,
                                         'countLabelKey' => 'admin.task_create.option.image_tag_count',
                                         'searchScope' => 'images',
-                                        'industrySourceSelector' => 'input[name="industry_tag_filters[]"]',
                                         'emptyText' => $t('task_create.option.no_image_tags'),
                                         'tone' => 'purple',
                                     ])
@@ -489,9 +588,11 @@
                 lucide.createIcons();
             }
 
-            const imageLibrarySelect = document.getElementById('image_library_id');
             const titleLibrarySelect = document.getElementById('title_library_id');
             const knowledgeBaseSelect = document.getElementById('knowledge_base_id');
+            const imageLibrarySelect = document.getElementById('image_library_id');
+            const collectionSelect = document.querySelector('select[name="collection_id"]');
+            const crossCollectionCheckbox = document.querySelector('input[name="cross_collection_mode"]');
             const imageCountSelect = document.getElementById('image_count');
             const needReviewCheckbox = document.getElementById('need_review');
             const publishIntervalInput = document.getElementById('publish_interval');
@@ -508,15 +609,133 @@
                 return;
             }
 
-            function toggleImageCountByLibrary() {
-                if (!imageLibrarySelect.value) {
-                    imageCountSelect.value = '0';
-                    imageCountSelect.disabled = true;
-                } else {
-                    imageCountSelect.disabled = false;
-                    if (imageCountSelect.value === '0') {
-                        imageCountSelect.value = '1';
+            function selectedEntityIds() {
+                return Array.from(document.querySelectorAll('input[name="entity_ids[]"]'))
+                    .map((input) => String(input.value || '').trim())
+                    .filter(Boolean);
+            }
+
+            function selectedCollectionId() {
+                return String(collectionSelect?.value || '').trim();
+            }
+
+            function collectionFilterIsActive() {
+                return selectedCollectionId() !== '' && !Boolean(crossCollectionCheckbox?.checked);
+            }
+
+            function optionMatchesCollection(option, allowShared) {
+                if (!collectionFilterIsActive()) {
+                    return true;
+                }
+
+                const optionCollectionId = String(option.getAttribute('data-collection-id') || option.getAttribute('data-option-collection-id') || '').trim();
+                if (allowShared && (optionCollectionId === '' || optionCollectionId === '0')) {
+                    return true;
+                }
+
+                return optionCollectionId === selectedCollectionId();
+            }
+
+            function syncNativeSelectByCollection(select, allowShared = true) {
+                if (!select) {
+                    return;
+                }
+
+                Array.from(select.querySelectorAll('option[value]')).forEach((option) => {
+                    if (option.value === '') {
+                        option.hidden = false;
+                        return;
                     }
+
+                    option.hidden = !optionMatchesCollection(option, allowShared);
+                });
+
+                const selectedOption = select.selectedOptions[0];
+                if (selectedOption && selectedOption.hidden) {
+                    select.value = '';
+                }
+            }
+
+            function syncOptionSelectorByCollection(fieldName) {
+                const selector = document.querySelector('[data-option-multi-selector][data-field-name="' + fieldName + '"]');
+                if (!selector || !collectionSelect) {
+                    return;
+                }
+
+                const shouldFilter = collectionFilterIsActive();
+                selector.querySelectorAll('[data-option-item]').forEach((item) => {
+                    const hidden = shouldFilter && !optionMatchesCollection(item, false);
+                    item.hidden = hidden;
+                    item.dataset.optionFilterHidden = hidden ? '1' : '0';
+                    item.classList.toggle('hidden', hidden);
+                });
+
+                selector.querySelectorAll('[data-option-chip]').forEach((chip) => {
+                    if (!shouldFilter) {
+                        return;
+                    }
+
+                    const chipId = String(chip.getAttribute('data-option-id') || '');
+                    const option = Array.from(selector.querySelectorAll('[data-option-item]'))
+                        .find((item) => String(item.getAttribute('data-option-id') || '') === chipId);
+                    if (!option || !optionMatchesCollection(option, false)) {
+                        chip.remove();
+                    }
+                });
+
+                const search = selector.querySelector('[data-option-search]');
+                if (search) {
+                    search.value = '';
+                }
+                const visibleItems = Array.from(selector.querySelectorAll('[data-option-item]'))
+                    .filter((item) => !item.hidden && item.dataset.optionFilterHidden !== '1');
+                selector.querySelector('[data-option-menu-empty]')?.classList.toggle('hidden', visibleItems.length > 0);
+                selector.dispatchEvent(new CustomEvent('option-selector:changed', { bubbles: true }));
+            }
+
+            function syncContextOptionsByCollection() {
+                syncOptionSelectorByCollection('entity_ids');
+                syncOptionSelectorByCollection('case_ids');
+                syncNativeSelectByCollection(titleLibrarySelect, true);
+                syncNativeSelectByCollection(knowledgeBaseSelect, true);
+                window.setTimeout(syncImageLibrariesByEntities, 0);
+            }
+
+            function syncImageLibrariesByEntities() {
+                if (!imageLibrarySelect) {
+                    return;
+                }
+
+                const selectedEntities = selectedEntityIds();
+                const options = Array.from(imageLibrarySelect.querySelectorAll('option[value]')).filter((option) => option.value !== '');
+                options.forEach((option) => {
+                    option.hidden = !optionMatchesCollection(option, true);
+                });
+                if (selectedEntities.length === 0) {
+                    const selectedOption = imageLibrarySelect.selectedOptions[0];
+                    if (selectedOption && selectedOption.hidden) {
+                        imageLibrarySelect.value = '';
+                    }
+                    return;
+                }
+
+                const visibleOptions = options.filter((option) => !option.hidden);
+                const matched = visibleOptions.filter((option) => {
+                    const linked = String(option.getAttribute('data-entity-ids') || '').split(',').map((id) => id.trim()).filter(Boolean);
+                    return linked.some((id) => selectedEntities.includes(id));
+                });
+                if (matched.length === 0) {
+                    return;
+                }
+
+                visibleOptions.forEach((option) => {
+                    const linked = String(option.getAttribute('data-entity-ids') || '').split(',').map((id) => id.trim()).filter(Boolean);
+                    option.hidden = !linked.some((id) => selectedEntities.includes(id));
+                });
+
+                const selectedOption = imageLibrarySelect.selectedOptions[0];
+                if (selectedOption && selectedOption.hidden) {
+                    imageLibrarySelect.value = '';
                 }
             }
 
@@ -578,70 +797,30 @@
                 });
             }
 
-            function selectedIndustryLabels() {
-                return Array.from(document.querySelectorAll('input[name="industry_tag_filters[]"]'))
-                    .map((input) => input.value.trim())
-                    .filter((value, index, values) => value !== '' && values.indexOf(value) === index);
-            }
-
-            function optionMatchesIndustry(option, selectedLabels) {
-                if (!option.value || selectedLabels.length === 0) {
-                    return true;
+            document.addEventListener('click', function (event) {
+                if (event.target.closest('[data-option-item], [data-option-remove]')) {
+                    window.setTimeout(syncImageLibrariesByEntities, 0);
                 }
-
-                const optionLabels = (option.getAttribute('data-industry-tags') || '')
-                    .split('|')
-                    .map((value) => value.trim())
-                    .filter(Boolean);
-
-                return optionLabels.some((label) => selectedLabels.includes(label));
-            }
-
-            function filterSelectByIndustry(select) {
-                if (!select) {
-                    return;
-                }
-
-                const selectedLabels = selectedIndustryLabels();
-                let selectedOptionStillVisible = false;
-
-                Array.from(select.options).forEach((option) => {
-                    const visible = optionMatchesIndustry(option, selectedLabels);
-                    option.hidden = !visible;
-                    option.disabled = !visible;
-                    if (option.selected && visible) {
-                        selectedOptionStillVisible = true;
-                    }
-                });
-
-                if (!selectedOptionStillVisible) {
-                    select.value = '';
-                    select.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-            }
-
-            function syncMaterialSelectorsByIndustry() {
-                filterSelectByIndustry(titleLibrarySelect);
-                filterSelectByIndustry(knowledgeBaseSelect);
-                filterSelectByIndustry(imageLibrarySelect);
-                toggleImageCountByLibrary();
-            }
-
-            imageLibrarySelect.addEventListener('change', toggleImageCountByLibrary);
+            });
+            collectionSelect?.addEventListener('change', syncContextOptionsByCollection);
+            crossCollectionCheckbox?.addEventListener('change', syncContextOptionsByCollection);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));
             publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
-            document.addEventListener('geoflow:tag-label-selection-changed', function (event) {
-                const selector = event.detail?.selector;
-                if (selector && selector.getAttribute('data-field-name') === 'industry_tag_filters') {
-                    syncMaterialSelectorsByIndustry();
-                }
-            });
 
             form.addEventListener('submit', function (event) {
+                syncContextOptionsByCollection();
+
                 if (!document.getElementById('task_name').value.trim()) {
                     alert(@json(__('admin.task_create.error.name_required')));
+                    event.preventDefault();
+                    return;
+                }
+
+                const collectionSelect = document.querySelector('select[name="collection_id"]');
+                if (collectionSelect && !collectionSelect.value) {
+                    alert(@json(__('admin.task_create.field.collection')));
                     event.preventDefault();
                     return;
                 }
@@ -675,12 +854,12 @@
                 }
             });
 
-            toggleImageCountByLibrary();
+            syncImageLibrariesByEntities();
+            syncContextOptionsByCollection();
             togglePublishInterval();
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
-            syncMaterialSelectorsByIndustry();
         });
     </script>
 @endpush

@@ -87,26 +87,170 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[260px_minmax(0,1fr)]" data-collection-scoped-list>
+            @include('admin.partials.collection-sidebar', [
+                'routeName' => 'admin.knowledge-bases.index',
+                'selectedId' => (string) ($collectionId ?? ''),
+                'collectionOptions' => $collectionOptions ?? [],
+            ])
+            <div class="min-w-0">
+        <div class="mb-4 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <i data-lucide="bookmark-check" class="h-4 w-4 text-orange-600"></i>
+                {{ __('admin.knowledge_bases.saved_views.title') }}
+            </div>
+            <div class="flex flex-wrap gap-2">
+                @foreach ($savedViewOptions ?? [] as $viewOption)
+                    @php
+                        $viewUrl = route('admin.knowledge-bases.index', array_filter([
+                            'view' => $viewOption['value'],
+                            'collection_id' => $collectionId ?? null,
+                        ], static fn ($value) => $value !== null && $value !== ''));
+                        $isActiveView = (string) ($savedView ?? '') === (string) $viewOption['value'];
+                    @endphp
+                    <a href="{{ $viewUrl }}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold {{ $isActiveView ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50' }}">
+                        {{ $viewOption['label'] }}
+                    </a>
+                @endforeach
+            </div>
+        </div>
+
         <form method="GET" action="{{ route('admin.knowledge-bases.index') }}" class="mb-6 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
+            @if ((string) ($savedView ?? '') !== '')
+                <input type="hidden" name="view" value="{{ $savedView }}">
+            @endif
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-4 lg:items-end">
                 <div class="flex-1">
                     <label for="knowledge-search-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.search_label') }}</label>
                     <input id="knowledge-search-filter" type="text" name="search" value="{{ $search ?? '' }}" placeholder="{{ __('admin.knowledge_bases.search_placeholder') }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label for="knowledge-purpose-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_knowledge_purpose') }}</label>
+                    <select id="knowledge-purpose-filter" name="knowledge_purpose" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="">{{ __('admin.common.all') }}</option>
+                        @foreach ($knowledgePurposeOptions ?? [] as $option)
+                            <option value="{{ $option['value'] }}" @selected((string) ($knowledgePurpose ?? '') === $option['value'])>{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
                 </div>
                 <div class="flex-1">
                     <label for="knowledge-tag-filter" class="block text-sm font-medium text-gray-700 mb-2">标签筛选</label>
                     <input id="knowledge-tag-filter" type="text" name="tag" value="{{ $tagFilter ?? '' }}" placeholder="{{ __('admin.knowledge_bases.tag_filter_placeholder') }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
                 </div>
-                <div class="flex gap-2">
+                <div>
+                    <label for="knowledge-entity-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.filter_entity') }}</label>
+                    <select id="knowledge-entity-filter" name="entity_id" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="">{{ __('admin.common.all') }}</option>
+                        @foreach ($entityOptions ?? [] as $option)
+                            <option value="{{ (int) $option['id'] }}" @selected((int) ($entityId ?? 0) === (int) $option['id'])>{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label for="knowledge-tag-group-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.filter_tag_group') }}</label>
+                    <select id="knowledge-tag-group-filter" name="tag_group" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="">{{ __('admin.common.all') }}</option>
+                        @foreach ($tagGroupOptions ?? [] as $groupOption)
+                            <option value="{{ $groupOption }}" @selected((string) ($tagGroup ?? '') === (string) $groupOption)>{{ $groupOption }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label for="knowledge-status-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.common.status') }}</label>
+                    <select id="knowledge-status-filter" name="status" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="">{{ __('admin.common.all') }}</option>
+                        @foreach ($statusOptions ?? [] as $option)
+                            <option value="{{ $option['value'] }}" @selected((string) ($status ?? '') === (string) $option['value'])>{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="flex gap-2 lg:col-span-4">
                     <button type="submit" class="inline-flex items-center justify-center rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">
                         <i data-lucide="search" class="mr-2 h-4 w-4"></i>
                         筛选
                     </button>
-                    @if ((string) ($tagFilter ?? '') !== '' || (string) ($search ?? '') !== '')
+                    @if ((string) ($tagFilter ?? '') !== '' || (string) ($search ?? '') !== '' || ! empty($collectionId) || (string) ($knowledgePurpose ?? '') !== '' || (string) ($knowledgeType ?? '') !== '' || (string) ($knowledgeRole ?? '') !== '' || (string) ($importance ?? '') !== '' || (string) ($entityId ?? '') !== '' || (string) ($tagGroup ?? '') !== '' || (string) ($status ?? '') !== '' || (string) ($savedView ?? '') !== '')
                         <a href="{{ route('admin.knowledge-bases.index') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             清除
                         </a>
                     @endif
+                </div>
+            </div>
+        </form>
+
+        <form id="knowledge-bulk-form" method="POST" action="{{ route('admin.knowledge-bases.bulk') }}" class="mb-4 rounded-lg border border-orange-100 bg-orange-50/60 px-5 py-4 shadow-sm">
+            @csrf
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-orange-950">
+                <i data-lucide="list-checks" class="h-4 w-4"></i>
+                {{ __('admin.knowledge_bases.bulk.title') }}
+            </div>
+            <div class="grid grid-cols-1 gap-3 xl:grid-cols-6 xl:items-end">
+                <div>
+                    <label for="knowledge-bulk-action" class="block text-xs font-semibold text-orange-900 mb-1">{{ __('admin.knowledge_bases.bulk.action') }}</label>
+                    <select id="knowledge-bulk-action" name="bulk_action" class="block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="assign_collection">{{ __('admin.knowledge_bases.bulk.assign_collection') }}</option>
+                        <option value="add_tags">{{ __('admin.knowledge_bases.bulk.add_tags') }}</option>
+                        <option value="assign_purpose">{{ __('admin.knowledge_bases.bulk.assign_purpose') }}</option>
+                        <option value="link_entity">{{ __('admin.knowledge_bases.bulk.link_entity') }}</option>
+                        <option value="archive">{{ __('admin.knowledge_bases.bulk.archive') }}</option>
+                        <option value="set_status">{{ __('admin.knowledge_bases.bulk.set_status') }}</option>
+                    </select>
+                </div>
+                <div data-knowledge-bulk-panel="assign_collection">
+                    <label for="knowledge-bulk-collection" class="block text-xs font-semibold text-orange-900 mb-1">{{ __('admin.collections.field_collection') }}</label>
+                    <select id="knowledge-bulk-collection" name="collection_id" class="block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <option value="">{{ __('admin.collections.badge_unassigned') }}</option>
+                        @foreach ($collectionOptions ?? [] as $option)
+                            <option value="{{ (int) $option['id'] }}">{{ $option['name'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div data-knowledge-bulk-panel="assign_purpose" class="hidden">
+                    <label for="knowledge-bulk-purpose" class="block text-xs font-semibold text-orange-900 mb-1">{{ __('admin.knowledge_bases.field_knowledge_purpose') }}</label>
+                    <select id="knowledge-bulk-purpose" name="knowledge_purpose" class="block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        @foreach ($knowledgePurposeOptions ?? [] as $option)
+                            <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div data-knowledge-bulk-panel="set_status" class="hidden">
+                    <label for="knowledge-bulk-status" class="block text-xs font-semibold text-orange-900 mb-1">{{ __('admin.common.status') }}</label>
+                    <select id="knowledge-bulk-status" name="status" class="block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        @foreach ($statusOptions ?? [] as $option)
+                            <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div data-knowledge-bulk-panel="link_entity" class="hidden">
+                    <label for="knowledge-bulk-entity" class="block text-xs font-semibold text-orange-900 mb-1">{{ __('admin.knowledge_bases.bulk_link_entity') }}</label>
+                    <select id="knowledge-bulk-entity" name="entity_ids[]" multiple size="3" class="block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        @foreach ($entityOptions ?? [] as $option)
+                            <option value="{{ (int) $option['id'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                    <input type="hidden" name="entity_relation_type" value="supporting_reference">
+                </div>
+                <div data-knowledge-bulk-panel="add_tags" class="hidden space-y-2">
+                    <label class="block text-xs font-semibold text-orange-900">{{ __('admin.knowledge_bases.bulk.tags') }}</label>
+                    @include('admin.partials.tag-selector', [
+                        'name' => 'bulk_tag_ids',
+                        'tagOptions' => [],
+                        'selectedTagIds' => [],
+                        'includePresence' => false,
+                        'tone' => 'orange',
+                    ])
+                </div>
+                <div data-knowledge-bulk-panel="archive" class="hidden xl:col-span-2">
+                    <div class="rounded-md border border-orange-200 bg-white px-3 py-2 text-xs leading-5 text-orange-900">
+                        {{ __('admin.knowledge_bases.bulk.archive_hint') }}
+                    </div>
+                </div>
+                <div class="xl:col-span-6 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-xs text-orange-800">{{ __('admin.knowledge_bases.bulk.hint') }}</p>
+                    <button type="submit" class="inline-flex items-center justify-center rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">
+                        <i data-lucide="check" class="mr-2 h-4 w-4"></i>
+                        {{ __('admin.knowledge_bases.bulk.submit') }}
+                    </button>
                 </div>
             </div>
         </form>
@@ -133,14 +277,21 @@
                 </div>
             @else
                 <div class="flex items-center justify-between gap-6 px-6 py-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    <div>{{ __('admin.knowledge_bases.column_knowledge_base') }}</div>
+                    <label class="inline-flex items-center gap-2 normal-case tracking-normal">
+                        <input type="checkbox" class="rounded border-gray-300 text-orange-600 focus:ring-orange-500" data-knowledge-bulk-check-all>
+                        {{ __('admin.knowledge_bases.column_knowledge_base') }}
+                    </label>
                     <div class="text-right" style="width: 440px;">{{ __('admin.common.actions') }}</div>
                 </div>
                 <div class="divide-y divide-gray-200">
                     @foreach ($knowledgeBases as $item)
                         <div class="px-6 py-6">
                             <div class="flex flex-col gap-5 lg:flex-row lg:items-center">
-                                <div class="min-w-0 lg:flex-1">
+                                <div class="flex min-w-0 gap-3 lg:flex-1">
+                                    <div class="pt-1">
+                                        <input type="checkbox" form="knowledge-bulk-form" name="knowledge_ids[]" value="{{ (int) $item['id'] }}" class="rounded border-gray-300 text-orange-600 focus:ring-orange-500" data-knowledge-bulk-check>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <h4 class="text-lg font-medium text-gray-900">
                                             <a href="{{ route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $item['id']]) }}" class="hover:text-orange-600">
@@ -162,6 +313,21 @@
                                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
                                             {{ __('admin.knowledge_bases.text_unit', ['count' => number_format((int) $item['word_count'])]) }}
                                         </span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-50 text-cyan-700" title="{{ __('admin.knowledge_bases.knowledge_purpose_current_mapping', ['type' => $item['knowledge_type_label'], 'role' => $item['knowledge_role_label'], 'importance' => (int) $item['importance']]) }}">
+                                            {{ $item['knowledge_purpose_label'] }}
+                                        </span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ (string) ($item['status'] ?? 'active') === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500' }}">
+                                            {{ $item['status_label'] }}
+                                        </span>
+                                        @if ((string) ($item['collection_name'] ?? '') !== '')
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                                                {{ $item['collection_name'] }}
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">
+                                                {{ __('admin.collections.badge_unassigned') }}
+                                            </span>
+                                        @endif
                                         @if ((int) ($item['chunk_count'] ?? 0) > 0)
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
                                                 {{ __('admin.knowledge_bases.vectorized_summary', [
@@ -173,6 +339,16 @@
                                     </div>
                                     @if ($item['description'] !== '')
                                         <p class="mt-1 text-sm text-gray-600">{{ $item['description'] }}</p>
+                                    @endif
+                                    @if ((string) ($item['source_url'] ?? '') !== '')
+                                        <p class="mt-1 truncate text-xs text-gray-500">{{ __('admin.knowledge_bases.field_source_url') }}：{{ $item['source_url'] }}</p>
+                                    @endif
+                                    @if (! empty($item['linked_entities']))
+                                        <div class="mt-3 flex flex-wrap gap-1.5">
+                                            @foreach ($item['linked_entities'] as $entityLabel)
+                                                <span class="inline-flex rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700">{{ $entityLabel }}</span>
+                                            @endforeach
+                                        </div>
                                     @endif
                                     @if (! empty($item['tags']))
                                         <div class="mt-3 flex flex-wrap gap-1.5">
@@ -191,6 +367,7 @@
                                         @if ((int) ($item['usage_count'] ?? 0) > 0)
                                             <span>{{ __('admin.knowledge_bases.usage_count', ['count' => (int) $item['usage_count']]) }}</span>
                                         @endif
+                                    </div>
                                     </div>
                                 </div>
 
@@ -266,6 +443,8 @@
                     @endif
                 </div>
             @endif
+        </div>
+            </div>
         </div>
     </div>
 
@@ -460,6 +639,43 @@
         }
 
         document.addEventListener('DOMContentLoaded', function () {
+            const bulkAction = document.getElementById('knowledge-bulk-action');
+            const bulkPanels = Array.from(document.querySelectorAll('[data-knowledge-bulk-panel]'));
+            function syncBulkPanels() {
+                const action = bulkAction ? bulkAction.value : '';
+                bulkPanels.forEach(function (panel) {
+                    const allowed = (panel.getAttribute('data-knowledge-bulk-panel') || '').split(/\s+/).filter(Boolean);
+                    const visible = allowed.includes(action);
+                    panel.classList.toggle('hidden', !visible);
+                    panel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+                });
+            }
+
+            if (bulkAction) {
+                bulkAction.addEventListener('change', syncBulkPanels);
+                syncBulkPanels();
+            }
+
+            const bulkCheckAll = document.querySelector('[data-knowledge-bulk-check-all]');
+            const bulkChecks = Array.from(document.querySelectorAll('[data-knowledge-bulk-check]'));
+            if (bulkCheckAll && bulkChecks.length > 0) {
+                bulkCheckAll.addEventListener('change', function () {
+                    bulkChecks.forEach(function (checkbox) {
+                        checkbox.checked = bulkCheckAll.checked;
+                    });
+                });
+
+                bulkChecks.forEach(function (checkbox) {
+                    checkbox.addEventListener('change', function () {
+                        const checkedCount = bulkChecks.filter(function (item) {
+                            return item.checked;
+                        }).length;
+                        bulkCheckAll.checked = checkedCount === bulkChecks.length;
+                        bulkCheckAll.indeterminate = checkedCount > 0 && checkedCount < bulkChecks.length;
+                    });
+                });
+            }
+
             document.querySelectorAll('[data-refresh-chunks-form]').forEach(function (form) {
                 form.addEventListener('submit', function (event) {
                     event.preventDefault();

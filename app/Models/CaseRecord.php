@@ -11,6 +11,7 @@ class CaseRecord extends Model
     protected $table = 'case_records';
 
     protected $fillable = [
+        'collection_id',
         'entity_id',
         'title',
         'case_type',
@@ -26,6 +27,7 @@ class CaseRecord extends Model
     protected function casts(): array
     {
         return [
+            'collection_id' => 'integer',
             'entity_id' => 'integer',
             'usage_count' => 'integer',
         ];
@@ -34,6 +36,11 @@ class CaseRecord extends Model
     public function entity(): BelongsTo
     {
         return $this->belongsTo(EntityRecord::class, 'entity_id');
+    }
+
+    public function collection(): BelongsTo
+    {
+        return $this->belongsTo(CollectionRecord::class, 'collection_id');
     }
 
     public function tags(): MorphToMany

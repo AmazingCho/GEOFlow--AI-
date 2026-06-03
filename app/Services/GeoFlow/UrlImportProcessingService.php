@@ -28,7 +28,8 @@ final class UrlImportProcessingService
 
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
-        private readonly EntityExtractionService $entityExtractionService
+        private readonly EntityExtractionService $entityExtractionService,
+        private readonly EntityMaterialLinkService $entityMaterialLinkService
     ) {}
 
     /**
@@ -218,6 +219,9 @@ final class UrlImportProcessingService
         }
         $keywords = $this->filterBySelectedIndices($this->stringList($analysis['keywords'] ?? []), $selectedIndices('keywords'));
         $titles = $this->filterBySelectedIndices($this->stringList($analysis['titles'] ?? []), $selectedIndices('titles'));
+        $titleKeywordCandidates = $keywords !== []
+            ? $keywords
+            : $this->stringList($analysis['keywords'] ?? []);
         if ($typeEnabled('keywords') && $keywords === []) {
             throw new \RuntimeException(__('admin.url_import.error.ai_keywords_missing'));
         }
@@ -239,7 +243,7 @@ final class UrlImportProcessingService
             $selectedIndices('cases')
         );
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titles, $libraryLabels, $typeEnabled, $entityCandidates, $caseCandidates): array {
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titleKeywordCandidates, $titles, $libraryLabels, $typeEnabled, $entityCandidates, $caseCandidates): array {
             $knowledgeBaseId = 0;
             if ($typeEnabled('knowledge')) {
                 $knowledgeBase = KnowledgeBase::query()->create([
@@ -249,6 +253,9 @@ final class UrlImportProcessingService
                     'character_count' => mb_strlen($knowledgeContent, 'UTF-8'),
                     'used_task_count' => 0,
                     'file_type' => 'markdown',
+                    'knowledge_type' => 'reference',
+                    'knowledge_role' => 'supporting_context',
+                    'importance' => 3,
                     'file_path' => '',
                     'word_count' => mb_strlen($knowledgeContent, 'UTF-8'),
                     'usage_count' => 0,
@@ -283,6 +290,7 @@ final class UrlImportProcessingService
                     'description' => $libraryLabels['description'],
                     'title_count' => 0,
                     'generation_type' => 'url_import',
+                    'keyword_library_id' => $keywordLibraryId > 0 ? $keywordLibraryId : null,
                     'generation_rounds' => 1,
                     'is_ai_generated' => 1,
                 ]);
@@ -290,7 +298,7 @@ final class UrlImportProcessingService
                     Title::query()->firstOrCreate(
                         ['library_id' => (int) $titleLibrary->id, 'title' => $title],
                         [
-                            'keyword' => $keywords[$index % max(1, count($keywords))] ?? '',
+                            'keyword' => $this->resolveTitleKeyword($title, $titleKeywordCandidates, $index),
                             'is_ai_generated' => true,
                             'used_count' => 0,
                             'usage_count' => 0,
@@ -306,6 +314,15 @@ final class UrlImportProcessingService
                 'entities' => $typeEnabled('entities') ? $entityCandidates : [],
                 'cases' => $typeEnabled('cases') ? $caseCandidates : [],
             ]);
+            if ($knowledgeBaseId > 0 && ! empty($entityCaseSummary['entity_ids'])) {
+                $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->first();
+                if ($knowledgeBase) {
+                    $this->entityMaterialLinkService->syncEntities(
+                        $knowledgeBase,
+                        array_map(static fn ($id): int => (int) $id, (array) $entityCaseSummary['entity_ids'])
+                    );
+                }
+            }
 
             return [
                 'knowledge_base' => $knowledgeBaseId,
@@ -367,6 +384,29 @@ final class UrlImportProcessingService
                 throw new \InvalidArgumentException(__('admin.url_import.error.private_url'));
             }
         }
+    }
+
+    /**
+     * @param  list<string>  $keywords
+     */
+    private function resolveTitleKeyword(string $title, array $keywords, int $index): string
+    {
+        $keywords = array_values(array_filter(array_map(
+            static fn (string $keyword): string => trim($keyword),
+            $keywords
+        ), static fn (string $keyword): bool => $keyword !== ''));
+        if ($keywords === []) {
+            return '';
+        }
+
+        $normalizedTitle = mb_strtolower($title, 'UTF-8');
+        foreach ($keywords as $keyword) {
+            if (mb_stripos($normalizedTitle, mb_strtolower($keyword, 'UTF-8'), 0, 'UTF-8') !== false) {
+                return $keyword;
+            }
+        }
+
+        return $keywords[$index % count($keywords)] ?? $keywords[0];
     }
 
     private static function isUlaAddress(string $ip): bool

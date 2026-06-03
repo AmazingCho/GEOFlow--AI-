@@ -5,22 +5,30 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AiModel;
 use App\Models\Author;
+use App\Models\CaseRecord;
 use App\Models\Category;
 use App\Models\DistributionChannel;
+use App\Models\EntityRecord;
 use App\Models\ImageLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
-use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TitleLibrary;
 use App\Services\GeoFlow\DistributionOrchestrator;
+use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\TagService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
+use App\Support\GeoFlow\ControlledTagGroups;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
 
@@ -39,6 +47,7 @@ class TaskController extends Controller
         private readonly TaskLifecycleService $taskLifecycleService,
         private readonly TaskMonitoringQueryService $taskMonitoringQueryService,
         private readonly DistributionOrchestrator $distributionOrchestrator,
+        private readonly EntityMaterialLinkService $entityMaterialLinkService,
         private readonly TagService $tagService,
     ) {}
 
@@ -152,6 +161,7 @@ class TaskController extends Controller
         }
 
         $payload = $this->validateTaskForm($request);
+        $this->assertTaskContextInCollection($request, $payload);
         $taskData = $this->buildTaskPayload($request, $payload);
 
         try {
@@ -197,6 +207,8 @@ class TaskController extends Controller
             'taskId' => $taskId,
             'taskForm' => [
                 'task_name' => (string) ($task['name'] ?? ''),
+                'collection_id' => (string) (($task['collection_id'] ?? '') ?: ''),
+                'cross_collection_mode' => (int) ($task['cross_collection_mode'] ?? 0),
                 'title_library_id' => (string) ($task['title_library_id'] ?? ''),
                 'prompt_id' => (string) ($task['prompt_id'] ?? ''),
                 'ai_model_id' => (string) ($task['ai_model_id'] ?? ''),
@@ -206,7 +218,8 @@ class TaskController extends Controller
                 'image_tag_filter' => (string) ($task['image_tag_filter'] ?? ''),
                 'knowledge_base_id' => (string) (($task['knowledge_base_id'] ?? '') ?: ''),
                 'knowledge_tag_filter' => (string) ($task['knowledge_tag_filter'] ?? ''),
-                'industry_tag_filter' => (string) ($task['industry_tag_filter'] ?? ''),
+                'entity_ids' => $this->parseEntityFilter((string) ($task['entity_filter'] ?? '')),
+                'case_ids' => $this->parseCaseFilter((string) ($task['case_filter'] ?? '')),
                 'fixed_category_id' => (string) (($task['fixed_category_id'] ?? '') ?: ''),
                 'status' => (string) ($task['status'] ?? 'active'),
                 'article_limit' => (string) ($task['article_limit'] ?? 10),
@@ -236,6 +249,7 @@ class TaskController extends Controller
         }
 
         $payload = $this->validateTaskForm($request);
+        $this->assertTaskContextInCollection($request, $payload);
         $taskData = $this->buildTaskPayload($request, $payload);
 
         try {
@@ -417,8 +431,8 @@ class TaskController extends Controller
      *     imageLibraries: list<array{id:int,name:string,count:int}>,
      *     imageTags: list<array{id:int,label:string,count:int}>,
      *     knowledgeBases: list<array{id:int,name:string}>,
+     *     caseOptions: list<array{id:int,label:string}>,
      *     knowledgeTags: list<array{id:int,label:string,count:int}>,
-     *     industryTags: list<array{id:int,label:string,count:int}>,
      *     authors: list<array{id:int,name:string}>,
      *     categories: list<array{id:int,name:string}>,
      *     distributionChannels: list<array{id:int,name:string,domain:string}>
@@ -428,19 +442,16 @@ class TaskController extends Controller
     {
         // 直接附带标题数，避免 Blade 层再次查询。
         $titleLibraries = TitleLibrary::query()
-            ->with(['keywordLibrary.keywords.tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
-            ->select(['id', 'name'])
+            ->select(['id', 'collection_id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM titles WHERE titles.library_id = title_libraries.id) AS title_count')
             ->orderByDesc('id')
             ->get()
-            ->map(function (TitleLibrary $row): array {
-                return [
-                    'id' => (int) $row->id,
-                    'name' => (string) $row->name,
-                    'count' => (int) ($row->title_count ?? 0),
-                    'industry_tags' => $this->industryLabelsFromTitleLibrary($row),
-                ];
-            })
+            ->map(static fn (TitleLibrary $row): array => [
+                'id' => (int) $row->id,
+                'collection_id' => (int) ($row->collection_id ?? 0),
+                'name' => (string) $row->name,
+                'count' => (int) ($row->title_count ?? 0),
+            ])
             ->all();
 
         $prompts = Prompt::query()
@@ -465,58 +476,57 @@ class TaskController extends Controller
             ->map(static fn (AiModel $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
 
+        $imageLibraryEntityIds = DB::table('entity_material_links')
+            ->where('linkable_type', ImageLibrary::class)
+            ->select(['linkable_id', 'entity_id'])
+            ->get()
+            ->groupBy('linkable_id')
+            ->map(static fn ($rows): array => collect($rows)->pluck('entity_id')->map(static fn ($id): int => (int) $id)->unique()->values()->all())
+            ->all();
+
         // 兼容上游展示：图库名称 + 图片数量。
         $imageLibraries = ImageLibrary::query()
-            ->with(['images.tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
-            ->select(['id', 'name'])
+            ->select(['id', 'collection_id', 'name'])
             ->selectRaw('(SELECT COUNT(*) FROM images WHERE images.library_id = image_libraries.id) AS image_count')
             ->orderBy('name')
             ->get()
-            ->map(function (ImageLibrary $row): array {
-                return [
-                    'id' => (int) $row->id,
-                    'name' => (string) $row->name,
-                    'count' => (int) ($row->image_count ?? 0),
-                    'industry_tags' => $this->industryLabelsFromTaggedItems($row->images ?? collect()),
-                ];
-            })
+            ->map(static fn (ImageLibrary $row): array => [
+                'id' => (int) $row->id,
+                'collection_id' => (int) ($row->collection_id ?? 0),
+                'name' => (string) $row->name,
+                'count' => (int) ($row->image_count ?? 0),
+                'entity_ids' => $imageLibraryEntityIds[(int) $row->id] ?? [],
+            ])
             ->all();
 
         $knowledgeBases = KnowledgeBase::query()
-            ->with(['tags' => fn ($query) => $query->where('type', 'material')->where('group_name', '行业领域')])
-            ->select(['id', 'name'])
+            ->select(['id', 'collection_id', 'name'])
             ->orderBy('name')
             ->get()
-            ->map(fn (KnowledgeBase $row): array => [
+            ->map(static fn (KnowledgeBase $row): array => [
                 'id' => (int) $row->id,
+                'collection_id' => (int) ($row->collection_id ?? 0),
                 'name' => (string) $row->name,
-                'industry_tags' => $this->industryLabelsFromTaggedItems(collect([$row])),
             ])
+            ->all();
+
+        $caseOptions = CaseRecord::query()
+            ->with('entity:id,name')
+            ->select(['id', 'entity_id', 'collection_id', 'title', 'case_type'])
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get()
+            ->map(static fn (CaseRecord $row): array => [
+                'id' => (int) $row->id,
+                'label' => trim((string) $row->title.($row->entity ? ' / '.$row->entity->name : '').($row->case_type ? ' / '.$row->case_type : '')),
+                'collection_id' => (int) ($row->collection_id ?? 0),
+            ])
+            ->filter(static fn (array $row): bool => $row['label'] !== '')
+            ->values()
             ->all();
 
         $imageTags = [];
         $knowledgeTags = [];
-        $industryTags = Tag::query()
-            ->where('type', 'material')
-            ->where('group_name', '行业领域')
-            ->withCount(['keywords', 'images', 'knowledgeBases', 'entities', 'caseRecords'])
-            ->orderBy('name')
-            ->get(['id', 'group_name', 'name'])
-            ->map(static function (Tag $tag): array {
-                $count = (int) ($tag->keywords_count ?? 0)
-                    + (int) ($tag->images_count ?? 0)
-                    + (int) ($tag->knowledge_bases_count ?? 0)
-                    + (int) ($tag->entities_count ?? 0)
-                    + (int) ($tag->case_records_count ?? 0);
-
-                return [
-                    'id' => (int) $tag->id,
-                    'label' => $tag->displayName(),
-                    'count' => $count,
-                    'meta' => __('admin.task_create.option.industry_tag_count', ['count' => $count]),
-                ];
-            })
-            ->all();
 
         $authors = Author::query()
             ->select(['id', 'name'])
@@ -546,53 +556,21 @@ class TaskController extends Controller
             ->all();
 
         return [
+            'collections' => CollectionOptions::all(true),
+            'controlledTagGroups' => ControlledTagGroups::names(),
+            'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
             'titleLibraries' => $titleLibraries,
             'prompts' => $prompts,
             'aiModels' => $aiModels,
             'imageLibraries' => $imageLibraries,
             'imageTags' => $imageTags,
             'knowledgeBases' => $knowledgeBases,
+            'caseOptions' => $caseOptions,
             'knowledgeTags' => $knowledgeTags,
-            'industryTags' => $industryTags,
             'authors' => $authors,
             'categories' => $categories,
             'distributionChannels' => $distributionChannels,
         ];
-    }
-
-    private function industryLabelsFromTitleLibrary(TitleLibrary $library): array
-    {
-        $keywordLibrary = $library->keywordLibrary;
-        if (! $keywordLibrary || ! $keywordLibrary->relationLoaded('keywords')) {
-            return [];
-        }
-
-        return $this->industryLabelsFromTaggedItems($keywordLibrary->keywords);
-    }
-
-    private function industryLabelsFromTaggedItems(iterable $items): array
-    {
-        $labels = [];
-        foreach ($items as $item) {
-            if (! method_exists($item, 'relationLoaded') || ! $item->relationLoaded('tags')) {
-                continue;
-            }
-            $tags = method_exists($item, 'getRelation') ? $item->getRelation('tags') : [];
-            foreach ($tags as $tag) {
-                if ((string) ($tag->type ?? '') !== 'material' || (string) ($tag->group_name ?? '') !== '行业领域') {
-                    continue;
-                }
-                $label = $tag->displayName();
-                if ($label !== '') {
-                    $labels[] = $label;
-                }
-            }
-        }
-
-        return collect($labels)
-            ->unique(static fn (string $label): string => mb_strtolower($label, 'UTF-8'))
-            ->values()
-            ->all();
     }
 
     /**
@@ -618,8 +596,14 @@ class TaskController extends Controller
      */
     private function validateTaskForm(Request $request): array
     {
-        return $request->validate([
+        $rules = [
             'task_name' => ['required', 'string', 'max:200'],
+            'collection_id' => ['required', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'cross_collection_mode' => ['nullable', 'string'],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', 'min:1', Rule::exists('entities', 'id')],
+            'case_ids' => ['nullable', 'array'],
+            'case_ids.*' => ['integer', 'min:1', Rule::exists('case_records', 'id')],
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1'],
             'ai_model_id' => ['required', 'integer', 'min:1'],
@@ -629,9 +613,6 @@ class TaskController extends Controller
             'image_tag_filters' => ['nullable', 'array'],
             'image_tag_filters.*' => ['string', 'max:220'],
             'image_tag_filter_present' => ['nullable', 'string'],
-            'industry_tag_filters' => ['nullable', 'array'],
-            'industry_tag_filters.*' => ['string', 'max:220'],
-            'industry_tag_filter_present' => ['nullable', 'string'],
             'knowledge_base_id' => ['nullable', 'integer', 'min:1'],
             'knowledge_tag_filters' => ['nullable', 'array'],
             'knowledge_tag_filters.*' => ['string', 'max:220'],
@@ -646,7 +627,15 @@ class TaskController extends Controller
             'publish_scope' => ['nullable', 'string', 'in:local_and_distribution,distribution_only,local_only'],
             'distribution_channel_ids' => ['nullable', 'array'],
             'distribution_channel_ids.*' => ['integer', 'min:1'],
-        ]);
+        ];
+
+        foreach (ControlledTagGroups::names() as $groupName) {
+            $fieldName = $this->controlledTagFieldName($groupName);
+            $rules[$fieldName] = ['nullable', 'array'];
+            $rules[$fieldName.'.*'] = ['string', 'max:220'];
+        }
+
+        return $request->validate($rules);
     }
 
     /**
@@ -662,16 +651,19 @@ class TaskController extends Controller
 
         return [
             'name' => (string) $payload['task_name'],
+            'collection_id' => isset($payload['collection_id']) ? (int) $payload['collection_id'] : null,
+            'cross_collection_mode' => $request->boolean('cross_collection_mode') ? 1 : 0,
             'title_library_id' => (int) $payload['title_library_id'],
             'image_library_id' => isset($payload['image_library_id']) ? (int) $payload['image_library_id'] : null,
             'image_count' => (int) ($payload['image_count'] ?? 0),
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
-            'industry_tag_filter' => $this->normalizeTagLabelFilters($request, 'industry_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
             'knowledge_base_id' => isset($payload['knowledge_base_id']) ? (int) $payload['knowledge_base_id'] : null,
-            'knowledge_tag_filter' => $this->normalizeTagLabelFilters($request, 'knowledge_tag_filters'),
+            'knowledge_tag_filter' => $this->normalizeKnowledgeTagFilters($request),
+            'entity_filter' => implode(',', $this->selectedEntityIds($request)),
+            'case_filter' => implode(',', $this->selectedCaseIds($request)),
             'fixed_category_id' => isset($payload['fixed_category_id']) ? (int) $payload['fixed_category_id'] : null,
             'status' => (string) $payload['status'],
             'publish_scope' => (string) ($payload['publish_scope'] ?? 'local_and_distribution'),
@@ -702,6 +694,193 @@ class TaskController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedEntityIds(Request $request): array
+    {
+        return collect($request->input('entity_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function selectedCaseIds(Request $request): array
+    {
+        return collect($request->input('case_ids', []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function assertTaskContextInCollection(Request $request, array $payload): void
+    {
+        if ($request->boolean('cross_collection_mode')) {
+            return;
+        }
+
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+        if ($collectionId <= 0) {
+            return;
+        }
+
+        $entityIds = $this->selectedEntityIds($request);
+        if ($entityIds !== []) {
+            $invalidEntityExists = EntityRecord::query()
+                ->whereIn('id', $entityIds)
+                ->where('collection_id', '<>', $collectionId)
+                ->exists();
+            $missingEntityCollectionExists = EntityRecord::query()
+                ->whereIn('id', $entityIds)
+                ->whereNull('collection_id')
+                ->exists();
+            if ($invalidEntityExists || $missingEntityCollectionExists) {
+                throw ValidationException::withMessages([
+                    'entity_ids' => __('admin.task_create.error.entity_collection_mismatch'),
+                ]);
+            }
+        }
+
+        $this->assertSelectedMaterialInCollection(
+            TitleLibrary::class,
+            (int) ($payload['title_library_id'] ?? 0),
+            $collectionId,
+            'title_library_id',
+            __('admin.task_create.error.title_library_collection_mismatch')
+        );
+
+        $this->assertSelectedMaterialInCollection(
+            KnowledgeBase::class,
+            (int) ($payload['knowledge_base_id'] ?? 0),
+            $collectionId,
+            'knowledge_base_id',
+            __('admin.task_create.error.knowledge_base_collection_mismatch')
+        );
+
+        $this->assertSelectedMaterialInCollection(
+            ImageLibrary::class,
+            (int) ($payload['image_library_id'] ?? 0),
+            $collectionId,
+            'image_library_id',
+            __('admin.task_create.error.image_library_collection_mismatch')
+        );
+
+        $caseIds = $this->selectedCaseIds($request);
+        if ($caseIds !== []) {
+            $invalidCaseExists = CaseRecord::query()
+                ->whereIn('id', $caseIds)
+                ->where('collection_id', '<>', $collectionId)
+                ->exists();
+            $missingCaseCollectionExists = CaseRecord::query()
+                ->whereIn('id', $caseIds)
+                ->whereNull('collection_id')
+                ->exists();
+            if ($invalidCaseExists || $missingCaseCollectionExists) {
+                throw ValidationException::withMessages([
+                    'case_ids' => __('admin.task_create.error.case_collection_mismatch'),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
+     */
+    private function assertSelectedMaterialInCollection(string $modelClass, int $modelId, int $collectionId, string $field, string $message): void
+    {
+        if ($modelId <= 0) {
+            return;
+        }
+
+        $materialCollectionId = $modelClass::query()
+            ->whereKey($modelId)
+            ->value('collection_id');
+        if ($materialCollectionId !== null && (int) $materialCollectionId !== $collectionId) {
+            throw ValidationException::withMessages([
+                $field => $message,
+            ]);
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function parseEntityFilter(string $entityFilter): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim($entityFilter), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function parseCaseFilter(string $caseFilter): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim($caseFilter), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeKnowledgeTagFilters(Request $request): string
+    {
+        $fields = [
+            'knowledge_tag_filters',
+        ];
+        foreach (ControlledTagGroups::names() as $groupName) {
+            $fields[] = $this->controlledTagFieldName($groupName);
+        }
+        $labels = [];
+        foreach ($fields as $fieldName) {
+            $rawFilters = $request->input($fieldName, []);
+            if (! is_array($rawFilters)) {
+                continue;
+            }
+            foreach ($rawFilters as $value) {
+                $label = trim((string) $value);
+                if ($label !== '') {
+                    $labels[] = $label;
+                }
+            }
+        }
+
+        $tagText = collect($labels)
+            ->unique(static fn (string $value): string => mb_strtolower($value, 'UTF-8'))
+            ->implode(', ');
+
+        return $this->tagService->normalizeTagText($tagText);
+    }
+
+    private function controlledTagFieldName(string $groupName): string
+    {
+        return match ($groupName) {
+            'Product Line' => 'product_line_tag_filters',
+            'Product Model' => 'product_model_tag_filters',
+            'Industry' => 'industry_tag_filters',
+            'Topic' => 'topic_tag_filters',
+            'Content Type' => 'content_type_tag_filters',
+            'Audience' => 'audience_tag_filters',
+            'Intent' => 'intent_tag_filters',
+            default => 'controlled_tag_filters_'.Str::slug($groupName, '_'),
+        };
     }
 
     private function normalizeTagLabelFilters(Request $request, string $fieldName): string

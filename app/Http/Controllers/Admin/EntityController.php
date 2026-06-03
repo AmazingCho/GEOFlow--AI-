@@ -4,10 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EntityRecord;
+use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\MaterialFormAnalysisService;
-use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ class EntityController extends Controller
 
     public function __construct(
         private readonly TagService $tagService,
-        private readonly TagRecommendationService $tagRecommendationService,
+        private readonly EntityMaterialLinkService $entityMaterialLinkService,
         private readonly MaterialFormAnalysisService $materialFormAnalysisService
     ) {}
 
@@ -28,9 +29,10 @@ class EntityController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $tag = trim((string) $request->query('tag', ''));
+        $collectionId = $this->selectedCollectionId($request);
 
         $query = EntityRecord::query()
-            ->with('tags')
+            ->with(['collection', 'tags'])
             ->withCount('cases')
             ->orderByDesc('updated_at')
             ->orderByDesc('id');
@@ -47,12 +49,18 @@ class EntityController extends Controller
 
         $this->tagService->applyFilter($query, $tag);
 
+        if ($collectionId !== null) {
+            $query->where('collection_id', $collectionId);
+        }
+
         return view('admin.entities.index', [
             'pageTitle' => __('admin.entities.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
             'search' => $search,
             'tagFilter' => $tag,
+            'collectionId' => $collectionId,
+            'collectionOptions' => CollectionOptions::all(),
             'entities' => $query->paginate(self::PER_PAGE)->withQueryString(),
             'stats' => [
                 'total' => EntityRecord::query()->count(),
@@ -70,9 +78,13 @@ class EntityController extends Controller
             'isEdit' => false,
             'entityId' => 0,
             'entityForm' => $this->emptyEntityForm(),
+            'collectionOptions' => CollectionOptions::all(true),
             'tagOptions' => [],
             'selectedTagIds' => [],
-            'recommendedTags' => [],
+            'materialOptions' => $this->entityMaterialLinkService->materialOptions(),
+            'selectedMaterialIds' => [],
+            'knowledgeRelationType' => 'supporting_reference',
+            'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
     }
@@ -98,6 +110,11 @@ class EntityController extends Controller
 
         $entity = EntityRecord::query()->create($this->normalizeEntityPayload($payload));
         $this->tagService->syncExisting($entity, $this->selectedTagIds($payload));
+        $this->entityMaterialLinkService->syncMaterialsForEntity(
+            $entity,
+            $this->selectedMaterialIds($payload),
+            $this->selectedKnowledgeRelationType($payload)
+        );
 
         return redirect()
             ->route('admin.entities.index')
@@ -117,6 +134,7 @@ class EntityController extends Controller
             'entityId' => (int) $entity->id,
             'entityForm' => [
                 'name' => (string) $entity->name,
+                'collection_id' => (string) ((int) ($entity->collection_id ?? 0) ?: ''),
                 'entity_type' => (string) ($entity->entity_type ?? ''),
                 'aliases' => (string) ($entity->aliases ?? ''),
                 'description' => (string) ($entity->description ?? ''),
@@ -125,8 +143,12 @@ class EntityController extends Controller
             ],
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
             'selectedTagIds' => $selectedTagIds,
-            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->entityRecommendationText($entity), $selectedTagIds),
+            'materialOptions' => $this->entityMaterialLinkService->materialOptions((int) ($entity->collection_id ?? 0) ?: null),
+            'selectedMaterialIds' => $this->entityMaterialLinkService->selectedMaterialIdsForEntity($entity),
+            'knowledgeRelationType' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypeForEntity($entity),
+            'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
+            'collectionOptions' => CollectionOptions::all(),
         ]);
     }
 
@@ -137,6 +159,11 @@ class EntityController extends Controller
 
         $entity->update($this->normalizeEntityPayload($payload));
         $this->tagService->syncExisting($entity, $this->selectedTagIds($payload));
+        $this->entityMaterialLinkService->syncMaterialsForEntity(
+            $entity,
+            $this->selectedMaterialIds($payload),
+            $this->selectedKnowledgeRelationType($payload)
+        );
 
         return redirect()
             ->route('admin.entities.index')
@@ -159,6 +186,7 @@ class EntityController extends Controller
     {
         return $request->validate([
             'name' => ['required', 'string', 'max:160'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'entity_type' => ['nullable', 'string', 'max:80'],
             'aliases' => ['nullable', 'string', 'max:2000'],
             'description' => ['nullable', 'string', 'max:10000'],
@@ -169,6 +197,17 @@ class EntityController extends Controller
                 'integer',
                 Rule::exists('tags', 'id')->where(static fn ($query) => $query->where('type', 'material')),
             ],
+            'knowledge_base_ids' => ['nullable', 'array'],
+            'knowledge_base_ids.*' => ['integer', Rule::exists('knowledge_bases', 'id')],
+            'knowledge_relation_type' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
+            'keyword_library_ids' => ['nullable', 'array'],
+            'keyword_library_ids.*' => ['integer', Rule::exists('keyword_libraries', 'id')],
+            'title_library_ids' => ['nullable', 'array'],
+            'title_library_ids.*' => ['integer', Rule::exists('title_libraries', 'id')],
+            'image_library_ids' => ['nullable', 'array'],
+            'image_library_ids.*' => ['integer', Rule::exists('image_libraries', 'id')],
+            'image_ids' => ['nullable', 'array'],
+            'image_ids.*' => ['integer', Rule::exists('images', 'id')],
         ], [
             'name.required' => __('admin.entities.error.name_required'),
         ]);
@@ -184,6 +223,7 @@ class EntityController extends Controller
 
         return [
             'name' => trim((string) $payload['name']),
+            'collection_id' => $this->normalizeCollectionId($payload),
             'entity_type' => trim((string) ($payload['entity_type'] ?? '')),
             'aliases' => trim((string) ($payload['aliases'] ?? '')),
             'description' => trim((string) ($payload['description'] ?? '')),
@@ -207,11 +247,39 @@ class EntityController extends Controller
     }
 
     /**
-     * @return array{name:string,entity_type:string,aliases:string,description:string,attributes_json:string,source_url:string}
+     * @param  array<string, mixed>  $payload
+     * @return array<string,list<int>>
+     */
+    private function selectedMaterialIds(array $payload): array
+    {
+        $result = [];
+        foreach (array_keys($this->entityMaterialLinkService->materialClassMap()) as $key) {
+            $result[$key] = collect($payload[$key] ?? [])
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function selectedKnowledgeRelationType(array $payload): string
+    {
+        return $this->entityMaterialLinkService->normalizeKnowledgeRelationType((string) ($payload['knowledge_relation_type'] ?? ''));
+    }
+
+    /**
+     * @return array{collection_id:string,name:string,entity_type:string,aliases:string,description:string,attributes_json:string,source_url:string}
      */
     private function emptyEntityForm(): array
     {
         return [
+            'collection_id' => '',
             'name' => '',
             'entity_type' => '',
             'aliases' => '',
@@ -221,14 +289,20 @@ class EntityController extends Controller
         ];
     }
 
-    private function entityRecommendationText(EntityRecord $entity): string
+    private function selectedCollectionId(Request $request): ?int
     {
-        return implode(' ', [
-            (string) $entity->name,
-            (string) ($entity->entity_type ?? ''),
-            (string) ($entity->aliases ?? ''),
-            (string) ($entity->description ?? ''),
-            (string) ($entity->attributes_json ?? ''),
-        ]);
+        $collectionId = (int) $request->query('collection_id', 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizeCollectionId(array $payload): ?int
+    {
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
     }
 }

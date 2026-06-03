@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Support\Facades\DB;
 
 class Image extends Model
 {
@@ -59,6 +60,10 @@ class Image extends Model
     {
         static::deleting(static function (Image $image): void {
             $image->tags()->detach();
+            DB::table('entity_material_links')
+                ->where('linkable_type', self::class)
+                ->where('linkable_id', (int) $image->id)
+                ->delete();
         });
     }
 }

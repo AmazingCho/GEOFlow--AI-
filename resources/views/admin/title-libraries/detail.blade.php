@@ -10,6 +10,11 @@
                 <div>
                     <h1 class="text-2xl font-bold text-gray-900">{{ $library->name }}</h1>
                     <p class="mt-1 text-sm text-gray-600">{{ __('admin.title_detail.subtitle') }}</p>
+                    <div class="mt-2">
+                        <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {{ $library->collection?->name ?? __('admin.collections.badge_unassigned') }}
+                        </span>
+                    </div>
                 </div>
             </div>
             <div class="flex space-x-2">
@@ -125,6 +130,10 @@
                                     </div>
                                 </div>
                                 <div class="flex items-center space-x-2">
+                                    <button type="button" onclick="showEditModal({{ (int) $title->id }}, @js($title->title), @js((string) ($title->keyword ?? '')))" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                                        <i data-lucide="pencil" class="w-4 h-4 mr-1"></i>
+                                        {{ __('admin.button.edit') }}
+                                    </button>
                                     <button type="button" onclick="deleteTitle({{ (int) $title->id }}, @js($title->title))" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
                                         <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>
                                         {{ __('admin.button.delete') }}
@@ -185,6 +194,36 @@
         </div>
     </div>
 
+    <div id="edit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">{{ __('admin.title_detail.modal_edit') }}</h3>
+                <form method="POST" id="edit-title-form" action="">
+                    @csrf
+                    @method('PUT')
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.title_detail.field_title') }}</label>
+                            <input type="text" name="title" id="edit-title-input" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-sm" placeholder="{{ __('admin.title_detail.placeholder_title') }}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.title_detail.field_keyword') }}</label>
+                            <input type="text" name="keyword" id="edit-keyword-input" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-sm" placeholder="{{ __('admin.title_detail.placeholder_keyword') }}">
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button type="button" onclick="hideEditModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            {{ __('admin.button.cancel') }}
+                        </button>
+                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+                            {{ __('admin.button.save') }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="import-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div class="relative top-10 mx-auto p-5 border w-2/3 max-w-2xl shadow-lg rounded-md bg-white">
             <div class="mt-3">
@@ -229,6 +268,18 @@
             document.getElementById('add-modal').classList.add('hidden');
         }
 
+        function showEditModal(titleId, titleText, keywordText) {
+            const form = document.getElementById('edit-title-form');
+            form.action = @json(route('admin.title-libraries.titles.update', ['libraryId' => (int) $library->id, 'titleId' => '__TITLE_ID__'])).replace('__TITLE_ID__', String(titleId));
+            document.getElementById('edit-title-input').value = titleText || '';
+            document.getElementById('edit-keyword-input').value = keywordText || '';
+            document.getElementById('edit-modal').classList.remove('hidden');
+        }
+
+        function hideEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+        }
+
         function showImportModal() {
             document.getElementById('import-modal').classList.remove('hidden');
         }
@@ -249,10 +300,15 @@
 
         window.onclick = function (event) {
             const addModal = document.getElementById('add-modal');
+            const editModal = document.getElementById('edit-modal');
             const importModal = document.getElementById('import-modal');
 
             if (event.target === addModal) {
                 hideAddModal();
+            }
+
+            if (event.target === editModal) {
+                hideEditModal();
             }
 
             if (event.target === importModal) {

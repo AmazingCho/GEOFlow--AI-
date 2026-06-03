@@ -671,6 +671,24 @@ class MaterialLibraryService
             }
             $payload['file_type'] = $fileType;
         }
+        if (array_key_exists('knowledge_type', $data) || ! $isUpdate) {
+            $knowledgeType = trim((string) ($data['knowledge_type'] ?? 'reference'));
+            if (! in_array($knowledgeType, KnowledgeBase::KNOWLEDGE_TYPES, true)) {
+                $this->validationError('knowledge_type', '知识库资料类型无效');
+            }
+            $payload['knowledge_type'] = $knowledgeType;
+        }
+        if (array_key_exists('knowledge_role', $data) || ! $isUpdate) {
+            $knowledgeRole = trim((string) ($data['knowledge_role'] ?? 'supporting_context'));
+            if (! in_array($knowledgeRole, KnowledgeBase::KNOWLEDGE_ROLES, true)) {
+                $this->validationError('knowledge_role', '知识库使用角色无效');
+            }
+            $payload['knowledge_role'] = $knowledgeRole;
+        }
+        if (array_key_exists('importance', $data) || ! $isUpdate) {
+            $importance = (int) ($data['importance'] ?? 3);
+            $payload['importance'] = min(5, max(1, $importance > 0 ? $importance : 3));
+        }
         if (array_key_exists('file_path', $data) || ! $isUpdate) {
             $payload['file_path'] = $this->optionalString($data, 'file_path', 500);
         }

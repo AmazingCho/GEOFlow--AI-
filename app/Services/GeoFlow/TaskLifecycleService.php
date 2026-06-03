@@ -6,7 +6,10 @@ use App\Exceptions\ApiException;
 use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\Author;
+use App\Models\CaseRecord;
 use App\Models\Category;
+use App\Models\CollectionRecord;
+use App\Models\EntityRecord;
 use App\Models\ImageLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
@@ -79,6 +82,8 @@ class TaskLifecycleService
         try {
             $task = Task::query()->create([
                 'name' => $normalized['name'],
+                'collection_id' => $normalized['collection_id'],
+                'cross_collection_mode' => $normalized['cross_collection_mode'],
                 'title_library_id' => $normalized['title_library_id'],
                 'image_library_id' => $normalized['image_library_id'],
                 'image_count' => $normalized['image_count'],
@@ -98,7 +103,8 @@ class TaskLifecycleService
                 'publish_scope' => $normalized['publish_scope'],
                 'knowledge_base_id' => $normalized['knowledge_base_id'],
                 'knowledge_tag_filter' => $normalized['knowledge_tag_filter'],
-                'industry_tag_filter' => $normalized['industry_tag_filter'],
+                'entity_filter' => $normalized['entity_filter'],
+                'case_filter' => $normalized['case_filter'],
                 'category_mode' => $normalized['category_mode'],
                 'fixed_category_id' => $normalized['fixed_category_id'],
             ]);
@@ -443,6 +449,7 @@ class TaskLifecycleService
         }
 
         $referenceMap = [
+            'collection_id' => ['model' => CollectionRecord::class, 'message' => '请选择 Collection', 'required' => true],
             'title_library_id' => ['model' => TitleLibrary::class, 'message' => '选择的标题库不存在', 'required' => ! $isUpdate],
             'image_library_id' => ['model' => ImageLibrary::class, 'message' => '选择的图片库不存在', 'required' => false],
             'prompt_id' => ['model' => Prompt::class, 'message' => '选择的内容提示词不存在', 'required' => ! $isUpdate, 'prompt_content' => true],
@@ -587,10 +594,36 @@ class TaskLifecycleService
             $output['knowledge_tag_filter'] = '';
         }
 
-        if (array_key_exists('industry_tag_filter', $data)) {
-            $output['industry_tag_filter'] = mb_substr(trim((string) $data['industry_tag_filter']), 0, 1000, 'UTF-8');
+        if (array_key_exists('cross_collection_mode', $data)) {
+            $output['cross_collection_mode'] = $this->toFlag($data['cross_collection_mode']);
         } elseif (! $isUpdate) {
-            $output['industry_tag_filter'] = '';
+            $output['cross_collection_mode'] = 0;
+        }
+
+        if (array_key_exists('entity_filter', $data)) {
+            $entityIds = $this->parseEntityFilter((string) $data['entity_filter']);
+            if ($entityIds !== []) {
+                $existingCount = EntityRecord::query()->whereIn('id', $entityIds)->count();
+                if ($existingCount !== count($entityIds)) {
+                    $fieldErrors['entity_filter'] = '选择的实体不存在';
+                }
+            }
+            $output['entity_filter'] = implode(',', $entityIds);
+        } elseif (! $isUpdate) {
+            $output['entity_filter'] = '';
+        }
+
+        if (array_key_exists('case_filter', $data)) {
+            $caseIds = $this->parseCaseFilter((string) $data['case_filter']);
+            if ($caseIds !== []) {
+                $existingCount = CaseRecord::query()->whereIn('id', $caseIds)->count();
+                if ($existingCount !== count($caseIds)) {
+                    $fieldErrors['case_filter'] = '选择的案例不存在';
+                }
+            }
+            $output['case_filter'] = implode(',', $caseIds);
+        } elseif (! $isUpdate) {
+            $output['case_filter'] = '';
         }
 
         if (array_key_exists('image_tag_filter', $data)) {
@@ -690,5 +723,31 @@ class TaskLifecycleService
         $value = strtolower(trim((string) $value));
 
         return in_array($value, ['1', 'true', 'yes', 'on'], true) ? 1 : 0;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function parseEntityFilter(string $entityFilter): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim($entityFilter), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function parseCaseFilter(string $caseFilter): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim($caseFilter), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

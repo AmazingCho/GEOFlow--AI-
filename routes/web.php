@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\ArticleController;
 use App\Http\Controllers\Admin\AuthorController;
 use App\Http\Controllers\Admin\CaseController;
 use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\CollectionController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DistributionController;
 use App\Http\Controllers\Admin\EntityController;
@@ -138,6 +139,17 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         });
 
         // 素材管理：作者管理
+        Route::prefix('collections')->name('collections.')->group(function () {
+            Route::get('/', [CollectionController::class, 'index'])->name('index');
+            Route::get('create', [CollectionController::class, 'create'])->name('create');
+            Route::post('create', [CollectionController::class, 'store'])->name('store');
+            Route::get('{collectionId}/edit', [CollectionController::class, 'edit'])->name('edit')->whereNumber('collectionId');
+            Route::put('{collectionId}', [CollectionController::class, 'update'])->name('update')->whereNumber('collectionId');
+            Route::post('{collectionId}/toggle', [CollectionController::class, 'toggle'])->name('toggle')->whereNumber('collectionId');
+            Route::post('{collectionId}/delete', [CollectionController::class, 'destroy'])->name('delete')->whereNumber('collectionId');
+        });
+
+        // 素材管理：作者管理
         Route::prefix('authors')->name('authors.')->group(function () {
             Route::get('/', [AuthorController::class, 'index'])->name('index');
             Route::get('create', [AuthorController::class, 'create'])->name('create');
@@ -172,6 +184,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{libraryId}/edit', [TitleLibraryController::class, 'edit'])->name('edit');
             Route::get('{libraryId}/detail', [TitleLibraryController::class, 'detail'])->name('detail');
             Route::post('{libraryId}/titles', [TitleLibraryController::class, 'storeTitle'])->name('titles.store');
+            Route::put('{libraryId}/titles/{titleId}', [TitleLibraryController::class, 'updateTitle'])->name('titles.update')->whereNumber('titleId');
             Route::post('{libraryId}/titles/delete', [TitleLibraryController::class, 'destroyTitles'])->name('titles.delete');
             Route::post('{libraryId}/import', [TitleLibraryController::class, 'importTitles'])->name('import');
             Route::get('{libraryId}/ai-generate', [TitleLibraryController::class, 'aiGenerate'])->name('ai-generate');
@@ -190,6 +203,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{libraryId}/images/upload', [ImageLibraryController::class, 'uploadImages'])->name('images.upload');
             Route::post('{libraryId}/images/{imageId}/title', [ImageLibraryController::class, 'updateImageTitle'])->name('images.title')->whereNumber('imageId');
             Route::post('{libraryId}/images/{imageId}/tags', [ImageLibraryController::class, 'updateImageTags'])->name('images.tags')->whereNumber('imageId');
+            Route::post('{libraryId}/images/{imageId}/entities', [ImageLibraryController::class, 'updateImageEntities'])->name('images.entities')->whereNumber('imageId');
             Route::post('{libraryId}/images/delete', [ImageLibraryController::class, 'destroyImages'])->name('images.delete');
             Route::put('{libraryId}/detail', [ImageLibraryController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{libraryId}', [ImageLibraryController::class, 'update'])->name('update');
@@ -201,6 +215,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('/', [KnowledgeBaseController::class, 'index'])->name('index');
             Route::get('create', [KnowledgeBaseController::class, 'create'])->name('create');
             Route::post('create', [KnowledgeBaseController::class, 'store'])->name('store');
+            Route::post('analyze', [KnowledgeBaseController::class, 'analyze'])->name('analyze');
+            Route::post('bulk', [KnowledgeBaseController::class, 'bulkUpdate'])->name('bulk');
             Route::get('{knowledgeBaseId}/edit', [KnowledgeBaseController::class, 'edit'])->name('edit');
             Route::get('{knowledgeBaseId}/detail', [KnowledgeBaseController::class, 'detail'])->name('detail');
             Route::post('upload', [KnowledgeBaseController::class, 'uploadFile'])->name('upload');
@@ -236,8 +252,10 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         // 业务页面
         Route::get('materials', [MaterialsController::class, 'index'])->name('materials.index');
         Route::get('material-tags', [TagController::class, 'index'])->name('material-tags.index');
-        Route::get('material-tags/recommendations', [TagController::class, 'recommendations'])->name('material-tags.recommendations');
         Route::get('material-tags/search', [TagController::class, 'search'])->name('material-tags.search');
+        Route::post('material-tags/controlled-groups', [TagController::class, 'storeControlledGroup'])->name('material-tags.controlled-groups.store');
+        Route::put('material-tags/controlled-groups/{groupId}', [TagController::class, 'updateControlledGroup'])->name('material-tags.controlled-groups.update')->whereNumber('groupId');
+        Route::post('material-tags/controlled-groups/{groupId}/delete', [TagController::class, 'deleteControlledGroup'])->name('material-tags.controlled-groups.delete')->whereNumber('groupId');
         Route::post('material-tags', [TagController::class, 'store'])->name('material-tags.store');
         Route::post('material-tags/bulk', [TagController::class, 'bulk'])->name('material-tags.bulk');
         Route::get('material-tags/{tagId}/references', [TagController::class, 'references'])->name('material-tags.references')->whereNumber('tagId');

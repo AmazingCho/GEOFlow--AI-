@@ -23,7 +23,12 @@ class RagRetrievalService
     public function retrieveForTask(Task $task, string $title, string $keyword, int $knowledgeMaxChars = 3200, int $entityCaseMaxChars = 2200): array
     {
         $tagFilters = $this->taskTagFilters($task);
-        $knowledgeBaseIds = $this->resolveKnowledgeBaseIds($task, $tagFilters);
+        $entityFilterIds = $this->taskEntityIds($task);
+        $caseFilterIds = $this->taskCaseIds($task);
+        $collectionId = $this->taskCollectionId($task);
+        $crossCollectionMode = $this->taskCrossCollectionMode($task);
+        $retrievalCollectionId = $crossCollectionMode ? null : $collectionId;
+        $knowledgeBaseIds = $this->resolveKnowledgeBaseIds($task, $tagFilters, $entityFilterIds, $caseFilterIds, $retrievalCollectionId);
         $query = trim($title."\n".$keyword);
         $knowledgeContext = '';
         $strategy = 'none';
@@ -34,16 +39,19 @@ class RagRetrievalService
             $knowledgeBases = KnowledgeBase::query()
                 ->whereIn('id', $knowledgeBaseIds)
                 ->orderBy('id')
-                ->get(['id', 'name', 'content'])
+                ->get(['id', 'name', 'content', 'knowledge_type', 'knowledge_role', 'importance'])
                 ->sortBy(static fn (KnowledgeBase $knowledgeBase): int => array_search((int) $knowledgeBase->id, $knowledgeBaseIds, true) ?: 0)
                 ->values()
                 ->filter(static fn (KnowledgeBase $knowledgeBase): bool => trim((string) ($knowledgeBase->content ?? '')) !== '')
                 ->values();
 
             $knowledgeBaseTrace = $knowledgeBases
-                ->map(static fn (KnowledgeBase $knowledgeBase): array => [
+                ->map(fn (KnowledgeBase $knowledgeBase): array => [
                     'id' => (int) $knowledgeBase->id,
                     'name' => (string) $knowledgeBase->name,
+                    'knowledge_type' => $this->normalizeKnowledgeType((string) ($knowledgeBase->knowledge_type ?? '')),
+                    'knowledge_role' => $this->normalizeKnowledgeRole((string) ($knowledgeBase->knowledge_role ?? '')),
+                    'importance' => $this->normalizeImportance($knowledgeBase->importance ?? null),
                 ])
                 ->values()
                 ->all();
@@ -66,23 +74,41 @@ class RagRetrievalService
             }
         }
 
-        $entityCase = $this->composeTaggedEntityCaseContext($tagFilters, $entityCaseMaxChars);
+        $entityCase = $this->composeTaggedEntityCaseContext($tagFilters, $entityCaseMaxChars, $entityFilterIds, $caseFilterIds, $retrievalCollectionId);
         $context = trim(implode("\n\n", array_filter(
             [$knowledgeContext, $entityCase['context']],
             static fn (string $part): bool => trim($part) !== ''
         )));
+        $contextPackage = $this->buildContextPackage(
+            $collectionId,
+            $crossCollectionMode,
+            $tagFilters,
+            $entityFilterIds,
+            $caseFilterIds,
+            $knowledgeBaseIds,
+            $knowledgeBaseTrace,
+            $chunks,
+            $entityCase,
+            $strategy,
+            $context
+        );
 
         return [
             'context' => $context,
             'trace' => [
                 'query' => $query,
+                'collection_id' => $collectionId,
+                'cross_collection_mode' => $crossCollectionMode,
                 'tag_filters' => $this->tagFilterLabels($tagFilters),
+                'entity_filter_ids' => $entityFilterIds,
+                'case_filter_ids' => $caseFilterIds,
                 'knowledge_base_ids' => $knowledgeBaseIds,
                 'knowledge_bases' => $knowledgeBaseTrace,
                 'chunks' => $chunks,
                 'entities' => $entityCase['entities'],
                 'cases' => $entityCase['cases'],
                 'strategy' => $strategy,
+                'context_package' => $contextPackage,
                 'retrieval_engine' => 'rag_retrieval_service',
                 'context_length' => mb_strlen($context, 'UTF-8'),
             ],
@@ -93,7 +119,7 @@ class RagRetrievalService
      * @param  list<array{group_name:string,name:string}>  $tagFilters
      * @return list<int>
      */
-    private function resolveKnowledgeBaseIds(Task $task, array $tagFilters): array
+    private function resolveKnowledgeBaseIds(Task $task, array $tagFilters, array $entityFilterIds = [], array $caseFilterIds = [], ?int $collectionId = null): array
     {
         $ids = [];
         $knowledgeBaseId = (int) ($task->knowledge_base_id ?? 0);
@@ -101,13 +127,84 @@ class RagRetrievalService
             $ids[] = $knowledgeBaseId;
         }
 
+        $linkedEntityIds = $entityFilterIds;
+        if ($caseFilterIds !== []) {
+            $caseEntityIds = CaseRecord::query()
+                ->whereIn('id', $caseFilterIds)
+                ->pluck('entity_id')
+                ->map(static fn ($id): int => (int) $id)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->all();
+            $linkedEntityIds = array_merge($linkedEntityIds, $caseEntityIds);
+        }
+
         if ($tagFilters !== []) {
-            $tagKnowledgeBaseIds = KnowledgeBase::query()
+            $tagKnowledgeQuery = KnowledgeBase::query()
                 ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
-                ->pluck('id')
+                ->where(fn ($query) => $this->includeActiveKnowledge($query))
+                ->where(fn ($query) => $this->excludeArchivedKnowledge($query))
+                ->when($collectionId !== null, fn ($query) => $this->addCollectionScope($query, $collectionId));
+            $tagKnowledgeBaseIds = $tagKnowledgeQuery->pluck('id')
                 ->map(static fn ($id): int => (int) $id)
                 ->all();
             $ids = array_merge($ids, $tagKnowledgeBaseIds);
+
+            $entityIds = EntityRecord::query()
+                ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
+                ->when($collectionId !== null, fn ($query) => $this->addCollectionScope($query, $collectionId))
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+            $linkedEntityIds = array_merge($linkedEntityIds, $entityIds);
+        }
+
+        $linkedEntityIds = array_values(array_unique(array_filter($linkedEntityIds, static fn (int $id): bool => $id > 0)));
+        if ($linkedEntityIds !== []) {
+            $linkedKnowledgeBaseIds = DB::table('entity_material_links')
+                ->join('knowledge_bases', 'knowledge_bases.id', '=', 'entity_material_links.linkable_id')
+                ->whereIn('entity_material_links.entity_id', $linkedEntityIds)
+                ->where('entity_material_links.linkable_type', KnowledgeBase::class)
+                ->where(function ($query): void {
+                    $query->whereNull('knowledge_bases.knowledge_role')
+                        ->orWhere('knowledge_bases.knowledge_role', '!=', 'archive');
+                })
+                ->where(function ($query): void {
+                    $query->whereNull('knowledge_bases.status')
+                        ->orWhere('knowledge_bases.status', 'active');
+                })
+                ->orderByRaw("CASE link_role
+                    WHEN 'primary_subject' THEN 1
+                    WHEN 'supporting_reference' THEN 2
+                    WHEN 'application_reference' THEN 3
+                    WHEN 'troubleshooting_reference' THEN 4
+                    WHEN 'competitor_reference' THEN 5
+                    ELSE 9
+                END")
+                ->pluck('entity_material_links.linkable_id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+            $ids = array_merge($ids, $linkedKnowledgeBaseIds);
+        }
+
+        if ($collectionId !== null) {
+            $generalKnowledgeBaseIds = KnowledgeBase::query()
+                ->where(fn ($query) => $this->includeActiveKnowledge($query))
+                ->where(fn ($query) => $this->excludeArchivedKnowledge($query))
+                ->where(fn ($query) => $this->addCollectionScope($query, $collectionId))
+                ->whereIn('knowledge_role', ['primary_source', 'supporting_context', 'constraint'])
+                ->orderByRaw("CASE knowledge_role
+                    WHEN 'primary_source' THEN 1
+                    WHEN 'constraint' THEN 2
+                    WHEN 'supporting_context' THEN 3
+                    ELSE 9
+                END")
+                ->orderByDesc('importance')
+                ->orderBy('name')
+                ->limit(8)
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+            $ids = array_merge($ids, $generalKnowledgeBaseIds);
         }
 
         return array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
@@ -121,6 +218,44 @@ class RagRetrievalService
         $tagFilter = trim((string) ($task->knowledge_tag_filter ?? ''));
 
         return $tagFilter === '' ? [] : $this->tagService->parseTagText($tagFilter);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function taskEntityIds(Task $task): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim((string) ($task->entity_filter ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function taskCaseIds(Task $task): array
+    {
+        return collect(preg_split('/\s*,\s*/u', trim((string) ($task->case_filter ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: [])
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function taskCollectionId(Task $task): ?int
+    {
+        $collectionId = (int) ($task->collection_id ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    private function taskCrossCollectionMode(Task $task): bool
+    {
+        return (int) ($task->cross_collection_mode ?? 0) === 1;
     }
 
     /**
@@ -165,28 +300,79 @@ class RagRetrievalService
         });
     }
 
+    private function addCollectionScope($query, int $collectionId): void
+    {
+        $query->where(function ($scope) use ($collectionId): void {
+            $scope->whereNull('collection_id')->orWhere('collection_id', $collectionId);
+        });
+    }
+
+    private function excludeArchivedKnowledge($query): void
+    {
+        $query->where(function ($scope): void {
+            $scope->whereNull('knowledge_role')->orWhere('knowledge_role', '!=', 'archive');
+        });
+    }
+
+    private function includeActiveKnowledge($query): void
+    {
+        $query->where(function ($scope): void {
+            $scope->whereNull('status')->orWhere('status', 'active');
+        });
+    }
+
     /**
      * @param  list<array{group_name:string,name:string}>  $tagFilters
      * @return array{context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}
      */
-    private function composeTaggedEntityCaseContext(array $tagFilters, int $maxChars): array
+    private function composeTaggedEntityCaseContext(array $tagFilters, int $maxChars, array $entityFilterIds = [], array $caseFilterIds = [], ?int $collectionId = null): array
     {
-        if ($tagFilters === []) {
+        $entityFilterIds = array_values(array_unique(array_filter($entityFilterIds, static fn (int $id): bool => $id > 0)));
+        $caseFilterIds = array_values(array_unique(array_filter($caseFilterIds, static fn (int $id): bool => $id > 0)));
+        if ($tagFilters === [] && $entityFilterIds === [] && $caseFilterIds === []) {
             return ['context' => '', 'entities' => [], 'cases' => []];
         }
 
         $entities = EntityRecord::query()
-            ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
+            ->where(function ($query) use ($tagFilters, $entityFilterIds, $collectionId): void {
+                if ($entityFilterIds !== []) {
+                    $query->orWhereIn('id', $entityFilterIds);
+                }
+                if ($tagFilters !== []) {
+                    $query->orWhere(function ($taggedQuery) use ($tagFilters, $collectionId): void {
+                        $taggedQuery->whereHas('tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters));
+                        if ($collectionId !== null) {
+                            $this->addCollectionScope($taggedQuery, $collectionId);
+                        }
+                    });
+                }
+            })
             ->orderBy('name')
             ->limit(12)
             ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json']);
 
         $cases = CaseRecord::query()
             ->with('entity:id,name')
-            ->where(function ($query) use ($tagFilters): void {
-                $query
-                    ->whereHas('tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters))
-                    ->orWhereHas('entity.tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters));
+            ->where(function ($query) use ($tagFilters, $entityFilterIds, $caseFilterIds, $collectionId): void {
+                if ($caseFilterIds !== []) {
+                    $query->orWhereIn('id', $caseFilterIds);
+                }
+                if ($entityFilterIds !== []) {
+                    $query->orWhereIn('entity_id', $entityFilterIds);
+                }
+                if ($tagFilters !== []) {
+                    $query->orWhere(function ($taggedQuery) use ($tagFilters, $collectionId): void {
+                        $taggedQuery
+                            ->where(function ($tagScope) use ($tagFilters): void {
+                                $tagScope
+                                    ->whereHas('tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters))
+                                    ->orWhereHas('entity.tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters));
+                            });
+                        if ($collectionId !== null) {
+                            $this->addCollectionScope($taggedQuery, $collectionId);
+                        }
+                    });
+                }
             })
             ->orderByDesc('id')
             ->limit(12)
@@ -271,6 +457,52 @@ class RagRetrievalService
         return ['context' => $context, 'entities' => $entityTrace, 'cases' => $caseTrace];
     }
 
+    /**
+     * @param  list<array{group_name:string,name:string}>  $tagFilters
+     * @param  list<int>  $entityFilterIds
+     * @param  list<int>  $caseFilterIds
+     * @param  list<int>  $knowledgeBaseIds
+     * @param  list<array<string,mixed>>  $knowledgeBaseTrace
+     * @param  list<array<string,mixed>>  $chunks
+     * @param  array{context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}  $entityCase
+     * @return array<string,mixed>
+     */
+    private function buildContextPackage(
+        ?int $collectionId,
+        bool $crossCollectionMode,
+        array $tagFilters,
+        array $entityFilterIds,
+        array $caseFilterIds,
+        array $knowledgeBaseIds,
+        array $knowledgeBaseTrace,
+        array $chunks,
+        array $entityCase,
+        string $strategy,
+        string $context
+    ): array {
+        $usedKnowledgeIds = collect($knowledgeBaseTrace)
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->values()
+            ->all();
+
+        return [
+            'selected_collection_id' => $collectionId,
+            'cross_collection_mode' => $crossCollectionMode,
+            'selected_entity_ids' => $entityFilterIds,
+            'selected_case_ids' => $caseFilterIds,
+            'used_knowledge_base_ids' => $usedKnowledgeIds !== [] ? $usedKnowledgeIds : $knowledgeBaseIds,
+            'used_tags' => $this->tagFilterLabels($tagFilters),
+            'strategy' => $strategy,
+            'context_length' => mb_strlen($context, 'UTF-8'),
+            'knowledge_bases' => $knowledgeBaseTrace,
+            'chunks' => $chunks,
+            'entities' => $entityCase['entities'],
+            'cases' => $entityCase['cases'],
+        ];
+    }
+
     private function shortContextText(mixed $value, int $maxChars): string
     {
         $text = trim((string) preg_replace('/\s+/u', ' ', (string) $value));
@@ -308,6 +540,9 @@ class RagRetrievalService
             ->get([
                 'kc.knowledge_base_id',
                 'kb.name as knowledge_base_name',
+                'kb.knowledge_type',
+                'kb.knowledge_role',
+                'kb.importance',
                 'kc.chunk_index',
                 'kc.content',
                 'kc.embedding_json',
@@ -348,10 +583,14 @@ class RagRetrievalService
                 ? $this->dotProduct($queryVector, $vector)
                 : 0.0;
             $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25);
+            $score += $this->metadataScore($row);
 
             $scored[] = [
                 'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
                 'knowledge_base_name' => (string) ($row->knowledge_base_name ?? ''),
+                'knowledge_type' => $this->normalizeKnowledgeType((string) ($row->knowledge_type ?? '')),
+                'knowledge_role' => $this->normalizeKnowledgeRole((string) ($row->knowledge_role ?? '')),
+                'importance' => $this->normalizeImportance($row->importance ?? null),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => $score,
@@ -490,7 +729,7 @@ class RagRetrievalService
 
     /**
      * @param  list<int>  $knowledgeBaseIds
-     * @return list<array{knowledge_base_id:int,knowledge_base_name:string,chunk_index:int,content:string,score:float}>
+     * @return list<array{knowledge_base_id:int,knowledge_base_name:string,knowledge_type:string,knowledge_role:string,importance:int,chunk_index:int,content:string,score:float}>
      */
     private function fetchKnowledgeChunksByPgvector(array $knowledgeBaseIds, string $query, int $candidateLimit): array
     {
@@ -510,7 +749,9 @@ class RagRetrievalService
 
         $rows = DB::select(
             "
-                SELECT kc.knowledge_base_id, kb.name AS knowledge_base_name, kc.chunk_index, kc.content,
+                SELECT kc.knowledge_base_id, kb.name AS knowledge_base_name,
+                       kb.knowledge_type, kb.knowledge_role, kb.importance,
+                       kc.chunk_index, kc.content,
                        (kc.embedding_vector <=> CAST(? AS vector)) AS vector_distance
                 FROM knowledge_chunks kc
                 JOIN knowledge_bases kb ON kb.id = kc.knowledge_base_id
@@ -532,9 +773,12 @@ class RagRetrievalService
             $results[] = [
                 'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
                 'knowledge_base_name' => (string) ($row->knowledge_base_name ?? ''),
+                'knowledge_type' => $this->normalizeKnowledgeType((string) ($row->knowledge_type ?? '')),
+                'knowledge_role' => $this->normalizeKnowledgeRole((string) ($row->knowledge_role ?? '')),
+                'importance' => $this->normalizeImportance($row->importance ?? null),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
-                'score' => 1.0 - $distance,
+                'score' => (1.0 - $distance) + $this->metadataScore($row),
             ];
         }
 
@@ -573,7 +817,7 @@ class RagRetrievalService
     }
 
     /**
-     * @param  list<array{knowledge_base_id?:int,knowledge_base_name?:string,chunk_index:int,content:string,score:float}>  $scored
+     * @param  list<array{knowledge_base_id?:int,knowledge_base_name?:string,knowledge_type?:string,knowledge_role?:string,importance?:int,chunk_index:int,content:string,score:float}>  $scored
      * @return array{context:string,chunks:list<array<string,mixed>>}
      */
     private function composeKnowledgeContext(array $scored, int $limit, int $maxChars): array
@@ -584,9 +828,12 @@ class RagRetrievalService
 
         $selected = array_slice($scored, 0, max(1, $limit));
         usort($selected, static fn (array $a, array $b): int => (($a['knowledge_base_id'] ?? 0) <=> ($b['knowledge_base_id'] ?? 0)) ?: ($a['chunk_index'] <=> $b['chunk_index']));
-        $chunkTrace = array_map(static fn (array $chunk): array => [
+        $chunkTrace = array_map(fn (array $chunk): array => [
             'knowledge_base_id' => (int) ($chunk['knowledge_base_id'] ?? 0),
             'knowledge_base_name' => (string) ($chunk['knowledge_base_name'] ?? ''),
+            'knowledge_type' => $this->normalizeKnowledgeType((string) ($chunk['knowledge_type'] ?? '')),
+            'knowledge_role' => $this->normalizeKnowledgeRole((string) ($chunk['knowledge_role'] ?? '')),
+            'importance' => $this->normalizeImportance($chunk['importance'] ?? null),
             'chunk_index' => (int) ($chunk['chunk_index'] ?? 0),
             'score' => round((float) ($chunk['score'] ?? 0), 6),
             'preview' => mb_substr(trim((string) ($chunk['content'] ?? '')), 0, 160, 'UTF-8'),
@@ -604,8 +851,16 @@ class RagRetrievalService
                 continue;
             }
             $source = trim((string) ($chunk['knowledge_base_name'] ?? ''));
-            $heading = '【知识片段'.($index + 1).($source !== '' ? ' / 知识库：'.$source : '').'】';
-            $parts[] = $heading."\n".$content;
+            $type = $this->normalizeKnowledgeType((string) ($chunk['knowledge_type'] ?? ''));
+            $role = $this->normalizeKnowledgeRole((string) ($chunk['knowledge_role'] ?? ''));
+            $importance = $this->normalizeImportance($chunk['importance'] ?? null);
+            $heading = '【知识片段'.($index + 1)
+                .($source !== '' ? ' / 知识库：'.$source : '')
+                .' / 类型：'.$this->knowledgeTypeLabel($type)
+                .' / 角色：'.$this->knowledgeRoleLabel($role)
+                .' / 重要度：'.$importance
+                .'】';
+            $parts[] = $heading."\n使用方式：".$this->knowledgeRoleInstruction($role)."\n".$content;
             $charCount = $nextLength;
         }
 
@@ -625,7 +880,15 @@ class RagRetrievalService
                 continue;
             }
             $name = trim((string) ($knowledgeBase->name ?? ''));
-            $block = ($name !== '' ? "【知识库：{$name}】\n" : '').$content;
+            $type = $this->normalizeKnowledgeType((string) ($knowledgeBase->knowledge_type ?? ''));
+            $role = $this->normalizeKnowledgeRole((string) ($knowledgeBase->knowledge_role ?? ''));
+            $importance = $this->normalizeImportance($knowledgeBase->importance ?? null);
+            $heading = '【知识库'.($name !== '' ? '：'.$name : '')
+                .' / 类型：'.$this->knowledgeTypeLabel($type)
+                .' / 角色：'.$this->knowledgeRoleLabel($role)
+                .' / 重要度：'.$importance
+                .'】';
+            $block = $heading."\n使用方式：".$this->knowledgeRoleInstruction($role)."\n".$content;
             $blockLength = mb_strlen($block, 'UTF-8');
             if ($parts !== [] && $charCount + $blockLength > $maxChars) {
                 $remaining = $maxChars - $charCount;
@@ -643,5 +906,83 @@ class RagRetrievalService
         }
 
         return trim(implode("\n\n", $parts));
+    }
+
+    private function normalizeKnowledgeType(string $value): string
+    {
+        $value = trim($value);
+
+        return in_array($value, KnowledgeBase::KNOWLEDGE_TYPES, true) ? $value : 'reference';
+    }
+
+    private function normalizeKnowledgeRole(string $value): string
+    {
+        $value = trim($value);
+
+        return in_array($value, KnowledgeBase::KNOWLEDGE_ROLES, true) ? $value : 'supporting_context';
+    }
+
+    private function normalizeImportance(mixed $value): int
+    {
+        $importance = (int) $value;
+
+        return min(5, max(1, $importance > 0 ? $importance : 3));
+    }
+
+    private function metadataScore(object|array $source): float
+    {
+        $get = static fn (string $key): mixed => is_array($source) ? ($source[$key] ?? null) : ($source->{$key} ?? null);
+        $importance = $this->normalizeImportance($get('importance'));
+        $role = $this->normalizeKnowledgeRole((string) $get('knowledge_role'));
+        $roleBoost = match ($role) {
+            'primary_source' => 0.05,
+            'constraint' => 0.04,
+            'comparison_reference' => 0.025,
+            'supporting_context' => 0.015,
+            'style_reference' => 0.0,
+            'archive' => -0.05,
+            default => 0.0,
+        };
+
+        return $roleBoost + (($importance - 3) * 0.01);
+    }
+
+    private function knowledgeTypeLabel(string $type): string
+    {
+        return match ($this->normalizeKnowledgeType($type)) {
+            'product_manual' => '产品手册',
+            'faq' => 'FAQ',
+            'competitor_analysis' => '竞品分析',
+            'troubleshooting' => '故障排查',
+            'technical_spec' => '技术规格',
+            'policy' => '规则/合规',
+            'marketing_copy' => '营销文案',
+            'other' => '其他资料',
+            default => '参考资料',
+        };
+    }
+
+    private function knowledgeRoleLabel(string $role): string
+    {
+        return match ($this->normalizeKnowledgeRole($role)) {
+            'primary_source' => '事实依据',
+            'constraint' => '规则约束',
+            'comparison_reference' => '对比参考',
+            'style_reference' => '风格参考',
+            'archive' => '归档资料',
+            default => '补充语境',
+        };
+    }
+
+    private function knowledgeRoleInstruction(string $role): string
+    {
+        return match ($this->normalizeKnowledgeRole($role)) {
+            'primary_source' => '优先作为事实依据，关键参数和产品说明以此为准。',
+            'constraint' => '作为规则边界优先遵守，避免生成与其冲突的内容。',
+            'comparison_reference' => '用于对比、差异化表达和竞品定位，不要把竞品信息写成本产品事实。',
+            'style_reference' => '仅参考表达风格和结构，不作为事实来源。',
+            'archive' => '仅在用户手动指定时参考；默认不参与自动生成上下文。',
+            default => '作为补充背景使用，用于完善语境和解释。',
+        };
     }
 }

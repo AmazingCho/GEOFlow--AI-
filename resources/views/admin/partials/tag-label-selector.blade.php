@@ -33,7 +33,7 @@
     $removeText = (string) ($removeText ?? __('admin.material_tags.selector_remove'));
     $searchUrl = (string) ($searchUrl ?? route('admin.material-tags.search'));
     $searchScope = (string) ($searchScope ?? '');
-    $industrySourceSelector = (string) ($industrySourceSelector ?? '');
+    $searchGroup = (string) ($searchGroup ?? '');
     $tone = (string) ($tone ?? 'blue');
     $toneClasses = match ($tone) {
         'purple' => [
@@ -60,7 +60,7 @@
     };
 @endphp
 
-<div data-tag-label-selector data-field-name="{{ $fieldName }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-remove-title="{{ $removeText }}" data-chip-class="{{ $toneClasses['chip'] }}" data-chip-button-class="{{ $toneClasses['chipButton'] }}" data-tag-label-search-url="{{ $searchUrl }}" data-tag-label-search-scope="{{ $searchScope }}" data-tag-label-industry-source="{{ $industrySourceSelector }}" data-tag-label-option-class="{{ $toneClasses['option'] }}" class="space-y-2">
+<div data-tag-label-selector data-field-name="{{ $fieldName }}" data-selected-option-class="{{ $toneClasses['selectedOption'] }}" data-remove-title="{{ $removeText }}" data-chip-class="{{ $toneClasses['chip'] }}" data-chip-button-class="{{ $toneClasses['chipButton'] }}" data-tag-label-search-url="{{ $searchUrl }}" data-tag-label-search-scope="{{ $searchScope }}" data-tag-label-search-group="{{ $searchGroup }}" data-tag-label-option-class="{{ $toneClasses['option'] }}" class="space-y-2">
     <div data-tag-label-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2">
         @foreach ($selectedLabels as $label)
             <span data-tag-label-chip data-tag-label="{{ $label }}" class="group relative inline-flex items-center rounded-full {{ $toneClasses['chip'] }} px-2.5 py-1 text-xs font-medium">
@@ -202,13 +202,9 @@
                     if (scope !== '') {
                         requestUrl.searchParams.set('scope', scope);
                     }
-                    const industrySource = selector.getAttribute('data-tag-label-industry-source') || '';
-                    if (industrySource !== '') {
-                        document.querySelectorAll(industrySource).forEach((input) => {
-                            if (input.value) {
-                                requestUrl.searchParams.append('industry_labels[]', input.value);
-                            }
-                        });
+                    const group = selector.getAttribute('data-tag-label-search-group') || '';
+                    if (group !== '') {
+                        requestUrl.searchParams.set('group', group);
                     }
 
                     selectorParts.loading?.classList.remove('hidden');

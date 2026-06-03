@@ -32,6 +32,11 @@
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">{{ $library->name }}</h1>
                         <p class="mt-1 text-sm text-gray-600">{{ $library->description !== '' ? $library->description : __('admin.common.none_desc') }}</p>
+                        <div class="mt-2">
+                            <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                {{ $library->collection?->name ?? __('admin.collections.badge_unassigned') }}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div class="flex space-x-2">
@@ -226,10 +231,23 @@
                                             'name' => 'tag_ids',
                                             'tagOptions' => $tagOptions ?? [],
                                             'selectedTagIds' => $imageTagIds,
-                                            'recommendedTags' => $tagRecommendationsByImage[(int) $image->id] ?? [],
                                             'tone' => 'purple',
                                             'autoSubmit' => true,
                                         ])
+                                    </form>
+                                    <form method="POST" action="{{ route('admin.image-libraries.images.entities', ['libraryId' => (int) $library->id, 'imageId' => (int) $image->id]) }}" class="mt-3 space-y-2">
+                                        @csrf
+                                        <input type="hidden" name="search" value="{{ $search }}">
+                                        <input type="hidden" name="tag" value="{{ $tagFilter ?? '' }}">
+                                        <label class="block text-xs font-medium text-gray-500">{{ __('admin.entities.field_linked_entities') }}</label>
+                                        @include('admin.partials.entity-selector', [
+                                            'entityOptions' => $entityOptions ?? [],
+                                            'selectedEntityIds' => $selectedEntityIdsByImage[(int) $image->id] ?? [],
+                                            'tone' => 'purple',
+                                        ])
+                                        <button type="submit" class="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100">
+                                            {{ __('admin.button.save') }}
+                                        </button>
                                     </form>
                                 </div>
                             </div>
@@ -294,6 +312,14 @@
                                 'tone' => 'purple',
                             ])
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.entities.field_linked_entities') }}</label>
+                            @include('admin.partials.entity-selector', [
+                                'entityOptions' => $entityOptions ?? [],
+                                'selectedEntityIds' => [],
+                                'tone' => 'purple',
+                            ])
+                        </div>
                     </div>
 
                     <div class="mt-6 flex justify-end space-x-3">
@@ -326,6 +352,11 @@
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.common.description') }}</label>
                             <textarea name="description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm">{{ old('description', (string) ($library->description ?? '')) }}</textarea>
                         </div>
+                        @include('admin.partials.collection-select', [
+                            'selectedId' => (string) ((int) ($library->collection_id ?? 0) ?: ''),
+                            'collectionOptions' => $collectionOptions ?? [],
+                            'class' => 'mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm',
+                        ])
                     </div>
                     <div class="mt-6 flex justify-end space-x-3">
                         <button type="button" onclick="hideEditModal()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">

@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Services\GeoFlow\EntityExtractionService;
+use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use InvalidArgumentException;
@@ -15,7 +17,11 @@ class UrlImportProcessingServiceTest extends TestCase
     {
         parent::setUp();
 
-        $this->service = new UrlImportProcessingService(new ApiKeyCrypto);
+        $this->service = new UrlImportProcessingService(
+            new ApiKeyCrypto,
+            $this->app->make(EntityExtractionService::class),
+            $this->app->make(EntityMaterialLinkService::class)
+        );
     }
 
     public function test_it_accepts_valid_public_url(): void

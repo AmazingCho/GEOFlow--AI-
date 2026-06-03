@@ -3,14 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Support\Facades\DB;
 
 class EntityRecord extends Model
 {
     protected $table = 'entities';
 
     protected $fillable = [
+        'collection_id',
         'name',
         'entity_type',
         'aliases',
@@ -23,8 +26,14 @@ class EntityRecord extends Model
     protected function casts(): array
     {
         return [
+            'collection_id' => 'integer',
             'usage_count' => 'integer',
         ];
+    }
+
+    public function collection(): BelongsTo
+    {
+        return $this->belongsTo(CollectionRecord::class, 'collection_id');
     }
 
     public function cases(): HasMany
@@ -42,6 +51,7 @@ class EntityRecord extends Model
         static::deleting(static function (EntityRecord $entity): void {
             $entity->tags()->detach();
             $entity->cases()->update(['entity_id' => null]);
+            DB::table('entity_material_links')->where('entity_id', (int) $entity->id)->delete();
         });
     }
 }

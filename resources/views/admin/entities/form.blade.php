@@ -66,6 +66,12 @@
                         </div>
                     </div>
 
+                    @include('admin.partials.collection-select', [
+                        'selectedId' => (string) ($entityForm['collection_id'] ?? ''),
+                        'collectionOptions' => $collectionOptions ?? [],
+                        'class' => 'block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500',
+                    ])
+
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_aliases') }}</label>
                         <textarea name="aliases" rows="2" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_aliases') }}">{{ old('aliases', (string) ($entityForm['aliases'] ?? '')) }}</textarea>
@@ -88,9 +94,16 @@
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_tags') }}</label>
-                        @include('admin.partials.tag-selector', ['tagOptions' => $tagOptions, 'selectedTagIds' => $selectedTagIds, 'recommendedTags' => $recommendedTags ?? [], 'recommendationUrl' => route('admin.material-tags.recommendations'), 'recommendationSourceSelector' => '[data-tag-source="entity-form"]', 'tone' => 'blue'])
+                        @include('admin.partials.tag-selector', ['tagOptions' => $tagOptions, 'selectedTagIds' => $selectedTagIds, 'tone' => 'blue'])
                         <p data-ai-analysis-tags class="mt-2 hidden text-xs text-blue-700"></p>
                     </div>
+
+                    @include('admin.entities.partials.material-links', [
+                        'materialOptions' => $materialOptions ?? [],
+                        'selectedMaterialIds' => $selectedMaterialIds ?? [],
+                        'knowledgeRelationType' => $knowledgeRelationType ?? 'supporting_reference',
+                        'knowledgeRelationTypeOptions' => $knowledgeRelationTypeOptions ?? [],
+                    ])
 
                     <div class="flex justify-end gap-3">
                         <a href="{{ route('admin.entities.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">

@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\CaseRecord;
 use App\Models\EntityRecord;
 use App\Services\GeoFlow\MaterialFormAnalysisService;
-use App\Services\GeoFlow\TagRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +21,6 @@ class CaseController extends Controller
 
     public function __construct(
         private readonly TagService $tagService,
-        private readonly TagRecommendationService $tagRecommendationService,
         private readonly MaterialFormAnalysisService $materialFormAnalysisService
     ) {}
 
@@ -29,9 +28,10 @@ class CaseController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $tag = trim((string) $request->query('tag', ''));
+        $collectionId = $this->selectedCollectionId($request);
 
         $query = CaseRecord::query()
-            ->with(['entity', 'tags'])
+            ->with(['collection', 'entity', 'tags'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id');
 
@@ -50,12 +50,18 @@ class CaseController extends Controller
 
         $this->tagService->applyFilter($query, $tag);
 
+        if ($collectionId !== null) {
+            $query->where('collection_id', $collectionId);
+        }
+
         return view('admin.cases.index', [
             'pageTitle' => __('admin.cases.page_title'),
             'activeMenu' => 'materials',
             'adminSiteName' => AdminWeb::siteName(),
             'search' => $search,
             'tagFilter' => $tag,
+            'collectionId' => $collectionId,
+            'collectionOptions' => CollectionOptions::all(),
             'cases' => $query->paginate(self::PER_PAGE)->withQueryString(),
             'stats' => [
                 'total' => CaseRecord::query()->count(),
@@ -74,9 +80,9 @@ class CaseController extends Controller
             'caseId' => 0,
             'caseForm' => $this->emptyCaseForm(),
             'entityOptions' => $this->entityOptions(),
+            'collectionOptions' => CollectionOptions::all(true),
             'tagOptions' => [],
             'selectedTagIds' => [],
-            'recommendedTags' => [],
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
     }
@@ -121,6 +127,7 @@ class CaseController extends Controller
             'caseId' => (int) $caseRecord->id,
             'caseForm' => [
                 'entity_id' => (string) ((int) ($caseRecord->entity_id ?? 0) ?: ''),
+                'collection_id' => (string) ((int) ($caseRecord->collection_id ?? 0) ?: ''),
                 'title' => (string) $caseRecord->title,
                 'case_type' => (string) ($caseRecord->case_type ?? ''),
                 'summary' => (string) ($caseRecord->summary ?? ''),
@@ -131,9 +138,9 @@ class CaseController extends Controller
                 'source_url' => (string) ($caseRecord->source_url ?? ''),
             ],
             'entityOptions' => $this->entityOptions(),
+            'collectionOptions' => CollectionOptions::all(),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
             'selectedTagIds' => $selectedTagIds,
-            'recommendedTags' => $this->tagRecommendationService->recommendForText($this->caseRecommendationText($caseRecord), $selectedTagIds),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
     }
@@ -167,6 +174,7 @@ class CaseController extends Controller
     {
         return $request->validate([
             'entity_id' => ['nullable', 'integer', 'min:1', Rule::exists('entities', 'id')],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'title' => ['required', 'string', 'max:200'],
             'case_type' => ['nullable', 'string', 'max:100'],
             'summary' => ['nullable', 'string', 'max:10000'],
@@ -193,6 +201,7 @@ class CaseController extends Controller
     {
         return [
             'entity_id' => isset($payload['entity_id']) && (int) $payload['entity_id'] > 0 ? (int) $payload['entity_id'] : null,
+            'collection_id' => $this->normalizeCollectionId($payload),
             'title' => trim((string) $payload['title']),
             'case_type' => trim((string) ($payload['case_type'] ?? '')),
             'summary' => trim((string) ($payload['summary'] ?? '')),
@@ -234,12 +243,13 @@ class CaseController extends Controller
     }
 
     /**
-     * @return array{entity_id:string,title:string,case_type:string,summary:string,challenge:string,solution:string,result:string,metrics:string,source_url:string}
+     * @return array{entity_id:string,collection_id:string,title:string,case_type:string,summary:string,challenge:string,solution:string,result:string,metrics:string,source_url:string}
      */
     private function emptyCaseForm(): array
     {
         return [
             'entity_id' => '',
+            'collection_id' => '',
             'title' => '',
             'case_type' => '',
             'summary' => '',
@@ -251,16 +261,20 @@ class CaseController extends Controller
         ];
     }
 
-    private function caseRecommendationText(CaseRecord $caseRecord): string
+    private function selectedCollectionId(Request $request): ?int
     {
-        return implode(' ', [
-            (string) $caseRecord->title,
-            (string) ($caseRecord->case_type ?? ''),
-            (string) ($caseRecord->summary ?? ''),
-            (string) ($caseRecord->challenge ?? ''),
-            (string) ($caseRecord->solution ?? ''),
-            (string) ($caseRecord->result ?? ''),
-            (string) ($caseRecord->metrics ?? ''),
-        ]);
+        $collectionId = (int) $request->query('collection_id', 0);
+
+        return $collectionId > 0 ? $collectionId : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function normalizeCollectionId(array $payload): ?int
+    {
+        $collectionId = (int) ($payload['collection_id'] ?? 0);
+
+        return $collectionId > 0 ? $collectionId : null;
     }
 }

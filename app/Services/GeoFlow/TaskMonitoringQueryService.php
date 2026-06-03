@@ -207,8 +207,11 @@ class TaskMonitoringQueryService
         $modelNames = DB::table('ai_models')
             ->whereIn('id', $tasks->pluck('ai_model_id')->filter()->all())
             ->pluck('name', 'id');
+        $collectionNames = DB::table('collections')
+            ->whereIn('id', $tasks->pluck('collection_id')->filter()->all())
+            ->pluck('name', 'id');
 
-        return $tasks->map(function (Task $task) use ($articleStats, $distributionStats, $runStats, $latestRuns, $titleNames, $modelNames): array {
+        return $tasks->map(function (Task $task) use ($articleStats, $distributionStats, $runStats, $latestRuns, $titleNames, $modelNames, $collectionNames): array {
             $taskId = (int) $task->id;
             $articles = $articleStats->get($taskId, ['total_articles' => 0, 'published_articles' => 0, 'draft_articles' => 0, 'publishable_drafts' => 0]);
             $distributions = $distributionStats->get($taskId, ['distribution_total_count' => 0, 'distribution_synced_count' => 0, 'distribution_failed_count' => 0]);
@@ -225,6 +228,9 @@ class TaskMonitoringQueryService
             return [
                 'id' => $taskId,
                 'name' => (string) $task->name,
+                'collection_id' => $this->nullableInt($task->collection_id),
+                'collection_name' => (string) ($collectionNames[(int) ($task->collection_id ?? 0)] ?? ''),
+                'cross_collection_mode' => (int) ($task->cross_collection_mode ?? 0),
                 'status' => (string) ($task->status ?? 'paused'),
                 'publish_scope' => (string) ($task->publish_scope ?? 'local_and_distribution'),
                 'title_library_id' => $this->nullableInt($task->title_library_id),
@@ -232,7 +238,8 @@ class TaskMonitoringQueryService
                 'ai_model_id' => $this->nullableInt($task->ai_model_id),
                 'knowledge_base_id' => $this->nullableInt($task->knowledge_base_id),
                 'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),
-                'industry_tag_filter' => (string) ($task->industry_tag_filter ?? ''),
+                'entity_filter' => (string) ($task->entity_filter ?? ''),
+                'case_filter' => (string) ($task->case_filter ?? ''),
                 'author_id' => $this->nullableInt($task->author_id),
                 'image_library_id' => $this->nullableInt($task->image_library_id),
                 'image_count' => (int) ($task->image_count ?? 0),

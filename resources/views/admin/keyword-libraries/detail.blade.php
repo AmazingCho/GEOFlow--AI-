@@ -11,6 +11,11 @@
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">{{ $library->name }}</h1>
                         <p class="mt-1 text-sm text-gray-600">{{ $library->description !== '' ? $library->description : __('admin.keyword_detail.no_description') }}</p>
+                        <div class="mt-2">
+                            <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                {{ $library->collection?->name ?? __('admin.collections.badge_unassigned') }}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div class="flex space-x-2">
@@ -187,7 +192,6 @@
                                         'name' => 'tag_ids',
                                         'tagOptions' => $tagOptions ?? [],
                                         'selectedTagIds' => $keywordTagIds,
-                                        'recommendedTags' => $tagRecommendationsByKeyword[(int) $keyword->id] ?? [],
                                         'tone' => 'blue',
                                         'autoSubmit' => true,
                                     ])
@@ -235,8 +239,6 @@
                                 'name' => 'tag_ids',
                                 'tagOptions' => $tagOptions ?? [],
                                 'selectedTagIds' => [],
-                                'recommendationUrl' => route('admin.material-tags.recommendations'),
-                                'recommendationSourceSelector' => '[data-tag-source="keyword-add"]',
                                 'tone' => 'blue',
                             ])
                         </div>
@@ -270,6 +272,11 @@
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.keyword_detail.field_description') }}</label>
                             <textarea name="description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('description', (string) ($library->description ?? '')) }}</textarea>
                         </div>
+                        @include('admin.partials.collection-select', [
+                            'selectedId' => (string) ((int) ($library->collection_id ?? 0) ?: ''),
+                            'collectionOptions' => $collectionOptions ?? [],
+                            'class' => 'mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+                        ])
                     </div>
                     <div class="mt-6 flex justify-between space-x-3">
                         <button type="button" onclick="showImportModal()" class="px-4 py-2 border border-blue-200 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100">

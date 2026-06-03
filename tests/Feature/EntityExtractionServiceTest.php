@@ -71,7 +71,6 @@ class EntityExtractionServiceTest extends TestCase
                 'description' => '新的描述',
                 'attributes_json' => '{}',
                 'source_url' => 'https://example.test/case',
-                'recommended_tag_ids' => [],
             ]],
             'cases' => [[
                 'entity_name' => '制造业客户A',
@@ -83,11 +82,12 @@ class EntityExtractionServiceTest extends TestCase
                 'result' => '响应时间下降 40%。',
                 'metrics' => '响应时间下降 40%。',
                 'source_url' => 'https://example.test/case',
-                'recommended_tag_ids' => [],
             ]],
         ]);
 
-        $this->assertSame(['entities' => 0, 'cases' => 1], $summary);
+        $this->assertSame(0, $summary['entities']);
+        $this->assertSame(1, $summary['cases']);
+        $this->assertSame([(int) $existing->id], $summary['entity_ids']);
         $this->assertSame(1, EntityRecord::query()->where('name', '制造业客户A')->count());
         $caseRecord = CaseRecord::query()->where('title', '制造业智能客服案例 资料案例')->firstOrFail();
         $this->assertSame((int) $existing->id, (int) $caseRecord->entity_id);

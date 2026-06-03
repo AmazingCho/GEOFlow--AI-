@@ -100,6 +100,14 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[260px_minmax(0,1fr)]" data-collection-scoped-list>
+            @include('admin.partials.collection-sidebar', [
+                'routeName' => 'admin.image-libraries.index',
+                'selectedId' => (string) ($collectionId ?? ''),
+                'collectionOptions' => $collectionOptions ?? [],
+            ])
+            <div class="min-w-0">
+
         <div class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.image_libraries.list_title') }}</h3>
@@ -135,6 +143,15 @@
                                                 {{ $formatSize((int) $library['total_size']) }}
                                             </span>
                                         @endif
+                                        @if ((string) ($library['collection_name'] ?? '') !== '')
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                                                {{ $library['collection_name'] }}
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">
+                                                {{ __('admin.collections.badge_unassigned') }}
+                                            </span>
+                                        @endif
                                     </div>
                                     @if ($library['description'] !== '')
                                         <p class="mt-1 text-sm text-gray-600">{{ $library['description'] }}</p>
@@ -153,6 +170,10 @@
                                         <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
                                         {{ __('admin.button.view') }}
                                     </a>
+                                    <a href="{{ route('admin.image-libraries.edit', ['libraryId' => (int) $library['id']]) }}" class="inline-flex items-center px-3 py-1.5 border border-purple-200 text-xs font-medium rounded text-purple-700 bg-purple-50 hover:bg-purple-100">
+                                        <i data-lucide="pencil" class="w-4 h-4 mr-1"></i>
+                                        {{ __('admin.button.edit') }}
+                                    </a>
                                     <form method="POST" action="{{ route('admin.image-libraries.delete', ['libraryId' => (int) $library['id']]) }}" onsubmit="return confirm(@js(__('admin.image_libraries.confirm_delete', ['name' => $library['name']])));" class="inline-block">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
@@ -166,6 +187,8 @@
                     @endforeach
                 </div>
             @endif
+        </div>
+            </div>
         </div>
     </div>
 
@@ -184,6 +207,10 @@
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.image_libraries.field_description') }}</label>
                             <textarea name="description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="{{ __('admin.image_libraries.placeholder_description') }}"></textarea>
                         </div>
+                        @include('admin.partials.collection-select', [
+                            'collectionOptions' => $collectionOptions ?? [],
+                            'class' => 'mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm',
+                        ])
                         <div class="text-sm text-gray-500">
                             <p class="mb-2">{{ __('admin.image_libraries.supported_formats') }}</p>
                             <ul class="list-disc list-inside space-y-1">

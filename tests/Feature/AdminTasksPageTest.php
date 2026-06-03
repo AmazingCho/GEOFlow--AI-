@@ -7,8 +7,11 @@ use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\ArticleDistribution;
 use App\Models\Author;
+use App\Models\CaseRecord;
 use App\Models\Category;
+use App\Models\CollectionRecord;
 use App\Models\DistributionChannel;
+use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\ImageLibrary;
 use App\Models\Keyword;
@@ -66,11 +69,23 @@ class AdminTasksPageTest extends TestCase
             'role' => 'admin',
             'status' => 'active',
         ]);
+        ImageLibrary::query()->create([
+            'name' => '任务配图库',
+            'description' => '',
+            'image_count' => 0,
+            'used_task_count' => 0,
+        ]);
+        Category::query()->create([
+            'name' => '任务分类',
+            'slug' => 'task-create-category',
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.tasks.create'))
             ->assertOk()
-            ->assertSee(__('admin.task_create.page_heading'));
+            ->assertSee(__('admin.task_create.page_heading'))
+            ->assertSee(__('admin.task_create.option.no_image_library'))
+            ->assertSee(__('admin.task_create.option.no_image_count'));
     }
 
     public function test_task_create_and_edit_forms_use_full_admin_content_width(): void
@@ -176,6 +191,11 @@ class AdminTasksPageTest extends TestCase
         $titleLibrary = TitleLibrary::query()->create([
             'name' => '标题库',
         ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => '本站任务 Collection',
+            'slug' => 'local-only-task-collection',
+            'status' => 'active',
+        ]);
         $category = Category::query()->create([
             'name' => '科技资讯',
             'slug' => 'tech',
@@ -190,6 +210,7 @@ class AdminTasksPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
                 'task_name' => '仅本站任务',
+                'collection_id' => (int) $collection->id,
                 'title_library_id' => $titleLibrary->id,
                 'prompt_id' => $prompt->id,
                 'ai_model_id' => $aiModel->id,
@@ -237,6 +258,11 @@ class AdminTasksPageTest extends TestCase
         $titleLibrary = TitleLibrary::query()->create([
             'name' => '知识标签标题库',
         ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => '知识标签 Collection',
+            'slug' => 'knowledge-tag-collection',
+            'status' => 'active',
+        ]);
         $category = Category::query()->create([
             'name' => '知识标签分类',
             'slug' => 'knowledge-tag-category',
@@ -270,6 +296,7 @@ class AdminTasksPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
                 'task_name' => '跨知识库标签任务',
+                'collection_id' => (int) $collection->id,
                 'title_library_id' => $titleLibrary->id,
                 'prompt_id' => $prompt->id,
                 'ai_model_id' => $aiModel->id,
@@ -317,6 +344,11 @@ class AdminTasksPageTest extends TestCase
             'content' => '请写 {{title}}',
         ]);
         $titleLibrary = TitleLibrary::query()->create(['name' => '图片标签标题库']);
+        $collection = CollectionRecord::query()->create([
+            'name' => '图片标签 Collection',
+            'slug' => 'image-tag-collection',
+            'status' => 'active',
+        ]);
         $category = Category::query()->create([
             'name' => '图片标签分类',
             'slug' => 'image-tag-category',
@@ -353,6 +385,7 @@ class AdminTasksPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
                 'task_name' => '图库标签交叉筛选任务',
+                'collection_id' => (int) $collection->id,
                 'title_library_id' => $titleLibrary->id,
                 'prompt_id' => $prompt->id,
                 'ai_model_id' => $aiModel->id,
@@ -379,70 +412,113 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('value="场景:产品图"', false);
     }
 
-    public function test_task_form_can_select_industry_tags_and_filter_material_options(): void
+    public function test_task_form_can_save_collection_and_entity_context(): void
     {
         $admin = Admin::query()->create([
-            'username' => 'tasks_industry_filter_admin',
+            'username' => 'tasks_context_admin',
             'password' => 'secret-123',
-            'email' => 'tasks-industry-filter@example.com',
-            'display_name' => 'Tasks Industry Filter Admin',
+            'email' => 'tasks-context@example.com',
+            'display_name' => 'Tasks Context Admin',
             'role' => 'admin',
             'status' => 'active',
         ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Automation Equipment Context',
+            'slug' => 'automation-equipment-context',
+            'status' => 'active',
+        ]);
+        $otherCollection = CollectionRecord::query()->create([
+            'name' => 'Industrial Cooling Context',
+            'slug' => 'industrial-cooling-context',
+            'status' => 'active',
+        ]);
+        $entity = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060',
+            'entity_type' => '产品型号',
+            'description' => '视觉点胶设备型号。',
+        ]);
+        $otherEntity = EntityRecord::query()->create([
+            'collection_id' => (int) $otherCollection->id,
+            'name' => 'CHILLER-9000',
+            'entity_type' => '产品型号',
+            'description' => '制冷设备型号。',
+        ]);
+        $caseRecord = CaseRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'entity_id' => (int) $entity->id,
+            'title' => 'SJ4060 电池灌胶案例',
+            'case_type' => '应用案例',
+            'summary' => '客户使用 SJ4060 提升灌胶一致性。',
+        ]);
         $aiModel = AiModel::query()->create([
-            'name' => '行业筛选测试模型',
-            'model_id' => 'industry-filter-model',
+            'name' => '任务上下文模型',
+            'model_id' => 'task-context-model',
             'model_type' => 'chat',
             'status' => 'active',
         ]);
         $prompt = Prompt::query()->create([
-            'name' => '行业筛选提示词',
+            'name' => '任务上下文提示词',
             'type' => 'content',
-            'content' => '请写 {{title}}',
-        ]);
-        $keywordLibrary = KeywordLibrary::query()->create(['name' => '自动化关键词库']);
-        $keyword = Keyword::query()->create([
-            'library_id' => (int) $keywordLibrary->id,
-            'keyword' => 'SJ4060',
+            'content' => '请基于 {{Knowledge}} 写 {{title}}',
         ]);
         $titleLibrary = TitleLibrary::query()->create([
-            'name' => '自动化标题库',
-            'keyword_library_id' => (int) $keywordLibrary->id,
+            'name' => '任务上下文标题库',
         ]);
         $category = Category::query()->create([
-            'name' => '行业筛选分类',
-            'slug' => 'industry-filter-category',
+            'name' => '任务上下文分类',
+            'slug' => 'task-context-category',
         ]);
-        $knowledgeBase = KnowledgeBase::query()->create([
-            'name' => '自动化知识库',
-            'content' => 'SJ4060 是自动化设备。',
-            'file_type' => 'markdown',
-        ]);
-        $imageLibrary = ImageLibrary::query()->create([
-            'name' => '自动化图库',
-            'image_count' => 1,
-        ]);
-        $image = Image::query()->create([
-            'library_id' => (int) $imageLibrary->id,
-            'filename' => 'automation.png',
-            'original_name' => 'automation.png',
-            'file_path' => 'storage/uploads/images/automation.png',
-        ]);
-        app(TagService::class)->sync($keyword, '行业领域:自动化设备');
-        app(TagService::class)->sync($knowledgeBase, '行业领域:自动化设备');
-        app(TagService::class)->sync($image, '行业领域:自动化设备');
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.tasks.create'))
             ->assertOk()
-            ->assertSee(__('admin.task_create.field.industry_tags'))
-            ->assertSee('data-field-name="industry_tag_filters"', false)
-            ->assertSee('data-tag-label-search-scope="industry"', false)
-            ->assertSee('data-industry-tags="行业领域:自动化设备"', false);
+            ->assertSee(__('admin.task_create.field.collection'))
+            ->assertSee(__('admin.task_create.field.entities'))
+            ->assertSee(__('admin.task_create.field.cases'))
+            ->assertSee('data-tag-label-search-group="Topic"', false)
+            ->assertSee('data-tag-label-search-group="Audience"', false)
+            ->assertSee('data-tag-label-search-group="Intent"', false)
+            ->assertSee('name="collection_id"', false)
+            ->assertSee('name="cross_collection_mode"', false)
+            ->assertSee('data-option-multi-selector', false)
+            ->assertSee('data-field-name="entity_ids"', false)
+            ->assertSee('data-field-name="case_ids"', false)
+            ->assertSee('data-option-id="'.(int) $entity->id.'"', false)
+            ->assertSee('data-option-collection-id="'.(int) $collection->id.'"', false)
+            ->assertSee('data-option-id="'.(int) $otherEntity->id.'"', false)
+            ->assertSee('data-option-collection-id="'.(int) $otherCollection->id.'"', false)
+            ->assertSee('data-option-filter-hidden', false)
+            ->assertSee('Automation Equipment Context')
+            ->assertSee('SJ4060')
+            ->assertSee('CHILLER-9000')
+            ->assertSee('SJ4060 电池灌胶案例');
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.tasks.store'), [
-                'task_name' => '行业筛选任务',
+                'task_name' => 'Collection Entity 错误上下文任务',
+                'collection_id' => (int) $collection->id,
+                'entity_ids' => [(int) $otherEntity->id],
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $aiModel->id,
+                'fixed_category_id' => $category->id,
+                'status' => 'paused',
+                'article_limit' => 1,
+                'draft_limit' => 1,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertSessionHasErrors('entity_ids');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => 'Collection Entity 上下文任务',
+                'collection_id' => (int) $collection->id,
+                'cross_collection_mode' => '1',
+                'entity_ids' => [(int) $entity->id],
+                'case_ids' => [(int) $caseRecord->id],
                 'title_library_id' => $titleLibrary->id,
                 'prompt_id' => $prompt->id,
                 'ai_model_id' => $aiModel->id,
@@ -453,21 +529,29 @@ class AdminTasksPageTest extends TestCase
                 'publish_interval' => 60,
                 'category_mode' => 'fixed',
                 'model_selection_mode' => 'fixed',
-                'knowledge_base_id' => $knowledgeBase->id,
-                'image_library_id' => $imageLibrary->id,
-                'image_count' => 1,
-                'industry_tag_filters' => ['行业领域:自动化设备'],
+                'topic_tag_filters' => ['Topic:视觉定位'],
+                'intent_tag_filters' => ['Intent:选型'],
             ])
             ->assertRedirect(route('admin.tasks.index'));
 
-        $task = Task::query()->where('name', '行业筛选任务')->firstOrFail();
-        $this->assertSame('行业领域:自动化设备', (string) $task->industry_tag_filter);
+        $task = Task::query()->where('name', 'Collection Entity 上下文任务')->firstOrFail();
+        $this->assertSame((int) $collection->id, (int) $task->collection_id);
+        $this->assertSame(1, (int) $task->cross_collection_mode);
+        $this->assertSame((string) $entity->id, (string) $task->entity_filter);
+        $this->assertSame((string) $caseRecord->id, (string) $task->case_filter);
+        $this->assertSame('Topic:视觉定位, Intent:选型', (string) $task->knowledge_tag_filter);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.tasks.edit', ['taskId' => (int) $task->id]))
             ->assertOk()
-            ->assertSee('name="industry_tag_filters[]"', false)
-            ->assertSee('value="行业领域:自动化设备"', false);
+            ->assertSee('name="collection_id"', false)
+            ->assertSee('value="'.(int) $collection->id.'" selected', false)
+            ->assertSee('name="entity_ids[]"', false)
+            ->assertSee('value="'.(int) $entity->id.'"', false)
+            ->assertSee('name="case_ids[]"', false)
+            ->assertSee('value="'.(int) $caseRecord->id.'"', false)
+            ->assertSee('value="Topic:视觉定位"', false)
+            ->assertSee('value="Intent:选型"', false);
     }
 
     public function test_task_article_action_links_to_filtered_article_list(): void
