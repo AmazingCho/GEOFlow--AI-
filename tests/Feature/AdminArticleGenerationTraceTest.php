@@ -58,11 +58,19 @@ class AdminArticleGenerationTraceTest extends TestCase
                     'knowledge' => [
                         'strategy' => 'chunk_retrieval',
                         'context_length' => 456,
+                        'evidence_summary' => [
+                            'chunk_count' => 1,
+                            'average_evidence_score' => 72,
+                            'retrieval_sources' => ['fallback_embedding_hybrid'],
+                        ],
                         'tag_filters' => ['行业:制造业'],
                         'chunks' => [
                             [
                                 'knowledge_base_name' => 'Trace Knowledge',
                                 'chunk_index' => 2,
+                                'evidence_score' => 72,
+                                'retrieval_source' => 'fallback_embedding_hybrid',
+                                'match_reasons' => ['keyword_overlap', 'source_priority'],
                                 'preview' => 'Trace knowledge preview',
                             ],
                         ],
@@ -108,6 +116,9 @@ class AdminArticleGenerationTraceTest extends TestCase
             ->assertSee('Trace Source Title')
             ->assertSee('Trace Model')
             ->assertSee('Trace Knowledge')
+            ->assertSee(__('admin.article_edit.generation_trace.evidence_score'))
+            ->assertSee('fallback_embedding_hybrid')
+            ->assertSee('keyword_overlap')
             ->assertSee('Trace Entity')
             ->assertSee('Trace Case')
             ->assertSee('trace-image.png')

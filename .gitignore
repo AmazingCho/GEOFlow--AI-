@@ -3,6 +3,8 @@
 /bak
 /backups
 /docker-data
+/docker/postgres/data
+/docker/redis/data
 /logs
 /uploads
 .env
@@ -23,6 +25,10 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
 /storage/pail
 /vendor
 Homestead.json

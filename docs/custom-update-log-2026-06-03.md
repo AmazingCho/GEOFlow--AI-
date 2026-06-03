@@ -179,3 +179,66 @@
 - 已通过 `AdminTasksPageTest`。
 - 已通过 `RagRetrievalServiceTest`。
 - 新增受控标签分组相关迁移已执行成功。
+
+## 2026-06-04 补充更新：上游更新吸收与 RAG 解释增强
+
+### 1. 已采纳的上游兼容性更新
+
+- 吸收上游 OpenAI-compatible embedding 修复思路。
+- `KnowledgeChunkSyncService` 对 OpenAI / Doubao / MiniMax / 智谱等兼容 embedding 接口改为直连 `/embeddings`。
+- 兼容 embedding 请求体只发送 `model + input`，不再发送 `dimensions`，避免 Doubao 等服务商返回 `InvalidParameter`。
+- Gemini embedding 继续保留原生 SDK 调用方式。
+- 支持按 OpenAI-compatible 响应中的 `index` 字段重新映射向量，避免服务商返回顺序不一致时写错 chunk。
+
+### 2. AI 模型配置预设
+
+- AI 模型页新增 Doubao Embedding 快速填充。
+- MiniMax 快速填充更新为 MiniMax M3。
+- 保留 MiniMax M2.7 与 MiniMax M2.7 Highspeed 快速填充。
+- 出站代理默认白名单补充 `api.minimax.io`，并保留旧域名 `api.minimaxi.com`。
+
+### 3. 文章列表 URL 兼容性
+
+- 文章列表批量操作 URL 改为相对路径。
+- 回收站清空 URL 改为相对路径。
+- 文章发布弹窗提交 URL 改为相对路径。
+- 目的：减少 Docker、反向代理、自定义后台入口或 APP_URL 不一致时，表单提交到错误绝对地址的问题。
+
+### 4. RAG 检索解释增强
+
+- 未整体替换当前自定义 RAG 流程，避免破坏 Collection / Entity / Case / Tag 现有逻辑。
+- 在现有 `RagRetrievalService` 内增强生成 trace。
+- 每个知识片段新增：
+  - `evidence_score`：证据分。
+  - `retrieval_source`：召回来源，例如 `pgvector`、`real_embedding_hybrid`、`fallback_embedding_hybrid`。
+  - `match_reasons`：匹配原因，例如 `vector_similarity`、`keyword_overlap`、`source_priority`。
+  - `score_components`：向量分、词面分、元数据加权分。
+- `context_package` 新增 `evidence_summary`，记录证据片段数量、平均证据分和召回来源。
+- 文章编辑页“生成来源”模块显示证据分、召回来源和匹配原因，便于审核文章时判断系统为什么引用某段知识。
+
+### 5. 本轮明确跳过的上游更新
+
+1. Generic HTTP 发布器整套合并：跳过。原因是会大改分发渠道模型、发布管理器和表单，容易冲突，建议后续作为独立阶段开发。
+2. 上游 RAG 服务整体替换：跳过。原因是当前项目已有 Collection / Entity / Case / Tag 定制检索链路，本轮只吸收证据评分和召回解释能力。
+3. System Update Center：跳过。原因是涉及部署检测、备份、执行队列、更新包校验和多张表，属于独立运维模块。
+4. Apple Support Clone / 前台主题更新：跳过。原因是当前优化重点是后台素材与生成流程。
+5. 上游 docs 大量文档更新：跳过。原因是项目已有 `agent-docs/` 和 `功能说明文档/`，直接混入上游文档会增加维护噪音。
+
+### 6. 本次验证
+
+- PHP lint：
+  - `app/Services/GeoFlow/KnowledgeChunkSyncService.php`
+  - `app/Services/GeoFlow/RagRetrievalService.php`
+  - `app/Http/Controllers/Admin/ArticleController.php`
+  - `resources/views/admin/articles/form.blade.php`
+  - `lang/en/admin.php`
+  - `lang/zh_CN/admin.php`
+  - `lang/pt_BR/admin.php`
+- 已通过测试：
+  - `KnowledgeChunkEmbeddingSyncTest`：20 passed
+  - `AdminAiModelsPageTest` + `OpenAiRuntimeProviderTest` + `OutboundHttpProxyTest`：36 passed
+  - `AdminArticlesPageTest`：9 passed
+  - `RagRetrievalServiceTest`：8 passed
+  - `AdminArticleGenerationTraceTest` + `WorkerGenerationPipelineTraceTest`：3 passed
+  - `AdminMaterialsPagesTest --filter=knowledge`：17 passed
+- `git diff --check` 已通过。

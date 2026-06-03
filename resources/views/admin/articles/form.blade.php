@@ -184,6 +184,7 @@
                             $traceCategory = is_array($trace['category'] ?? null) ? $trace['category'] : null;
                             $traceImages = collect($trace['images'] ?? [])->filter(fn ($image) => is_array($image))->values();
                             $traceChunks = collect($traceKnowledge['chunks'] ?? [])->filter(fn ($chunk) => is_array($chunk))->values();
+                            $traceEvidenceSummary = is_array($traceKnowledge['evidence_summary'] ?? null) ? $traceKnowledge['evidence_summary'] : [];
                             $traceEntities = collect($traceKnowledge['entities'] ?? [])->filter(fn ($entity) => is_array($entity))->values();
                             $traceCases = collect($traceKnowledge['cases'] ?? [])->filter(fn ($case) => is_array($case))->values();
                             $traceTags = collect($traceKnowledge['tag_filters'] ?? [])->map(fn ($tag) => trim((string) $tag))->filter()->values();
@@ -294,11 +295,28 @@
                                             <span class="text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.context_length', ['count' => (int) ($traceKnowledge['context_length'] ?? 0)]) }}</span>
                                         </div>
                                         <div class="mt-2 text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.strategy') }}: {{ (string) ($traceKnowledge['strategy'] ?? 'none') }}</div>
+                                        @if($traceEvidenceSummary !== [])
+                                            <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                                                <span class="rounded-full bg-white px-2 py-1 ring-1 ring-gray-200">{{ __('admin.article_edit.generation_trace.evidence_average') }}: {{ (int) ($traceEvidenceSummary['average_evidence_score'] ?? 0) }}</span>
+                                                <span class="rounded-full bg-white px-2 py-1 ring-1 ring-gray-200">{{ __('admin.article_edit.generation_trace.evidence_chunks') }}: {{ (int) ($traceEvidenceSummary['chunk_count'] ?? 0) }}</span>
+                                            </div>
+                                        @endif
                                         @if($traceChunks->isNotEmpty())
                                             <div class="mt-3 space-y-2">
                                                 @foreach($traceChunks->take(5) as $chunk)
                                                     <div class="rounded border border-gray-200 bg-white p-2">
-                                                        <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                            @if(isset($chunk['evidence_score']))
+                                                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{{ __('admin.article_edit.generation_trace.evidence_score') }} {{ (int) $chunk['evidence_score'] }}</span>
+                                                            @endif
+                                                            @if((string) ($chunk['retrieval_source'] ?? '') !== '')
+                                                                <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{{ (string) $chunk['retrieval_source'] }}</span>
+                                                            @endif
+                                                        </div>
+                                                        @if(!empty($chunk['match_reasons']) && is_array($chunk['match_reasons']))
+                                                            <div class="mt-1 text-[11px] text-gray-400">{{ __('admin.article_edit.generation_trace.match_reasons') }}: {{ implode(' · ', array_map('strval', $chunk['match_reasons'])) }}</div>
+                                                        @endif
                                                         <div class="mt-1 line-clamp-2 text-xs text-gray-500">{{ (string) ($chunk['preview'] ?? '') }}</div>
                                                     </div>
                                                 @endforeach

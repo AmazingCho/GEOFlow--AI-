@@ -68,6 +68,15 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertContains((int) $knowledgeBase->id, $trace['knowledge_base_ids']);
         $this->assertSame('hybrid_vector_lexical', $trace['strategy']);
         $this->assertSame((int) $knowledgeBase->id, (int) $trace['chunks'][0]['knowledge_base_id']);
+        $this->assertArrayHasKey('evidence_score', $trace['chunks'][0]);
+        $this->assertArrayHasKey('retrieval_source', $trace['chunks'][0]);
+        $this->assertArrayHasKey('match_reasons', $trace['chunks'][0]);
+        $this->assertArrayHasKey('score_components', $trace['chunks'][0]);
+        $this->assertGreaterThan(0, (int) $trace['chunks'][0]['evidence_score']);
+        $this->assertSame('fallback_embedding_hybrid', $trace['chunks'][0]['retrieval_source']);
+        $this->assertSame((int) $trace['chunks'][0]['evidence_score'], (int) $trace['evidence_summary']['average_evidence_score']);
+        $this->assertSame(1, (int) $trace['evidence_summary']['chunk_count']);
+        $this->assertSame($trace['evidence_summary'], $trace['context_package']['evidence_summary']);
         $this->assertSame('制造业客户A', $trace['entities'][0]['name']);
         $this->assertSame('制造业售后响应效率提升案例', $trace['cases'][0]['title']);
         $this->assertGreaterThan(0, $trace['context_length']);

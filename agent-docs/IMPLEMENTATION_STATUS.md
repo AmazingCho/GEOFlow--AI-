@@ -11,6 +11,7 @@
 | Case DB | 已完成核心功能 | 支持案例管理并关联 Entity |
 | 知识库治理字段 | 已完成 | type、role、importance、summary、source URL、status |
 | RAG 检索 | 已完成核心功能 | 支持 Entity、Case、Knowledge Base、Collection 上下文 |
+| RAG 检索解释增强 | 已完成 | trace 记录 evidence_score、retrieval_source、match_reasons、score_components 与 evidence_summary |
 | 生成追踪 | 已完成核心功能 | 文章可记录生成来源、检索 chunk、上下文 |
 | 文章质量评分 | 已完成核心功能 | 列表和编辑页显示评分与审核建议 |
 | 标签管理页增强 | 已完成核心功能 | 标签列表、引用统计、引用明细、删除、重命名、分页 |
@@ -53,5 +54,22 @@
 - `RagRetrievalServiceTest`
 - `UrlImportProcessingServiceTest`
 - `WorkerGenerationPipelineTraceTest`
+
+## 2026-06-04 上游更新吸收记录
+
+已采纳：
+
+- OpenAI-compatible embedding 直连 `/embeddings`，避免 Doubao 等接口因 `dimensions` 参数报错。
+- AI 模型页补充 Doubao Embedding、MiniMax M3、MiniMax M2.7 预设。
+- 文章批量操作、清空回收站、发布弹窗改为相对 URL。
+- 现有 RAG 流程局部吸收上游“证据评分 / 召回解释”思路，不整体替换自定义 RAG。
+
+已跳过：
+
+- Generic HTTP 发布器整套合并。
+- 上游 RAG 服务整体替换。
+- System Update Center。
+- Apple Support Clone / 前台主题更新。
+- 上游 docs 大量文档更新。
 
 后续 agent 修改数据库、RAG、生成流程或任务页时，应继续运行相关测试。

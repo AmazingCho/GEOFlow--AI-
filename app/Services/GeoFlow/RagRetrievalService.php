@@ -108,6 +108,7 @@ class RagRetrievalService
                 'entities' => $entityCase['entities'],
                 'cases' => $entityCase['cases'],
                 'strategy' => $strategy,
+                'evidence_summary' => $this->evidenceSummary($chunks),
                 'context_package' => $contextPackage,
                 'retrieval_engine' => 'rag_retrieval_service',
                 'context_length' => mb_strlen($context, 'UTF-8'),
@@ -496,6 +497,7 @@ class RagRetrievalService
             'used_tags' => $this->tagFilterLabels($tagFilters),
             'strategy' => $strategy,
             'context_length' => mb_strlen($context, 'UTF-8'),
+            'evidence_summary' => $this->evidenceSummary($chunks),
             'knowledge_bases' => $knowledgeBaseTrace,
             'chunks' => $chunks,
             'entities' => $entityCase['entities'],
@@ -582,8 +584,8 @@ class RagRetrievalService
             $vectorScore = ($useRealEmbeddingScore === $chunkUsesRealEmbedding)
                 ? $this->dotProduct($queryVector, $vector)
                 : 0.0;
-            $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25);
-            $score += $this->metadataScore($row);
+            $metadataScore = $this->metadataScore($row);
+            $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25) + $metadataScore;
 
             $scored[] = [
                 'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
@@ -594,6 +596,14 @@ class RagRetrievalService
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => $score,
+                'score_components' => [
+                    'vector' => round($vectorScore, 6),
+                    'lexical' => round($lexicalScore, 6),
+                    'metadata' => round($metadataScore, 6),
+                ],
+                'retrieval_source' => $useRealEmbeddingScore && $chunkUsesRealEmbedding
+                    ? 'real_embedding_hybrid'
+                    : 'fallback_embedding_hybrid',
             ];
         }
 
@@ -770,6 +780,8 @@ class RagRetrievalService
                 continue;
             }
             $distance = (float) ($row->vector_distance ?? 1.0);
+            $vectorScore = 1.0 - $distance;
+            $metadataScore = $this->metadataScore($row);
             $results[] = [
                 'knowledge_base_id' => (int) ($row->knowledge_base_id ?? 0),
                 'knowledge_base_name' => (string) ($row->knowledge_base_name ?? ''),
@@ -778,7 +790,14 @@ class RagRetrievalService
                 'importance' => $this->normalizeImportance($row->importance ?? null),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
-                'score' => (1.0 - $distance) + $this->metadataScore($row),
+                'score' => $vectorScore + $metadataScore,
+                'score_components' => [
+                    'vector' => round($vectorScore, 6),
+                    'lexical' => 0.0,
+                    'metadata' => round($metadataScore, 6),
+                    'distance' => round($distance, 6),
+                ],
+                'retrieval_source' => 'pgvector',
             ];
         }
 
@@ -836,6 +855,10 @@ class RagRetrievalService
             'importance' => $this->normalizeImportance($chunk['importance'] ?? null),
             'chunk_index' => (int) ($chunk['chunk_index'] ?? 0),
             'score' => round((float) ($chunk['score'] ?? 0), 6),
+            'evidence_score' => $this->evidenceScore($chunk),
+            'retrieval_source' => (string) ($chunk['retrieval_source'] ?? 'lexical_fallback'),
+            'match_reasons' => $this->chunkMatchReasons($chunk),
+            'score_components' => is_array($chunk['score_components'] ?? null) ? $chunk['score_components'] : [],
             'preview' => mb_substr(trim((string) ($chunk['content'] ?? '')), 0, 160, 'UTF-8'),
         ], $selected);
 
@@ -945,6 +968,71 @@ class RagRetrievalService
         };
 
         return $roleBoost + (($importance - 3) * 0.01);
+    }
+
+    /**
+     * @param  array<string,mixed>  $chunk
+     */
+    private function evidenceScore(array $chunk): int
+    {
+        $components = is_array($chunk['score_components'] ?? null) ? $chunk['score_components'] : [];
+        $vector = max(0.0, min(1.0, (float) ($components['vector'] ?? 0.0)));
+        $lexical = max(0.0, min(1.0, (float) ($components['lexical'] ?? 0.0)));
+        $metadata = max(-0.1, min(0.1, (float) ($components['metadata'] ?? 0.0)));
+        $score = ($vector * 70) + ($lexical * 20) + (($metadata + 0.1) * 50);
+
+        return max(0, min(100, (int) round($score)));
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $chunks
+     * @return array<string,mixed>
+     */
+    private function evidenceSummary(array $chunks): array
+    {
+        if ($chunks === []) {
+            return [
+                'chunk_count' => 0,
+                'average_evidence_score' => 0,
+                'retrieval_sources' => [],
+            ];
+        }
+
+        $scores = array_map(fn (array $chunk): int => (int) ($chunk['evidence_score'] ?? $this->evidenceScore($chunk)), $chunks);
+        $sources = array_values(array_unique(array_filter(array_map(
+            static fn (array $chunk): string => trim((string) ($chunk['retrieval_source'] ?? '')),
+            $chunks
+        ))));
+
+        return [
+            'chunk_count' => count($chunks),
+            'average_evidence_score' => (int) round(array_sum($scores) / max(1, count($scores))),
+            'retrieval_sources' => $sources,
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $chunk
+     * @return list<string>
+     */
+    private function chunkMatchReasons(array $chunk): array
+    {
+        $components = is_array($chunk['score_components'] ?? null) ? $chunk['score_components'] : [];
+        $reasons = [];
+        if ((float) ($components['vector'] ?? 0.0) > 0.2) {
+            $reasons[] = 'vector_similarity';
+        }
+        if ((float) ($components['lexical'] ?? 0.0) > 0.0) {
+            $reasons[] = 'keyword_overlap';
+        }
+        if ((float) ($components['metadata'] ?? 0.0) > 0.0) {
+            $reasons[] = 'source_priority';
+        }
+        if ($reasons === []) {
+            $reasons[] = 'ordered_source';
+        }
+
+        return $reasons;
     }
 
     private function knowledgeTypeLabel(string $type): string

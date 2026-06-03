@@ -240,6 +240,56 @@ class AdminArticlesPageTest extends TestCase
             ->assertSee(__('admin.articles.quality.suggestions.knowledge'));
     }
 
+    public function test_article_list_uses_relative_batch_and_action_urls(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_relative_url_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-relative-url@example.com',
+            'display_name' => 'Articles Relative URL Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'URL 分类',
+            'slug' => 'url-category',
+        ]);
+        $author = Author::query()->create(['name' => 'URL Author']);
+        Article::query()->create([
+            'title' => '相对 URL 测试文章',
+            'slug' => 'relative-url-article',
+            'excerpt' => '',
+            'content' => '正文',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index'));
+
+        $response->assertOk();
+        $content = (string) $response->getContent();
+
+        $this->assertStringContainsString(
+            'action="'.route('admin.articles.batch.update-status', [], false).'"',
+            $content
+        );
+        $this->assertStringContainsString(
+            'const EMPTY_TRASH_URL = '.json_encode(route('admin.articles.trash.empty', [], false)).';',
+            $content
+        );
+        $this->assertStringContainsString(
+            'const ARTICLE_PUBLISH_URL_TEMPLATE = '.json_encode(route('admin.articles.publish', ['articleId' => '__ID__'], false)).';',
+            $content
+        );
+        $this->assertStringContainsString(
+            json_encode(route('admin.articles.batch.delete', [], false)),
+            $content
+        );
+    }
+
     public function test_admin_brand_stays_geoflow_when_public_site_name_changes(): void
     {
         $admin = Admin::query()->create([
