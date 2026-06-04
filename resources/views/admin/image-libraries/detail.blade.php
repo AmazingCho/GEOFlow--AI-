@@ -172,13 +172,30 @@
                 </div>
             @else
                 <div id="batch-actions" class="hidden px-6 py-3 bg-gray-50 border-b border-gray-200">
-                    <form method="POST" action="{{ route('admin.image-libraries.images.delete', ['libraryId' => (int) $library->id]) }}" id="batch-form">
+                    <form method="POST" action="{{ route('admin.image-libraries.images.delete', ['libraryId' => (int) $library->id]) }}" id="batch-form" data-delete-action="{{ route('admin.image-libraries.images.delete', ['libraryId' => (int) $library->id]) }}" data-organize-action="{{ route('admin.image-libraries.images.organize', ['libraryId' => (int) $library->id]) }}">
                         @csrf
-                        <div class="flex items-center space-x-4">
+                        <div class="flex flex-wrap items-center gap-3">
                             <span class="text-sm text-gray-600" id="selected-count-wrap">{{ __('admin.image_detail.selected_count', ['count' => 0]) }}</span>
-                            <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
+                            <label class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700">
+                                <input type="checkbox" id="image-select-all" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                {{ __('admin.material_bulk.select_current_page') }}
+                            </label>
+                            <select name="bulk_action" id="image-bulk-action" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                <option value="delete">{{ __('admin.material_bulk.action_delete') }}</option>
+                                <option value="move">{{ __('admin.material_bulk.action_move') }}</option>
+                                <option value="copy">{{ __('admin.material_bulk.action_copy') }}</option>
+                            </select>
+                            <select name="target_library_id" id="image-target-library" class="hidden min-w-[220px] rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                <option value="">{{ __('admin.material_bulk.target_placeholder') }}</option>
+                                @foreach (($targetLibraryOptions ?? []) as $targetLibrary)
+                                    <option value="{{ (int) $targetLibrary['id'] }}">
+                                        {{ $targetLibrary['name'] }}@if ((string) ($targetLibrary['collection_name'] ?? '') !== '') / {{ $targetLibrary['collection_name'] }} @endif
+                                    </option>
+                                @endforeach
+                            </select>
+                            <button type="submit" id="image-bulk-submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
                                 <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>
-                                {{ __('admin.image_detail.delete_selected') }}
+                                <span>{{ __('admin.image_detail.delete_selected') }}</span>
                             </button>
                             <button type="button" onclick="toggleBatchActions()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
                                 {{ __('admin.button.cancel') }}
@@ -232,8 +249,10 @@
                                             'tagOptions' => $tagOptions ?? [],
                                             'selectedTagIds' => $imageTagIds,
                                             'tone' => 'purple',
-                                            'autoSubmit' => true,
                                         ])
+                                        <button type="submit" class="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100">
+                                            {{ __('admin.button.save') }}
+                                        </button>
                                     </form>
                                     <form method="POST" action="{{ route('admin.image-libraries.images.entities', ['libraryId' => (int) $library->id, 'imageId' => (int) $image->id]) }}" class="mt-3 space-y-2">
                                         @csrf
@@ -449,6 +468,11 @@
                 document.querySelectorAll('.image-item').forEach((item) => {
                     item.classList.remove('selected');
                 });
+                const selectAll = document.getElementById('image-select-all');
+                if (selectAll) {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = false;
+                }
                 updateSelectedCount();
             }
         }
@@ -476,6 +500,52 @@
 
         const batchForm = document.getElementById('batch-form');
         if (batchForm) {
+            const selectAll = document.getElementById('image-select-all');
+            const bulkAction = document.getElementById('image-bulk-action');
+            const targetLibrary = document.getElementById('image-target-library');
+            const bulkSubmit = document.getElementById('image-bulk-submit');
+            const bulkSubmitLabel = bulkSubmit?.querySelector('span');
+            const bulkSubmitIcon = bulkSubmit?.querySelector('i');
+            const updateBulkControls = () => {
+                const action = bulkAction?.value || 'delete';
+                const organizing = action === 'move' || action === 'copy';
+                targetLibrary?.classList.toggle('hidden', !organizing);
+                if (bulkSubmitLabel) {
+                    bulkSubmitLabel.textContent = action === 'move'
+                        ? @js(__('admin.material_bulk.submit_move'))
+                        : (action === 'copy' ? @js(__('admin.material_bulk.submit_copy')) : @js(__('admin.image_detail.delete_selected')));
+                }
+                if (bulkSubmit) {
+                    bulkSubmit.className = organizing
+                        ? 'inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-purple-600 hover:bg-purple-700'
+                        : 'inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700';
+                }
+                if (bulkSubmitIcon) {
+                    bulkSubmitIcon.setAttribute('data-lucide', action === 'copy' ? 'copy' : (action === 'move' ? 'folder-input' : 'trash-2'));
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }
+            };
+            bulkAction?.addEventListener('change', updateBulkControls);
+            updateBulkControls();
+            selectAll?.addEventListener('change', function () {
+                document.querySelectorAll('.image-checkbox').forEach((checkbox) => {
+                    checkbox.checked = this.checked;
+                    checkbox.closest('.image-item')?.classList.toggle('selected', this.checked);
+                });
+                updateSelectedCount();
+            });
+            document.querySelectorAll('.image-checkbox').forEach((checkbox) => {
+                checkbox.addEventListener('change', function () {
+                    const checkboxes = Array.from(document.querySelectorAll('.image-checkbox'));
+                    const selected = checkboxes.filter((item) => item.checked).length;
+                    if (selectAll) {
+                        selectAll.checked = selected > 0 && selected === checkboxes.length;
+                        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+                    }
+                });
+            });
             batchForm.addEventListener('submit', function (event) {
                 const selected = document.querySelectorAll('.image-checkbox:checked').length;
                 if (selected === 0) {
@@ -483,7 +553,22 @@
                     alert(@json(__('admin.image_detail.error.select_delete')));
                     return;
                 }
-                const confirmed = confirm(@json(__('admin.image_detail.confirm_delete_selected_prefix')) + ' ' + selected + ' ' + @json(__('admin.image_detail.confirm_delete_selected_suffix')));
+                const action = bulkAction?.value || 'delete';
+                const organizing = action === 'move' || action === 'copy';
+                if (organizing) {
+                    if (!targetLibrary?.value) {
+                        event.preventDefault();
+                        alert(@json(__('admin.material_bulk.error_target_required')));
+                        return;
+                    }
+                    this.action = this.dataset.organizeAction || this.action;
+                } else {
+                    this.action = this.dataset.deleteAction || this.action;
+                }
+                const confirmTemplate = action === 'move'
+                    ? @json(__('admin.material_bulk.confirm_move', ['count' => '{count}']))
+                    : (action === 'copy' ? @json(__('admin.material_bulk.confirm_copy', ['count' => '{count}'])) : (@json(__('admin.image_detail.confirm_delete_selected_prefix')) + ' {count} ' + @json(__('admin.image_detail.confirm_delete_selected_suffix'))));
+                const confirmed = confirm(confirmTemplate.replace('{count}', String(selected)));
                 if (!confirmed) {
                     event.preventDefault();
                 }

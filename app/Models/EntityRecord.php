@@ -20,6 +20,9 @@ class EntityRecord extends Model
         'description',
         'attributes_json',
         'source_url',
+        'canonical_url',
+        'link_anchor_text',
+        'link_policy',
         'usage_count',
     ];
 

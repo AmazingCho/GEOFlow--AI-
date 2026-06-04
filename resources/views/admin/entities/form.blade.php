@@ -4,6 +4,8 @@
     $formAction = $isEdit
         ? route('admin.entities.update', ['entityId' => (int) $entityId])
         : route('admin.entities.store');
+    $selectedEntityType = old('entity_type', (string) ($entityForm['entity_type'] ?? '业务实体'));
+    $selectedLinkPolicy = old('link_policy', (string) ($entityForm['link_policy'] ?? 'disabled'));
 @endphp
 
 @section('content')
@@ -39,7 +41,7 @@
                                 <p class="mt-1 text-sm text-blue-800">粘贴实体相关内容后，系统会自动填入名称、类型、属性、标签建议和描述。</p>
                             </div>
                             <div class="flex min-w-[260px] flex-col gap-2 sm:flex-row">
-                                <select data-ai-analysis-model class="rounded-md border-blue-200 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <select data-ai-analysis-model class="rounded-md border border-blue-200 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                     <option value="0">自动选择模型</option>
                                     @foreach(($aiModelOptions ?? []) as $model)
                                         <option value="{{ (int) $model['id'] }}">{{ $model['name'] }}</option>
@@ -51,45 +53,79 @@
                                 </button>
                             </div>
                         </div>
-                        <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border-blue-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="粘贴官网介绍、产品描述、公司资料或一段待识别内容"></textarea>
+                        <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border border-blue-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="粘贴官网介绍、产品描述、公司资料或一段待识别内容"></textarea>
                         <p data-ai-analysis-status class="mt-2 hidden text-sm text-blue-800"></p>
                     </div>
 
                     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_name') }}</label>
-                            <input type="text" name="name" required maxlength="160" value="{{ old('name', (string) ($entityForm['name'] ?? '')) }}" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_name') }}">
+                            <input type="text" name="name" required maxlength="160" value="{{ old('name', (string) ($entityForm['name'] ?? '')) }}" data-tag-source="entity-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_name') }}">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_type') }}</label>
-                            <input type="text" name="entity_type" maxlength="80" value="{{ old('entity_type', (string) ($entityForm['entity_type'] ?? '')) }}" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_type') }}">
+                            <select name="entity_type" data-entity-type-select data-tag-source="entity-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                @foreach(($entityTypeOptions ?? []) as $option)
+                                    <option value="{{ (string) $option['value'] }}" @selected($selectedEntityType === (string) $option['value'])>
+                                        {{ (string) $option['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p data-entity-type-help class="mt-2 text-xs leading-5 text-gray-500"></p>
+                        </div>
+                    </div>
+
+                    <div data-entity-link-fields class="rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 class="text-sm font-semibold text-emerald-950">{{ __('admin.entities.link_fields_title') }}</h3>
+                                <p class="mt-1 text-xs leading-5 text-emerald-800">{{ __('admin.entities.link_fields_desc') }}</p>
+                            </div>
+                            <span class="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">{{ __('admin.entities.link_fields_badge') }}</span>
+                        </div>
+                        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                            <div class="lg:col-span-2">
+                                <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_canonical_url') }}</label>
+                                <input type="text" name="canonical_url" maxlength="500" value="{{ old('canonical_url', (string) ($entityForm['canonical_url'] ?? '')) }}" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="https://example.com/product/sj4060">
+                            </div>
+                            <div>
+                                <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_link_policy') }}</label>
+                                <select name="link_policy" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="suggest" @selected($selectedLinkPolicy === 'suggest')>{{ __('admin.entities.link_policy_suggest') }}</option>
+                                    <option value="disabled" @selected($selectedLinkPolicy === 'disabled')>{{ __('admin.entities.link_policy_disabled') }}</option>
+                                </select>
+                            </div>
+                            <div class="lg:col-span-3">
+                                <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_link_anchor_text') }}</label>
+                                <input type="text" name="link_anchor_text" maxlength="160" value="{{ old('link_anchor_text', (string) ($entityForm['link_anchor_text'] ?? '')) }}" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_link_anchor_text') }}">
+                            </div>
                         </div>
                     </div>
 
                     @include('admin.partials.collection-select', [
                         'selectedId' => (string) ($entityForm['collection_id'] ?? ''),
                         'collectionOptions' => $collectionOptions ?? [],
-                        'class' => 'block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500',
+                        'class' => 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500',
                     ])
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_aliases') }}</label>
-                        <textarea name="aliases" rows="2" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_aliases') }}">{{ old('aliases', (string) ($entityForm['aliases'] ?? '')) }}</textarea>
+                        <textarea name="aliases" rows="2" data-tag-source="entity-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_aliases') }}">{{ old('aliases', (string) ($entityForm['aliases'] ?? '')) }}</textarea>
                     </div>
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_description') }}</label>
-                        <textarea name="description" rows="5" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_description') }}">{{ old('description', (string) ($entityForm['description'] ?? '')) }}</textarea>
+                        <textarea name="description" rows="5" data-tag-source="entity-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_description') }}">{{ old('description', (string) ($entityForm['description'] ?? '')) }}</textarea>
                     </div>
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_attributes') }}</label>
-                        <textarea name="attributes_json" rows="5" data-tag-source="entity-form" class="block w-full rounded-md border-gray-300 px-3 py-2 font-mono text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_attributes') }}">{{ old('attributes_json', (string) ($entityForm['attributes_json'] ?? '{}')) }}</textarea>
+                        <textarea name="attributes_json" rows="5" data-tag-source="entity-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('admin.entities.placeholder_attributes') }}">{{ old('attributes_json', (string) ($entityForm['attributes_json'] ?? '{}')) }}</textarea>
                     </div>
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.entities.field_source_url') }}</label>
-                        <input type="text" name="source_url" maxlength="500" value="{{ old('source_url', (string) ($entityForm['source_url'] ?? '')) }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="https://example.com">
+                        <input type="text" name="source_url" maxlength="500" value="{{ old('source_url', (string) ($entityForm['source_url'] ?? '')) }}" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="https://example.com">
                     </div>
 
                     <div>
@@ -121,3 +157,31 @@
 @endsection
 
 @include('admin.partials.material-ai-analysis-script')
+
+@push('scripts')
+    <script>
+        (() => {
+            const linkableTypes = new Set(@json($linkableEntityTypes ?? []));
+            const typeDescriptions = @json(collect($entityTypeOptions ?? [])->mapWithKeys(fn ($option) => [(string) $option['value'] => (string) $option['description']])->all());
+            const select = document.querySelector('[data-entity-type-select]');
+            const linkFields = document.querySelector('[data-entity-link-fields]');
+            const help = document.querySelector('[data-entity-type-help]');
+
+            function syncEntityTypeUi() {
+                if (!select) {
+                    return;
+                }
+                const value = select.value || '';
+                if (help) {
+                    help.textContent = typeDescriptions[value] || '';
+                }
+                if (linkFields) {
+                    linkFields.classList.toggle('hidden', !linkableTypes.has(value));
+                }
+            }
+
+            select?.addEventListener('change', syncEntityTypeUi);
+            syncEntityTypeUi();
+        })();
+    </script>
+@endpush

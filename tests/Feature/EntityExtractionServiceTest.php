@@ -51,7 +51,10 @@ class EntityExtractionServiceTest extends TestCase
         $result = app(EntityExtractionService::class)->extractFromUrlImport($analysis, ['title' => '制造业智能客服案例'], $job);
 
         $this->assertSame('制造业客户A', $result['entities'][0]['name']);
+        $this->assertSame('目标客户', $result['entities'][0]['entity_type']);
+        $this->assertStringContainsString('制造业客户A', $result['entities'][0]['description']);
         $this->assertSame('URL采集案例', $result['cases'][0]['case_type']);
+        $this->assertSame('制造业客户A 应用案例', $result['cases'][0]['title']);
         $this->assertSame('响应时间下降 40%。', $result['cases'][0]['metrics']);
     }
 
@@ -74,7 +77,7 @@ class EntityExtractionServiceTest extends TestCase
             ]],
             'cases' => [[
                 'entity_name' => '制造业客户A',
-                'title' => '制造业智能客服案例 资料案例',
+                'title' => '制造业客户A 应用案例',
                 'case_type' => 'URL采集案例',
                 'summary' => '智能客服帮助售后团队提升响应效率。',
                 'challenge' => '售后团队',
@@ -89,7 +92,7 @@ class EntityExtractionServiceTest extends TestCase
         $this->assertSame(1, $summary['cases']);
         $this->assertSame([(int) $existing->id], $summary['entity_ids']);
         $this->assertSame(1, EntityRecord::query()->where('name', '制造业客户A')->count());
-        $caseRecord = CaseRecord::query()->where('title', '制造业智能客服案例 资料案例')->firstOrFail();
+        $caseRecord = CaseRecord::query()->where('title', '制造业客户A 应用案例')->firstOrFail();
         $this->assertSame((int) $existing->id, (int) $caseRecord->entity_id);
     }
 }

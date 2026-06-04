@@ -202,6 +202,7 @@ class AdminCollectionsPageTest extends TestCase
                 ->get(route($routeName, ['search' => 'demo']))
                 ->assertOk()
                 ->assertSee('data-collection-sidebar', false)
+                ->assertSee('sticky top-24 self-start', false)
                 ->assertSee('Sidebar Collection Test')
                 ->assertSee('search=demo', false)
                 ->assertSee('collection_id='.(int) $collection->id, false);

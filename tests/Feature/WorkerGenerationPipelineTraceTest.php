@@ -6,6 +6,7 @@ use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\Author;
 use App\Models\Category;
+use App\Models\CollectionRecord;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
@@ -107,6 +108,54 @@ class WorkerGenerationPipelineTraceTest extends TestCase
         $this->assertSame([33], $article->used_knowledge_base_ids);
         $this->assertSame(['Product Model:SJ4060'], $article->used_tags);
         $this->assertSame('hybrid_vector_lexical', $article->context_snapshot['strategy']);
+    }
+
+    public function test_persisted_article_uses_task_collection_when_trace_has_no_collection(): void
+    {
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Task Article Collection',
+            'slug' => 'task-article-collection',
+            'status' => 'active',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Task Collection Persist Task',
+            'collection_id' => (int) $collection->id,
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'article_limit' => 10,
+            'draft_limit' => 10,
+            'publish_interval' => 3600,
+        ]);
+        $library = TitleLibrary::query()->create(['name' => 'Task Collection Library']);
+        $title = Title::query()->create([
+            'library_id' => (int) $library->id,
+            'title' => 'Task Collection Article',
+            'keyword' => 'collection keyword',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        $author = Author::query()->create(['name' => 'Task Collection Author']);
+        $category = Category::query()->create(['name' => 'Task Collection Category', 'slug' => 'task-collection-category']);
+        $service = app(WorkerExecutionService::class);
+        $property = new ReflectionProperty($service, 'lastKnowledgeTrace');
+        $property->setAccessible(true);
+        $property->setValue($service, ['context_package' => ['strategy' => 'empty_trace']]);
+
+        $method = new ReflectionMethod($service, 'persistGeneratedDraft');
+        $method->setAccessible(true);
+        $articleId = $method->invoke($service, $task, [
+            'titleRow' => $title,
+            'author' => $author,
+            'category' => $category,
+            'keyword' => 'collection keyword',
+            'content' => 'Task collection generated article.',
+            'excerpt' => 'Task collection generated article.',
+            'workflow' => ['status' => 'draft', 'review_status' => 'approved', 'published_at' => null],
+            'selectedImages' => [],
+        ]);
+
+        $article = Article::query()->findOrFail((int) $articleId);
+        $this->assertSame((int) $collection->id, (int) $article->selected_collection_id);
     }
 
     /**

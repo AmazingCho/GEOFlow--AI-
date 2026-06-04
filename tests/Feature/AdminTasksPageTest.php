@@ -19,11 +19,15 @@ use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\Task;
+use App\Models\TaskRun;
 use App\Models\TitleLibrary;
+use App\Jobs\ProcessGeoFlowTaskJob;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
@@ -86,6 +90,124 @@ class AdminTasksPageTest extends TestCase
             ->assertSee(__('admin.task_create.page_heading'))
             ->assertSee(__('admin.task_create.option.no_image_library'))
             ->assertSee(__('admin.task_create.option.no_image_count'));
+    }
+
+    public function test_active_task_is_enqueued_immediately_after_creation_when_async_queue_is_enabled(): void
+    {
+        Config::set('queue.default', 'redis');
+        Queue::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'tasks_enqueue_on_create',
+            'password' => 'secret-123',
+            'email' => 'tasks-enqueue-on-create@example.com',
+            'display_name' => 'Tasks Enqueue Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Immediate Queue Collection',
+            'slug' => 'immediate-queue-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Immediate Queue Titles']);
+        $prompt = Prompt::query()->create([
+            'name' => 'Immediate Queue Prompt',
+            'type' => 'content',
+            'content' => 'Write an article.',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Immediate Queue Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Immediate Queue Category',
+            'slug' => 'immediate-queue-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '创建后立即入队任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'active',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $task = Task::query()->where('name', '创建后立即入队任务')->firstOrFail();
+        $run = TaskRun::query()->where('task_id', (int) $task->id)->firstOrFail();
+
+        $this->assertSame('pending', (string) $run->status);
+        $this->assertSame('task_created', (string) (($run->meta['payload']['source'] ?? '')));
+        Queue::assertPushed(ProcessGeoFlowTaskJob::class);
+    }
+
+    public function test_task_can_be_created_without_collection_when_unassigned_option_is_selected(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_without_collection',
+            'password' => 'secret-123',
+            'email' => 'tasks-without-collection@example.com',
+            'display_name' => 'Tasks Without Collection Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'No Collection Titles']);
+        $prompt = Prompt::query()->create([
+            'name' => 'No Collection Prompt',
+            'type' => 'content',
+            'content' => 'Write an article.',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'No Collection Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'No Collection Category',
+            'slug' => 'no-collection-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '未指定 Collection 任务',
+                'collection_id' => '',
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $this->assertDatabaseHas('tasks', [
+            'name' => '未指定 Collection 任务',
+            'collection_id' => null,
+        ]);
     }
 
     public function test_task_create_and_edit_forms_use_full_admin_content_width(): void

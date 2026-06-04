@@ -112,7 +112,7 @@ class TaskLifecycleService
             $taskId = (int) $task->id;
             $this->queueService->initializeTaskSchedule($taskId);
 
-            if ($normalized['status'] === 'active') {
+            if ($normalized['status'] === 'active' && Schema::hasTable('task_schedules')) {
                 TaskSchedule::query()->create([
                     'task_id' => $taskId,
                     'next_run_time' => now()->addMinute(),
@@ -126,6 +126,15 @@ class TaskLifecycleService
             }
 
             DB::commit();
+            if ($normalized['status'] === 'active' && $this->shouldEnqueueImmediatelyOnCreate()) {
+                $jobId = $this->queueService->enqueueTaskJob($taskId, 'generate_article', ['source' => 'task_created']);
+                if ($jobId !== null) {
+                    Task::query()->whereKey($taskId)->update([
+                        'next_run_at' => now()->addSeconds(60),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
             $this->taskRealtimeBroadcastService->broadcastOverview();
 
             return $this->getTask($taskId);
@@ -135,6 +144,14 @@ class TaskLifecycleService
             }
             throw $e;
         }
+    }
+
+    /**
+     * 仅在真正异步队列下创建后立即投递，避免 sync 队列阻塞后台表单请求。
+     */
+    private function shouldEnqueueImmediatelyOnCreate(): bool
+    {
+        return (string) config('queue.default') !== 'sync';
     }
 
     /**
@@ -449,7 +466,7 @@ class TaskLifecycleService
         }
 
         $referenceMap = [
-            'collection_id' => ['model' => CollectionRecord::class, 'message' => '请选择 Collection', 'required' => true],
+            'collection_id' => ['model' => CollectionRecord::class, 'message' => '请选择 Collection', 'required' => false],
             'title_library_id' => ['model' => TitleLibrary::class, 'message' => '选择的标题库不存在', 'required' => ! $isUpdate],
             'image_library_id' => ['model' => ImageLibrary::class, 'message' => '选择的图片库不存在', 'required' => false],
             'prompt_id' => ['model' => Prompt::class, 'message' => '选择的内容提示词不存在', 'required' => ! $isUpdate, 'prompt_content' => true],

@@ -3,7 +3,7 @@
     $selectedCollectionId = (string) old($collectionSelectName, (string) ($selectedId ?? ''));
     $collectionSelectLabel = $label ?? __('admin.collections.field_collection');
     $collectionSelectHelp = $help ?? __('admin.collections.field_collection_help');
-    $collectionSelectClass = $class ?? 'block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:ring-slate-500';
+    $collectionSelectClass = $class ?? 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:ring-slate-500';
     $collectionRequired = (bool) ($required ?? false);
     $collectionEmptyLabel = (string) ($emptyLabel ?? __('admin.collections.option_no_collection'));
 @endphp

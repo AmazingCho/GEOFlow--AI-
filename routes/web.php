@@ -124,6 +124,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{articleId}/restore', [ArticleController::class, 'restore'])->name('restore')->whereNumber('articleId');
             Route::post('{articleId}/force-delete', [ArticleController::class, 'forceDelete'])->name('force-delete')->whereNumber('articleId');
             Route::post('{articleId}/publish', [ArticleController::class, 'publish'])->name('publish')->whereNumber('articleId');
+            Route::post('{articleId}/internal-links/refresh', [ArticleController::class, 'refreshInternalLinks'])->name('internal-links.refresh')->whereNumber('articleId');
+            Route::post('{articleId}/internal-links/apply', [ArticleController::class, 'applyInternalLinks'])->name('internal-links.apply')->whereNumber('articleId');
             Route::get('{articleId}/edit', [ArticleController::class, 'edit'])->name('edit');
             Route::put('{articleId}', [ArticleController::class, 'update'])->name('update');
         });
@@ -170,6 +172,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{libraryId}/keywords', [KeywordLibraryController::class, 'storeKeyword'])->name('keywords.store');
             Route::post('{libraryId}/keywords/{keywordId}/tags', [KeywordLibraryController::class, 'updateKeywordTags'])->name('keywords.tags')->whereNumber('keywordId');
             Route::post('{libraryId}/keywords/delete', [KeywordLibraryController::class, 'destroyKeywords'])->name('keywords.delete');
+            Route::post('{libraryId}/keywords/organize', [KeywordLibraryController::class, 'organizeKeywords'])->name('keywords.organize');
             Route::post('{libraryId}/import', [KeywordLibraryController::class, 'importKeywords'])->name('import');
             Route::put('{libraryId}/detail', [KeywordLibraryController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{libraryId}', [KeywordLibraryController::class, 'update'])->name('update');
@@ -186,6 +189,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{libraryId}/titles', [TitleLibraryController::class, 'storeTitle'])->name('titles.store');
             Route::put('{libraryId}/titles/{titleId}', [TitleLibraryController::class, 'updateTitle'])->name('titles.update')->whereNumber('titleId');
             Route::post('{libraryId}/titles/delete', [TitleLibraryController::class, 'destroyTitles'])->name('titles.delete');
+            Route::post('{libraryId}/titles/organize', [TitleLibraryController::class, 'organizeTitles'])->name('titles.organize');
             Route::post('{libraryId}/import', [TitleLibraryController::class, 'importTitles'])->name('import');
             Route::get('{libraryId}/ai-generate', [TitleLibraryController::class, 'aiGenerate'])->name('ai-generate');
             Route::post('{libraryId}/ai-generate', [TitleLibraryController::class, 'generateWithAi'])->name('ai-generate.submit');
@@ -205,6 +209,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{libraryId}/images/{imageId}/tags', [ImageLibraryController::class, 'updateImageTags'])->name('images.tags')->whereNumber('imageId');
             Route::post('{libraryId}/images/{imageId}/entities', [ImageLibraryController::class, 'updateImageEntities'])->name('images.entities')->whereNumber('imageId');
             Route::post('{libraryId}/images/delete', [ImageLibraryController::class, 'destroyImages'])->name('images.delete');
+            Route::post('{libraryId}/images/organize', [ImageLibraryController::class, 'organizeImages'])->name('images.organize');
             Route::put('{libraryId}/detail', [ImageLibraryController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{libraryId}', [ImageLibraryController::class, 'update'])->name('update');
             Route::post('{libraryId}/delete', [ImageLibraryController::class, 'destroy'])->name('delete');
@@ -253,6 +258,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         Route::get('materials', [MaterialsController::class, 'index'])->name('materials.index');
         Route::get('material-tags', [TagController::class, 'index'])->name('material-tags.index');
         Route::get('material-tags/search', [TagController::class, 'search'])->name('material-tags.search');
+        Route::get('material-tags/controlled-groups', [TagController::class, 'controlledGroups'])->name('material-tags.controlled-groups.index');
         Route::post('material-tags/controlled-groups', [TagController::class, 'storeControlledGroup'])->name('material-tags.controlled-groups.store');
         Route::put('material-tags/controlled-groups/{groupId}', [TagController::class, 'updateControlledGroup'])->name('material-tags.controlled-groups.update')->whereNumber('groupId');
         Route::post('material-tags/controlled-groups/{groupId}/delete', [TagController::class, 'deleteControlledGroup'])->name('material-tags.controlled-groups.delete')->whereNumber('groupId');

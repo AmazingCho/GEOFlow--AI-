@@ -18,6 +18,7 @@ use App\Models\Task;
 use App\Models\Title;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\GeoFlow\EntityTypes;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use Illuminate\Support\Facades\DB;
@@ -263,7 +264,7 @@ class WorkerExecutionService
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
-                ->first(['id', 'status', 'schedule_enabled', 'created_count', 'draft_limit', 'article_limit', 'publish_interval', 'next_publish_at']);
+                ->first(['id', 'collection_id', 'status', 'schedule_enabled', 'created_count', 'draft_limit', 'article_limit', 'publish_interval', 'next_publish_at']);
             if (! $freshTask || ($freshTask->status ?? 'paused') !== 'active' || (int) ($freshTask->schedule_enabled ?? 1) !== 1) {
                 throw new RuntimeException('任务未激活');
             }
@@ -280,7 +281,7 @@ class WorkerExecutionService
                 'category_id' => $category?->id,
                 'author_id' => $author?->id,
                 'task_id' => (int) $task->id,
-                'selected_collection_id' => $contextMetadata['selected_collection_id'],
+                'selected_collection_id' => $contextMetadata['selected_collection_id'] ?? ((int) ($freshTask->collection_id ?? 0) ?: null),
                 'selected_entity_ids' => $contextMetadata['selected_entity_ids'],
                 'selected_case_ids' => $contextMetadata['selected_case_ids'],
                 'used_knowledge_base_ids' => $contextMetadata['used_knowledge_base_ids'],
@@ -915,7 +916,7 @@ class WorkerExecutionService
 
     private function finalPromptInstruction(string $targetLanguage): string
     {
-        return match ($targetLanguage) {
+        $instruction = match ($targetLanguage) {
             'en' => 'The final article must be written entirely in English. Output only the final article body in Markdown. Do not repeat the prompt or output placeholders.',
             'es' => 'El artículo final debe estar escrito completamente en español. Devuelve solo el cuerpo final del artículo en Markdown. No repitas el prompt ni muestres marcadores de posición.',
             'pt' => 'O artigo final deve ser escrito inteiramente em português. Retorne apenas o corpo final do artigo em Markdown. Não repita o prompt nem mostre placeholders.',
@@ -925,6 +926,10 @@ class WorkerExecutionService
             'nl' => 'Het uiteindelijke artikel moet volledig in het Nederlands zijn geschreven. Geef alleen de definitieve artikeltekst in Markdown terug. Herhaal de prompt niet en toon geen placeholders.',
             default => '请直接输出最终中文文章正文（Markdown）。全文必须使用中文，不要重复提示词、不要输出占位符。',
         };
+
+        return $instruction."\n".($targetLanguage === 'zh'
+            ? '不要自行插入站内链接；草稿审核页会单独处理内链建议。'
+            : 'Do not insert internal links yourself; the draft review page handles internal link suggestions separately.');
     }
 
     private function isLikelyEnglishPrompt(string $prompt): bool
@@ -1031,7 +1036,7 @@ class WorkerExecutionService
             ->whereHas('tags', fn ($query) => $this->addExactTagFilterConditions($query, $tagFilters))
             ->orderBy('name')
             ->limit(12)
-            ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json']);
+            ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json', 'canonical_url', 'link_policy']);
 
         $cases = CaseRecord::query()
             ->with('entity:id,name')
@@ -1054,6 +1059,10 @@ class WorkerExecutionService
                     'id' => (int) $entity->id,
                     'name' => (string) $entity->name,
                     'type' => (string) ($entity->entity_type ?? ''),
+                    'role' => EntityTypes::roleDescription((string) ($entity->entity_type ?? '')),
+                    'linkable' => EntityTypes::isLinkable((string) ($entity->entity_type ?? ''))
+                        && (string) ($entity->link_policy ?? '') === EntityTypes::LINK_POLICY_SUGGEST
+                        && trim((string) ($entity->canonical_url ?? '')) !== '',
                 ])
                 ->values()
                 ->all(),
@@ -1078,6 +1087,7 @@ class WorkerExecutionService
                     $line .= '（类型：'.(string) $entity->entity_type.'）';
                 }
                 $lines[] = $line;
+                $lines[] = '  写作角色：'.EntityTypes::roleDescription((string) ($entity->entity_type ?? ''));
                 if ((string) ($entity->aliases ?? '') !== '') {
                     $lines[] = '  别名：'.$this->shortContextText($entity->aliases, 180);
                 }

@@ -8,6 +8,7 @@ use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
 use App\Models\Tag;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\EntityTypes;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use Illuminate\Support\Str;
 use Throwable;
@@ -145,6 +146,10 @@ class MaterialFormAnalysisService
     {
         $fallback = $this->fallback($text, $type, $context);
 
+        if ($type === 'entity') {
+            $payload['entity_type'] = EntityTypes::normalize((string) ($payload['entity_type'] ?? ''));
+        }
+
         if ($type === 'knowledge') {
             $payload = $this->normalizeKnowledgePayload($payload, $context);
         }
@@ -166,7 +171,7 @@ class MaterialFormAnalysisService
         if ($type === 'entity') {
             return [
                 'name' => Str::limit($firstLine !== '' ? $firstLine : $summary, 160, ''),
-                'entity_type' => 'AI识别实体',
+                'entity_type' => EntityTypes::GENERAL,
                 'aliases' => '',
                 'description' => $summary,
                 'attributes_json' => json_encode(['source' => 'manual_ai_analysis'], JSON_UNESCAPED_UNICODE),

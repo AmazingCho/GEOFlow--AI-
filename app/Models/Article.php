@@ -95,6 +95,11 @@ class Article extends Model
         return $this->hasMany(ArticleDistribution::class, 'article_id');
     }
 
+    public function internalLinks(): HasMany
+    {
+        return $this->hasMany(ArticleInternalLink::class, 'article_id');
+    }
+
     /**
      * @param  Builder<Article>  $query
      * @return Builder<Article>

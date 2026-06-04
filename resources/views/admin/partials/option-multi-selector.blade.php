@@ -5,6 +5,7 @@
             'id' => (int) ($option['id'] ?? 0),
             'label' => (string) ($option['label'] ?? $option['name'] ?? ''),
             'meta' => (string) ($option['meta'] ?? ''),
+            'thumbnail' => (string) ($option['thumbnail'] ?? ''),
             'collection_id' => (int) ($option['collection_id'] ?? 0),
         ])
         ->filter(static fn (array $option): bool => $option['id'] > 0 && $option['label'] !== '')
@@ -24,6 +25,12 @@
             'chip' => 'bg-purple-50 text-purple-700',
             'chipButton' => 'bg-purple-600',
             'option' => 'hover:bg-purple-50 hover:text-purple-700',
+        ],
+        'orange' => [
+            'focus' => 'focus-within:border-orange-500 focus-within:ring-orange-500',
+            'chip' => 'bg-orange-50 text-orange-700',
+            'chipButton' => 'bg-orange-600',
+            'option' => 'hover:bg-orange-50 hover:text-orange-700',
         ],
         'green' => [
             'focus' => 'focus-within:border-green-500 focus-within:ring-green-500',
@@ -47,7 +54,7 @@
 <div data-option-multi-selector data-field-name="{{ $fieldName }}" data-chip-class="{{ $toneClasses['chip'] }}" data-chip-button-class="{{ $toneClasses['chipButton'] }}" class="space-y-2">
     <div data-option-selected class="flex min-h-[1.75rem] w-full flex-wrap items-center gap-2">
         @foreach ($selectedOptions as $option)
-            <span data-option-chip data-option-id="{{ $option['id'] }}" class="group relative inline-flex items-center rounded-full {{ $toneClasses['chip'] }} px-2.5 py-1 text-xs font-medium">
+            <span data-option-chip data-option-id="{{ $option['id'] }}" data-option-label="{{ $option['label'] }}" class="group relative inline-flex items-center rounded-full {{ $toneClasses['chip'] }} px-2.5 py-1 text-xs font-medium">
                 {{ $option['label'] }}
                 <button type="button" data-option-remove data-option-id="{{ $option['id'] }}" class="absolute -right-1 -top-1 hidden rounded-full {{ $toneClasses['chipButton'] }} p-0.5 text-white group-hover:inline-flex" title="{{ $removeText }}">
                     <i data-lucide="x" class="h-3 w-3"></i>
@@ -65,11 +72,16 @@
             <div data-option-list>
                 @forelse ($options as $option)
                     <button type="button" data-option-item data-option-id="{{ $option['id'] }}" data-option-label="{{ $option['label'] }}" data-option-collection-id="{{ $option['collection_id'] }}" data-option-filter-hidden="0" data-option-search-label="{{ mb_strtolower($option['label'].' '.$option['meta'], 'UTF-8') }}" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-gray-700 {{ $toneClasses['option'] }}">
-                        <span class="min-w-0">
-                            <span class="block truncate font-medium">{{ $option['label'] }}</span>
-                            @if ($option['meta'] !== '')
-                                <span class="block truncate text-xs text-gray-400">{{ $option['meta'] }}</span>
+                        <span class="flex min-w-0 items-center gap-3">
+                            @if ($option['thumbnail'] !== '')
+                                <img src="{{ $option['thumbnail'] }}" alt="" class="h-10 w-10 shrink-0 rounded border border-gray-200 object-cover">
                             @endif
+                            <span class="min-w-0">
+                                <span class="block truncate font-medium">{{ $option['label'] }}</span>
+                                @if ($option['meta'] !== '')
+                                    <span class="block truncate text-xs text-gray-400">{{ $option['meta'] }}</span>
+                                @endif
+                            </span>
                         </span>
                         <i data-option-check class="{{ empty($selectedMap[$option['id']]) ? 'hidden' : '' }} h-4 w-4 shrink-0"></i>
                     </button>
@@ -123,6 +135,10 @@
                         const isSelected = selected.includes(item.getAttribute('data-option-id') || '');
                         item.querySelector('[data-option-check]')?.classList.toggle('hidden', !isSelected);
                     });
+                    selector.dispatchEvent(new CustomEvent('option-selector:updated', {
+                        bubbles: true,
+                        detail: {selectedIds: selected},
+                    }));
                     if (typeof lucide !== 'undefined') {
                         lucide.createIcons();
                     }
@@ -136,6 +152,7 @@
                     const chip = document.createElement('span');
                     chip.setAttribute('data-option-chip', '');
                     chip.setAttribute('data-option-id', id);
+                    chip.setAttribute('data-option-label', label);
                     chip.className = 'group relative inline-flex items-center rounded-full ' + (selector.getAttribute('data-chip-class') || 'bg-blue-50 text-blue-700') + ' px-2.5 py-1 text-xs font-medium';
                     chip.innerHTML = escapeHtml(label) + '<button type="button" data-option-remove data-option-id="' + escapeHtml(id) + '" class="absolute -right-1 -top-1 hidden rounded-full ' + (selector.getAttribute('data-chip-button-class') || 'bg-blue-600') + ' p-0.5 text-white group-hover:inline-flex" title="{{ $removeText }}"><i data-lucide="x" class="h-3 w-3"></i></button><input type="hidden" name="' + escapeHtml(fieldName) + '[]" value="' + escapeHtml(id) + '">';
                     selector.querySelector('[data-option-empty]')?.before(chip);

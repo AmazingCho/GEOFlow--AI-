@@ -78,6 +78,7 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertSame(1, (int) $trace['evidence_summary']['chunk_count']);
         $this->assertSame($trace['evidence_summary'], $trace['context_package']['evidence_summary']);
         $this->assertSame('制造业客户A', $trace['entities'][0]['name']);
+        $this->assertArrayHasKey('role', $trace['entities'][0]);
         $this->assertSame('制造业售后响应效率提升案例', $trace['cases'][0]['title']);
         $this->assertGreaterThan(0, $trace['context_length']);
     }

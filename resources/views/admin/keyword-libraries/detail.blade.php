@@ -151,13 +151,30 @@
                 </div>
             @else
                 <div id="batch-actions" class="hidden px-6 py-3 bg-gray-50 border-b border-gray-200">
-                    <form method="POST" action="{{ route('admin.keyword-libraries.keywords.delete', ['libraryId' => (int) $library->id]) }}" id="batch-form">
+                    <form method="POST" action="{{ route('admin.keyword-libraries.keywords.delete', ['libraryId' => (int) $library->id]) }}" id="batch-form" data-delete-action="{{ route('admin.keyword-libraries.keywords.delete', ['libraryId' => (int) $library->id]) }}" data-organize-action="{{ route('admin.keyword-libraries.keywords.organize', ['libraryId' => (int) $library->id]) }}">
                         @csrf
-                        <div class="flex items-center space-x-4">
+                        <div class="flex flex-wrap items-center gap-3">
                             <span class="text-sm text-gray-600" id="selected-keyword-count">{{ __('admin.keyword_detail.selected_count', ['count' => 0]) }}</span>
-                            <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
+                            <label class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700">
+                                <input type="checkbox" id="keyword-select-all" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                {{ __('admin.material_bulk.select_current_page') }}
+                            </label>
+                            <select name="bulk_action" id="keyword-bulk-action" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option value="delete">{{ __('admin.material_bulk.action_delete') }}</option>
+                                <option value="move">{{ __('admin.material_bulk.action_move') }}</option>
+                                <option value="copy">{{ __('admin.material_bulk.action_copy') }}</option>
+                            </select>
+                            <select name="target_library_id" id="keyword-target-library" class="hidden min-w-[220px] rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option value="">{{ __('admin.material_bulk.target_placeholder') }}</option>
+                                @foreach (($targetLibraryOptions ?? []) as $targetLibrary)
+                                    <option value="{{ (int) $targetLibrary['id'] }}">
+                                        {{ $targetLibrary['name'] }}@if ((string) ($targetLibrary['collection_name'] ?? '') !== '') / {{ $targetLibrary['collection_name'] }} @endif
+                                    </option>
+                                @endforeach
+                            </select>
+                            <button type="submit" id="keyword-bulk-submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
                                 <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>
-                                {{ __('admin.keyword_detail.delete_selected') }}
+                                <span>{{ __('admin.keyword_detail.delete_selected') }}</span>
                             </button>
                             <button type="button" onclick="toggleBatchActions()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
                                 {{ __('admin.button.cancel') }}
@@ -193,8 +210,10 @@
                                         'tagOptions' => $tagOptions ?? [],
                                         'selectedTagIds' => $keywordTagIds,
                                         'tone' => 'blue',
-                                        'autoSubmit' => true,
                                     ])
+                                    <button type="submit" class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                        {{ __('admin.button.save') }}
+                                    </button>
                                 </form>
                             </div>
                         @endforeach
@@ -370,6 +389,11 @@
                     checkbox.classList.add('hidden');
                     checkbox.checked = false;
                 });
+                const selectAll = document.getElementById('keyword-select-all');
+                if (selectAll) {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = false;
+                }
                 updateSelectedCount();
             }
         }
@@ -399,6 +423,51 @@
             });
 
             const batchForm = document.getElementById('batch-form');
+            const selectAll = document.getElementById('keyword-select-all');
+            const bulkAction = document.getElementById('keyword-bulk-action');
+            const targetLibrary = document.getElementById('keyword-target-library');
+            const bulkSubmit = document.getElementById('keyword-bulk-submit');
+            const bulkSubmitLabel = bulkSubmit?.querySelector('span');
+            const bulkSubmitIcon = bulkSubmit?.querySelector('i');
+            const updateBulkControls = () => {
+                const action = bulkAction?.value || 'delete';
+                const organizing = action === 'move' || action === 'copy';
+                targetLibrary?.classList.toggle('hidden', !organizing);
+                if (bulkSubmitLabel) {
+                    bulkSubmitLabel.textContent = action === 'move'
+                        ? @js(__('admin.material_bulk.submit_move'))
+                        : (action === 'copy' ? @js(__('admin.material_bulk.submit_copy')) : @js(__('admin.keyword_detail.delete_selected')));
+                }
+                if (bulkSubmit) {
+                    bulkSubmit.className = organizing
+                        ? 'inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-blue-600 hover:bg-blue-700'
+                        : 'inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700';
+                }
+                if (bulkSubmitIcon) {
+                    bulkSubmitIcon.setAttribute('data-lucide', action === 'copy' ? 'copy' : (action === 'move' ? 'folder-input' : 'trash-2'));
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }
+            };
+            bulkAction?.addEventListener('change', updateBulkControls);
+            updateBulkControls();
+            selectAll?.addEventListener('change', function () {
+                document.querySelectorAll('.keyword-checkbox').forEach((checkbox) => {
+                    checkbox.checked = this.checked;
+                });
+                updateSelectedCount();
+            });
+            document.querySelectorAll('.keyword-checkbox').forEach((checkbox) => {
+                checkbox.addEventListener('change', function () {
+                    const checkboxes = Array.from(document.querySelectorAll('.keyword-checkbox'));
+                    const selected = checkboxes.filter((item) => item.checked).length;
+                    if (selectAll) {
+                        selectAll.checked = selected > 0 && selected === checkboxes.length;
+                        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+                    }
+                });
+            });
             if (batchForm) {
                 batchForm.addEventListener('submit', function (event) {
                     const selected = document.querySelectorAll('.keyword-checkbox:checked').length;
@@ -408,7 +477,23 @@
                         return;
                     }
 
-                    const confirmed = confirm(@json(__('admin.keyword_detail.confirm_delete_selected', ['count' => '{count}'])).replace('{count}', String(selected)));
+                    const action = bulkAction?.value || 'delete';
+                    const organizing = action === 'move' || action === 'copy';
+                    if (organizing) {
+                        if (!targetLibrary?.value) {
+                            event.preventDefault();
+                            alert(@json(__('admin.material_bulk.error_target_required')));
+                            return;
+                        }
+                        this.action = this.dataset.organizeAction || this.action;
+                    } else {
+                        this.action = this.dataset.deleteAction || this.action;
+                    }
+
+                    const confirmTemplate = action === 'move'
+                        ? @json(__('admin.material_bulk.confirm_move', ['count' => '{count}']))
+                        : (action === 'copy' ? @json(__('admin.material_bulk.confirm_copy', ['count' => '{count}'])) : @json(__('admin.keyword_detail.confirm_delete_selected', ['count' => '{count}'])));
+                    const confirmed = confirm(confirmTemplate.replace('{count}', String(selected)));
                     if (!confirmed) {
                         event.preventDefault();
                     }

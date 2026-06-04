@@ -94,7 +94,15 @@
                 'collectionOptions' => $collectionOptions ?? [],
             ])
             <div class="min-w-0">
-        <form method="GET" action="{{ route('admin.knowledge-bases.index') }}" class="mb-6 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
+        <details class="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm" data-knowledge-filter-panel>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+                <div class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    <i data-lucide="sliders-horizontal" class="h-4 w-4 text-orange-600"></i>
+                    {{ __('admin.common.filter') }}
+                </div>
+                <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400"></i>
+            </summary>
+            <form method="GET" action="{{ route('admin.knowledge-bases.index') }}" class="border-t border-gray-100 px-5 py-4">
             <div class="grid grid-cols-1 gap-3 lg:grid-cols-4 lg:items-end">
                 <div class="flex-1">
                     <label for="knowledge-search-filter" class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.search_label') }}</label>
@@ -152,7 +160,8 @@
                     @endif
                 </div>
             </div>
-        </form>
+            </form>
+        </details>
 
         <div class="mb-4 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
             <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -175,12 +184,16 @@
             </div>
         </div>
 
-        <form id="knowledge-bulk-form" method="POST" action="{{ route('admin.knowledge-bases.bulk') }}" class="mb-4 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-none">
+        <details class="mb-4 rounded-lg border border-gray-200 bg-white shadow-none" data-knowledge-bulk-panel-shell>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+                <div class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <i data-lucide="list-checks" class="h-4 w-4 text-gray-400"></i>
+                    {{ __('admin.knowledge_bases.bulk.title') }}
+                </div>
+                <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400"></i>
+            </summary>
+        <form id="knowledge-bulk-form" method="POST" action="{{ route('admin.knowledge-bases.bulk') }}" class="border-t border-gray-100 px-5 py-4">
             @csrf
-            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <i data-lucide="list-checks" class="h-4 w-4 text-gray-400"></i>
-                {{ __('admin.knowledge_bases.bulk.title') }}
-            </div>
             <div class="grid grid-cols-1 gap-4 lg:grid-cols-10 lg:items-start">
                 <div class="lg:col-span-3">
                     <label for="knowledge-bulk-action" class="block text-xs font-semibold text-gray-600 mb-1">{{ __('admin.knowledge_bases.bulk.action') }}</label>
@@ -253,6 +266,7 @@
                 </div>
             </div>
         </form>
+        </details>
 
         <div class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">

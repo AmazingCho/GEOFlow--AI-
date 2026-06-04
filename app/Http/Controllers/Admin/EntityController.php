@@ -9,6 +9,7 @@ use App\Services\GeoFlow\MaterialFormAnalysisService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
+use App\Support\GeoFlow\EntityTypes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,12 +79,15 @@ class EntityController extends Controller
             'isEdit' => false,
             'entityId' => 0,
             'entityForm' => $this->emptyEntityForm(),
+            'entityTypeOptions' => EntityTypes::options(),
+            'linkableEntityTypes' => EntityTypes::linkableValues(),
             'collectionOptions' => CollectionOptions::all(true),
             'tagOptions' => [],
             'selectedTagIds' => [],
             'materialOptions' => $this->entityMaterialLinkService->materialOptions(),
             'selectedMaterialIds' => [],
             'knowledgeRelationType' => 'supporting_reference',
+            'knowledgeRelationTypesById' => [],
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
         ]);
@@ -113,7 +117,8 @@ class EntityController extends Controller
         $this->entityMaterialLinkService->syncMaterialsForEntity(
             $entity,
             $this->selectedMaterialIds($payload),
-            $this->selectedKnowledgeRelationType($payload)
+            $this->selectedKnowledgeRelationType($payload),
+            $this->selectedKnowledgeRelationTypesById($payload)
         );
 
         return redirect()
@@ -125,6 +130,7 @@ class EntityController extends Controller
     {
         $entity = EntityRecord::query()->with('tags')->whereKey($entityId)->firstOrFail();
         $selectedTagIds = $this->tagService->selectedTagIdsFor($entity);
+        $currentEntityType = (string) ($entity->entity_type ?? '');
 
         return view('admin.entities.form', [
             'pageTitle' => __('admin.entities.page_title'),
@@ -140,12 +146,18 @@ class EntityController extends Controller
                 'description' => (string) ($entity->description ?? ''),
                 'attributes_json' => (string) ($entity->attributes_json ?? ''),
                 'source_url' => (string) ($entity->source_url ?? ''),
+                'canonical_url' => (string) ($entity->canonical_url ?? ''),
+                'link_anchor_text' => (string) ($entity->link_anchor_text ?? ''),
+                'link_policy' => (string) ($entity->link_policy ?? EntityTypes::defaultLinkPolicyFor($currentEntityType)),
             ],
+            'entityTypeOptions' => EntityTypes::options($currentEntityType),
+            'linkableEntityTypes' => EntityTypes::linkableValues(),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
             'selectedTagIds' => $selectedTagIds,
             'materialOptions' => $this->entityMaterialLinkService->materialOptions((int) ($entity->collection_id ?? 0) ?: null),
             'selectedMaterialIds' => $this->entityMaterialLinkService->selectedMaterialIdsForEntity($entity),
             'knowledgeRelationType' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypeForEntity($entity),
+            'knowledgeRelationTypesById' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypesForEntity($entity),
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'collectionOptions' => CollectionOptions::all(),
@@ -155,14 +167,15 @@ class EntityController extends Controller
     public function update(Request $request, int $entityId): RedirectResponse
     {
         $entity = EntityRecord::query()->whereKey($entityId)->firstOrFail();
-        $payload = $this->validateEntity($request);
+        $payload = $this->validateEntity($request, $entity);
 
         $entity->update($this->normalizeEntityPayload($payload));
         $this->tagService->syncExisting($entity, $this->selectedTagIds($payload));
         $this->entityMaterialLinkService->syncMaterialsForEntity(
             $entity,
             $this->selectedMaterialIds($payload),
-            $this->selectedKnowledgeRelationType($payload)
+            $this->selectedKnowledgeRelationType($payload),
+            $this->selectedKnowledgeRelationTypesById($payload)
         );
 
         return redirect()
@@ -182,16 +195,25 @@ class EntityController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateEntity(Request $request): array
+    private function validateEntity(Request $request, ?EntityRecord $entity = null): array
     {
+        $allowedEntityTypes = EntityTypes::values();
+        $currentEntityType = trim((string) ($entity?->entity_type ?? ''));
+        if ($currentEntityType !== '' && ! in_array($currentEntityType, $allowedEntityTypes, true)) {
+            $allowedEntityTypes[] = $currentEntityType;
+        }
+
         return $request->validate([
             'name' => ['required', 'string', 'max:160'],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
-            'entity_type' => ['nullable', 'string', 'max:80'],
+            'entity_type' => ['required', 'string', 'max:80', Rule::in($allowedEntityTypes)],
             'aliases' => ['nullable', 'string', 'max:2000'],
             'description' => ['nullable', 'string', 'max:10000'],
             'attributes_json' => ['nullable', 'string', 'max:10000'],
             'source_url' => ['nullable', 'string', 'max:500'],
+            'canonical_url' => ['nullable', 'string', 'max:500'],
+            'link_anchor_text' => ['nullable', 'string', 'max:160'],
+            'link_policy' => ['nullable', 'string', Rule::in([EntityTypes::LINK_POLICY_SUGGEST, EntityTypes::LINK_POLICY_DISABLED])],
             'tag_ids' => ['nullable', 'array'],
             'tag_ids.*' => [
                 'integer',
@@ -200,10 +222,10 @@ class EntityController extends Controller
             'knowledge_base_ids' => ['nullable', 'array'],
             'knowledge_base_ids.*' => ['integer', Rule::exists('knowledge_bases', 'id')],
             'knowledge_relation_type' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
+            'knowledge_relation_types' => ['nullable', 'array'],
+            'knowledge_relation_types.*' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
             'keyword_library_ids' => ['nullable', 'array'],
             'keyword_library_ids.*' => ['integer', Rule::exists('keyword_libraries', 'id')],
-            'title_library_ids' => ['nullable', 'array'],
-            'title_library_ids.*' => ['integer', Rule::exists('title_libraries', 'id')],
             'image_library_ids' => ['nullable', 'array'],
             'image_library_ids.*' => ['integer', Rule::exists('image_libraries', 'id')],
             'image_ids' => ['nullable', 'array'],
@@ -221,14 +243,24 @@ class EntityController extends Controller
     {
         $attributesJson = trim((string) ($payload['attributes_json'] ?? ''));
 
+        $entityType = trim((string) ($payload['entity_type'] ?? ''));
+        if (! EntityTypes::isControlled($entityType)) {
+            $entityType = EntityTypes::GENERAL;
+        }
+        $linkPolicy = EntityTypes::normalizeLinkPolicy((string) ($payload['link_policy'] ?? ''), $entityType);
+        $isLinkable = EntityTypes::isLinkable($entityType);
+
         return [
             'name' => trim((string) $payload['name']),
             'collection_id' => $this->normalizeCollectionId($payload),
-            'entity_type' => trim((string) ($payload['entity_type'] ?? '')),
+            'entity_type' => $entityType,
             'aliases' => trim((string) ($payload['aliases'] ?? '')),
             'description' => trim((string) ($payload['description'] ?? '')),
             'attributes_json' => $attributesJson === '' ? '{}' : $attributesJson,
             'source_url' => trim((string) ($payload['source_url'] ?? '')),
+            'canonical_url' => $isLinkable ? trim((string) ($payload['canonical_url'] ?? '')) : '',
+            'link_anchor_text' => $isLinkable ? trim((string) ($payload['link_anchor_text'] ?? '')) : '',
+            'link_policy' => $linkPolicy,
         ];
     }
 
@@ -274,18 +306,42 @@ class EntityController extends Controller
     }
 
     /**
-     * @return array{collection_id:string,name:string,entity_type:string,aliases:string,description:string,attributes_json:string,source_url:string}
+     * @param  array<string, mixed>  $payload
+     * @return array<int,string>
+     */
+    private function selectedKnowledgeRelationTypesById(array $payload): array
+    {
+        $relationTypes = $payload['knowledge_relation_types'] ?? [];
+        if (! is_array($relationTypes)) {
+            $relationTypes = [];
+        }
+
+        $result = [];
+        foreach (($this->selectedMaterialIds($payload)['knowledge_base_ids'] ?? []) as $knowledgeBaseId) {
+            $result[(int) $knowledgeBaseId] = $this->entityMaterialLinkService->normalizeKnowledgeRelationType(
+                (string) ($relationTypes[(string) $knowledgeBaseId] ?? $relationTypes[(int) $knowledgeBaseId] ?? $payload['knowledge_relation_type'] ?? '')
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{collection_id:string,name:string,entity_type:string,aliases:string,description:string,attributes_json:string,source_url:string,canonical_url:string,link_anchor_text:string,link_policy:string}
      */
     private function emptyEntityForm(): array
     {
         return [
             'collection_id' => '',
             'name' => '',
-            'entity_type' => '',
+            'entity_type' => EntityTypes::GENERAL,
             'aliases' => '',
             'description' => '',
             'attributes_json' => '{}',
             'source_url' => '',
+            'canonical_url' => '',
+            'link_anchor_text' => '',
+            'link_policy' => EntityTypes::LINK_POLICY_DISABLED,
         ];
     }
 

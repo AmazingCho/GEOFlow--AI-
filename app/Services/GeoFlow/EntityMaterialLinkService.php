@@ -29,7 +29,6 @@ class EntityMaterialLinkService
         return [
             'knowledge_base_ids' => KnowledgeBase::class,
             'keyword_library_ids' => KeywordLibrary::class,
-            'title_library_ids' => TitleLibrary::class,
             'image_library_ids' => ImageLibrary::class,
             'image_ids' => Image::class,
         ];
@@ -118,27 +117,38 @@ class EntityMaterialLinkService
 
     /**
      * @param  array<string,list<int>>  $materialIdsByKey
+     * @param  array<int,string>  $knowledgeRelationTypesById
      */
-    public function syncMaterialsForEntity(EntityRecord $entity, array $materialIdsByKey, string $knowledgeRelationType = 'supporting_reference'): void
+    public function syncMaterialsForEntity(
+        EntityRecord $entity,
+        array $materialIdsByKey,
+        string $knowledgeRelationType = 'supporting_reference',
+        array $knowledgeRelationTypesById = []
+    ): void
     {
         $entityId = (int) $entity->id;
         $classMap = $this->materialClassMap();
         $knowledgeRelationType = $this->normalizeKnowledgeRelationType($knowledgeRelationType);
 
-        DB::transaction(function () use ($entityId, $classMap, $materialIdsByKey, $knowledgeRelationType): void {
+        DB::transaction(function () use ($entityId, $classMap, $materialIdsByKey, $knowledgeRelationType, $knowledgeRelationTypesById): void {
             DB::table('entity_material_links')
                 ->where('entity_id', $entityId)
-                ->whereIn('linkable_type', array_values($classMap))
+                ->whereIn('linkable_type', array_merge(array_values($classMap), [TitleLibrary::class]))
                 ->delete();
 
             foreach ($classMap as $key => $className) {
                 $ids = $this->existingModelIds($className, $materialIdsByKey[$key] ?? []);
                 foreach ($ids as $id) {
+                    $linkRole = 'related';
+                    if ($className === KnowledgeBase::class) {
+                        $linkRole = $this->normalizeKnowledgeRelationType((string) ($knowledgeRelationTypesById[$id] ?? $knowledgeRelationType));
+                    }
+
                     DB::table('entity_material_links')->insertOrIgnore([
                         'entity_id' => $entityId,
                         'linkable_type' => $className,
                         'linkable_id' => $id,
-                        'link_role' => $className === KnowledgeBase::class ? $knowledgeRelationType : 'related',
+                        'link_role' => $linkRole,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -178,6 +188,22 @@ class EntityMaterialLinkService
     }
 
     /**
+     * @return array<int,string>
+     */
+    public function selectedKnowledgeRelationTypesForEntity(EntityRecord $entity): array
+    {
+        return DB::table('entity_material_links')
+            ->where('entity_id', (int) $entity->id)
+            ->where('linkable_type', KnowledgeBase::class)
+            ->whereIn('link_role', self::KNOWLEDGE_RELATION_TYPES)
+            ->pluck('link_role', 'linkable_id')
+            ->mapWithKeys(fn (mixed $role, mixed $id): array => [
+                (int) $id => $this->normalizeKnowledgeRelationType(is_string($role) ? $role : ''),
+            ])
+            ->all();
+    }
+
+    /**
      * @return array<string,list<array{id:int,label:string}>>
      */
     public function materialOptions(?int $collectionId = null): array
@@ -185,7 +211,6 @@ class EntityMaterialLinkService
         return [
             'knowledge_base_ids' => $this->libraryOptions(KnowledgeBase::query(), '知识库', $collectionId),
             'keyword_library_ids' => $this->libraryOptions(KeywordLibrary::query(), '关键词库', $collectionId),
-            'title_library_ids' => $this->libraryOptions(TitleLibrary::query(), '标题库', $collectionId),
             'image_library_ids' => $this->libraryOptions(ImageLibrary::query(), '图片库', $collectionId),
             'image_ids' => $this->imageOptions($collectionId),
         ];
@@ -302,6 +327,8 @@ class EntityMaterialLinkService
             return [
                 'id' => (int) $model->getKey(),
                 'label' => $typeLabel.' / '.(string) $model->getAttribute('name').($collectionName !== '' ? ' / '.$collectionName : ''),
+                'meta' => $collectionName !== '' ? 'Collection: '.$collectionName : '',
+                'collection_id' => (int) ($model->getAttribute('collection_id') ?? 0),
             ];
         })->all();
     }
@@ -313,7 +340,7 @@ class EntityMaterialLinkService
     {
         $query = Image::query()
             ->with('library.collection:id,name')
-            ->select(['id', 'library_id', 'original_name', 'filename', 'file_path'])
+            ->select(['id', 'library_id', 'original_name', 'filename', 'file_path', 'width', 'height', 'tags'])
             ->orderByDesc('id')
             ->limit(500);
 
@@ -326,10 +353,23 @@ class EntityMaterialLinkService
         return $query->get()->map(static function (Image $image): array {
             $name = trim((string) ($image->original_name ?? '')) ?: trim((string) ($image->filename ?? '')) ?: trim((string) ($image->file_path ?? ''));
             $libraryName = (string) ($image->library?->name ?? '');
+            $collectionName = (string) ($image->library?->collection?->name ?? '');
+            $dimensions = ((int) ($image->width ?? 0) > 0 && (int) ($image->height ?? 0) > 0)
+                ? (int) $image->width.'x'.(int) $image->height
+                : '';
+            $meta = implode(' / ', array_values(array_filter([
+                $libraryName !== '' ? '图库: '.$libraryName : '',
+                $collectionName !== '' ? 'Collection: '.$collectionName : '',
+                $dimensions,
+                trim((string) ($image->tags ?? '')),
+            ])));
 
             return [
                 'id' => (int) $image->id,
                 'label' => '图片 / '.$name.($libraryName !== '' ? ' / '.$libraryName : ''),
+                'meta' => $meta,
+                'thumbnail' => \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($image->file_path ?? '')),
+                'collection_id' => (int) ($image->library?->collection_id ?? 0),
             ];
         })->all();
     }

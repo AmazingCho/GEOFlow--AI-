@@ -2,6 +2,33 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-04
+
+### Entity Internal Link Suggestions and UI Guidelines
+
+- Added a controlled Entity type system:
+  - Entity types are now constrained to product model, product line, industry, application scenario, material/component, technology/process, brand/company, competitor, customer segment, and general business entity.
+  - Historical free-form types remain editable for backward compatibility.
+  - Internal-link fields are shown only for linkable Entity types such as product model, product line, application scenario, technology/process, and brand/company.
+- Added article draft internal link suggestions:
+  - Article edit pages now show an internal-link suggestion card after article content and before generation sources.
+  - Suggestions are based on linked Entities, Collection scope, and matched article text.
+  - Admins must explicitly select and apply suggestions before Markdown links are written to the article body.
+  - Added the `article_internal_links` table to record applied links for review and traceability.
+- Improved Entity usage in RAG and generation traces:
+  - Entity traces now include writing role information and whether the Entity can participate in draft link suggestions.
+  - Final generation prompts explicitly tell the AI not to insert internal links directly; draft review handles them separately.
+- Improved AI form analysis fallback:
+  - Entity AI analysis now normalizes unknown free-form types to the general business Entity type.
+- Added a local Codex UI guideline skill:
+  - Created `/Users/leo/.codex/skills/geoflow-ui-guidelines/SKILL.md`.
+  - Future GEOFlow admin UI, Blade, Tailwind, form, dropdown, selector, CSS, or JavaScript work should load this skill automatically.
+  - The skill prioritizes existing partial/component reuse, consistent input border/focus styles, and avoiding duplicated CSS/JS.
+- Verification:
+  - Applied migration `2026_06_03_090000_add_entity_link_fields_and_article_internal_links`.
+  - Relevant PHP syntax checks passed.
+  - Focused feature tests passed for Entity link fields, article internal-link application, and RAG Entity traces.
+
 ## 2026-05-28
 
 ### v2.0.2

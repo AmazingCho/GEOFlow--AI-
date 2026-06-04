@@ -173,6 +173,89 @@
 
                     @if($isEdit)
                         @php
+                            $linkSuggestions = collect($internalLinkSuggestions ?? [])->filter(fn ($item) => is_array($item))->values();
+                            $linkRecords = collect($internalLinkRecords ?? []);
+                        @endphp
+                        <div class="bg-white shadow rounded-lg">
+                            <div class="px-6 py-4 border-b border-gray-200">
+                                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <h3 class="text-lg font-medium text-gray-900">{{ __('admin.article_edit.internal_links.title') }}</h3>
+                                        <p class="mt-1 text-xs leading-5 text-gray-500">{{ __('admin.article_edit.internal_links.subtitle') }}</p>
+                                    </div>
+                                    <form method="POST" action="{{ route('admin.articles.internal-links.refresh', ['articleId' => (int) $articleId]) }}">
+                                        @csrf
+                                        <button type="submit" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                            <i data-lucide="refresh-cw" class="mr-1.5 h-3.5 w-3.5"></i>
+                                            {{ __('admin.article_edit.internal_links.refresh') }}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            <div class="px-6 py-4 text-sm">
+                                @if($linkSuggestions->isEmpty())
+                                    <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600">
+                                        {{ __('admin.article_edit.internal_links.empty') }}
+                                    </div>
+                                @else
+                                    <form method="POST" action="{{ route('admin.articles.internal-links.apply', ['articleId' => (int) $articleId]) }}" class="space-y-4">
+                                        @csrf
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <button type="button" data-internal-link-select-all class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                {{ __('admin.article_edit.internal_links.select_all') }}
+                                            </button>
+                                            <button type="button" data-internal-link-clear class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                {{ __('admin.article_edit.internal_links.clear') }}
+                                            </button>
+                                            <span class="text-xs text-gray-500">{{ __('admin.article_edit.internal_links.apply_hint') }}</span>
+                                        </div>
+                                        <div class="space-y-3">
+                                            @foreach($linkSuggestions as $suggestion)
+                                                <label class="block rounded-lg border border-gray-200 bg-gray-50 p-3 hover:border-blue-200 hover:bg-blue-50/50">
+                                                    <div class="flex items-start gap-3">
+                                                        <input type="checkbox" name="entity_ids[]" value="{{ (int) ($suggestion['entity_id'] ?? 0) }}" class="mt-1 rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" data-internal-link-checkbox>
+                                                        <div class="min-w-0 flex-1">
+                                                            <div class="flex flex-wrap items-center gap-2">
+                                                                <span class="font-semibold text-gray-900">{{ (string) ($suggestion['entity_name'] ?? '-') }}</span>
+                                                                <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{{ (string) ($suggestion['entity_type'] ?? '-') }}</span>
+                                                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{{ (string) ($suggestion['anchor_text'] ?? '-') }}</span>
+                                                            </div>
+                                                            <div class="mt-1 truncate text-xs text-blue-700">{{ (string) ($suggestion['canonical_url'] ?? '') }}</div>
+                                                            <div class="mt-2 text-xs leading-5 text-gray-600">{{ (string) ($suggestion['snippet'] ?? '') }}</div>
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                        <div class="flex justify-end">
+                                            <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                                                <i data-lucide="link" class="mr-2 h-4 w-4"></i>
+                                                {{ __('admin.article_edit.internal_links.apply_selected') }}
+                                            </button>
+                                        </div>
+                                    </form>
+                                @endif
+
+                                @if($linkRecords->isNotEmpty())
+                                    <div class="mt-5 border-t border-gray-100 pt-4">
+                                        <div class="text-xs font-medium text-gray-500">{{ __('admin.article_edit.internal_links.applied_title') }}</div>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            @foreach($linkRecords as $record)
+                                                <span class="inline-flex max-w-full items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                                                    <span class="truncate">{{ (string) ($record->anchor_text ?? '') }}</span>
+                                                    <span class="ml-1 text-gray-400">→</span>
+                                                    <span class="ml-1 max-w-[220px] truncate text-blue-700">{{ (string) ($record->canonical_url ?? '') }}</span>
+                                                </span>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+
+                    @if($isEdit)
+                        @php
                             $trace = is_array($generationTrace ?? null) ? $generationTrace : [];
                             $traceRun = is_array($trace['_run'] ?? null) ? $trace['_run'] : [];
                             $traceTask = is_array($trace['task'] ?? null) ? $trace['task'] : [];
@@ -532,5 +615,18 @@
                 toggleText.textContent = @json(__($i18nRoot.'.button.show_preview'));
             }
         }
+
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('[data-internal-link-select-all]')) {
+                document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
+                    checkbox.checked = true;
+                });
+            }
+            if (event.target.closest('[data-internal-link-clear]')) {
+                document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
+                    checkbox.checked = false;
+                });
+            }
+        });
     </script>
 @endpush

@@ -14,6 +14,7 @@ use App\Models\KnowledgeBase;
 use App\Models\EntityRecord;
 use App\Models\Prompt;
 use App\Models\Tag;
+use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
@@ -234,10 +235,18 @@ class AdminMaterialsPagesTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.material-tags.index'))
             ->assertOk()
+            ->assertSee(route('admin.material-tags.controlled-groups.index'), false)
+            ->assertSee(__('admin.material_tags.controlled_groups_manage'))
+            ->assertDontSee(__('admin.material_tags.controlled_group_add'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.material-tags.controlled-groups.index'))
+            ->assertOk()
             ->assertSee(__('admin.material_tags.controlled_groups_title'))
             ->assertSee('Topic')
             ->assertSee('Audience')
-            ->assertSee('Intent');
+            ->assertSee('Intent')
+            ->assertSee(__('admin.material_tags.controlled_group_add'));
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.material-tags.controlled-groups.store'), ['name' => 'Application'])
@@ -507,6 +516,8 @@ class AdminMaterialsPagesTest extends TestCase
                 'status' => 'active',
             ]))
             ->assertOk()
+            ->assertSee('data-knowledge-filter-panel', false)
+            ->assertSee('data-knowledge-bulk-panel-shell', false)
             ->assertSee('https://manual.example.com/sj4060')
             ->assertSee('SJ4060 / Product Model')
             ->assertSee(__('admin.knowledge_bases.bulk.title'));
@@ -689,6 +700,41 @@ class AdminMaterialsPagesTest extends TestCase
             'importance' => 5,
             'word_count' => 10,
         ]);
+        $faqKnowledgeBase = KnowledgeBase::query()->create([
+            'name' => 'SJ4060 FAQ',
+            'description' => '',
+            'content' => 'SJ4060 常见问题',
+            'character_count' => 10,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'faq',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'word_count' => 10,
+        ]);
+        $imageLibrary = ImageLibrary::query()->create([
+            'name' => 'SJ4060 图库',
+            'description' => '产品图片',
+            'image_count' => 1,
+            'used_task_count' => 0,
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $imageLibrary->id,
+            'filename' => 'sj4060.jpg',
+            'original_name' => 'SJ4060 product image',
+            'file_path' => 'storage/images/sj4060.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 800,
+            'height' => 600,
+            'tags' => 'Product Model:SJ4060',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        TitleLibrary::query()->create([
+            'name' => '不应关联的标题库',
+            'description' => '',
+            'title_count' => 0,
+        ]);
         $entity = EntityRecord::query()->create([
             'name' => 'SJ4060',
             'entity_type' => '产品型号',
@@ -716,8 +762,14 @@ class AdminMaterialsPagesTest extends TestCase
                 'entity_type' => '产品型号',
                 'description' => '升级型号',
                 'attributes_json' => '{}',
-                'knowledge_base_ids' => [(int) $knowledgeBase->id],
-                'knowledge_relation_type' => 'primary_subject',
+                'knowledge_base_ids' => [(int) $knowledgeBase->id, (int) $faqKnowledgeBase->id],
+                'keyword_library_ids' => [(int) $keywordLibrary->id],
+                'image_library_ids' => [(int) $imageLibrary->id],
+                'image_ids' => [(int) $image->id],
+                'knowledge_relation_types' => [
+                    (int) $knowledgeBase->id => 'primary_subject',
+                    (int) $faqKnowledgeBase->id => 'troubleshooting_reference',
+                ],
             ])
             ->assertRedirect(route('admin.entities.index'));
 
@@ -728,12 +780,101 @@ class AdminMaterialsPagesTest extends TestCase
             'linkable_id' => (int) $knowledgeBase->id,
             'link_role' => 'primary_subject',
         ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $linkedEntity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $faqKnowledgeBase->id,
+            'link_role' => 'troubleshooting_reference',
+        ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $linkedEntity->id,
+            'linkable_type' => ImageLibrary::class,
+            'linkable_id' => (int) $imageLibrary->id,
+            'link_role' => 'related',
+        ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $linkedEntity->id,
+            'linkable_type' => Image::class,
+            'linkable_id' => (int) $image->id,
+            'link_role' => 'related',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.entities.edit', ['entityId' => (int) $linkedEntity->id]))
+            ->assertOk()
+            ->assertSee('data-option-multi-selector', false)
+            ->assertSee('name="knowledge_base_ids[]"', false)
+            ->assertSee('name="image_ids[]"', false)
+            ->assertSee('storage/images/sj4060.jpg', false)
+            ->assertSee('name="knowledge_relation_types['.(int) $knowledgeBase->id.']"', false)
+            ->assertDontSee('name="title_library_ids[]"', false)
+            ->assertDontSee('不应关联的标题库');
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
             ->assertOk()
             ->assertSee('name="entity_relation_type"', false)
             ->assertSee('primary_subject', false);
+    }
+
+    public function test_entity_form_uses_controlled_types_and_link_fields(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'entity_type_admin',
+            'password' => 'secret-123',
+            'email' => 'entity-type-admin@example.com',
+            'display_name' => 'Entity Type Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.entities.create'))
+            ->assertOk()
+            ->assertSee('data-entity-type-select', false)
+            ->assertSee('name="canonical_url"', false)
+            ->assertSee('产品型号')
+            ->assertSee('业务实体');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.entities.store'), [
+                'name' => 'SJ4060',
+                'entity_type' => '产品型号',
+                'description' => '视觉点胶设备',
+                'attributes_json' => '{}',
+                'canonical_url' => 'https://example.com/sj4060',
+                'link_anchor_text' => 'SJ4060 点胶机',
+                'link_policy' => 'suggest',
+            ])
+            ->assertRedirect(route('admin.entities.index'));
+
+        $this->assertDatabaseHas('entities', [
+            'name' => 'SJ4060',
+            'entity_type' => '产品型号',
+            'canonical_url' => 'https://example.com/sj4060',
+            'link_anchor_text' => 'SJ4060 点胶机',
+            'link_policy' => 'suggest',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.entities.store'), [
+                'name' => '半导体行业',
+                'entity_type' => '行业领域',
+                'description' => '行业背景',
+                'attributes_json' => '{}',
+                'canonical_url' => 'https://example.com/industry',
+                'link_anchor_text' => '半导体行业',
+                'link_policy' => 'suggest',
+            ])
+            ->assertRedirect(route('admin.entities.index'));
+
+        $this->assertDatabaseHas('entities', [
+            'name' => '半导体行业',
+            'entity_type' => '行业领域',
+            'canonical_url' => '',
+            'link_anchor_text' => '',
+            'link_policy' => 'disabled',
+        ]);
     }
 
     public function test_admin_can_edit_library_level_tags_only_for_title_libraries(): void
@@ -763,6 +904,19 @@ class AdminMaterialsPagesTest extends TestCase
             'description' => '',
             'title_count' => 0,
         ]);
+        $entity = EntityRecord::query()->create([
+            'name' => '历史实体关联',
+            'entity_type' => '产品型号',
+            'description' => '',
+        ]);
+        DB::table('entity_material_links')->insert([
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => TitleLibrary::class,
+            'linkable_id' => (int) $titleLibrary->id,
+            'link_role' => 'related',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $imageLibrary = ImageLibrary::query()->create([
             'name' => '库级图库',
             'description' => '',
@@ -788,6 +942,11 @@ class AdminMaterialsPagesTest extends TestCase
             'tag_id' => (int) $tag->id,
             'taggable_type' => TitleLibrary::class,
             'taggable_id' => (int) $titleLibrary->id,
+        ]);
+        $this->assertDatabaseMissing('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => TitleLibrary::class,
+            'linkable_id' => (int) $titleLibrary->id,
         ]);
         $this->assertDatabaseMissing('taggables', [
             'tag_id' => (int) $tag->id,
@@ -816,7 +975,294 @@ class AdminMaterialsPagesTest extends TestCase
             ->get(route('admin.title-libraries.edit', ['libraryId' => (int) $titleLibrary->id]))
             ->assertOk()
             ->assertSee('data-tag-selector', false)
-            ->assertSee('Vision Doming Machine');
+            ->assertSee('Vision Doming Machine')
+            ->assertDontSee('name="entity_ids[]"', false)
+            ->assertDontSee('历史实体关联');
+    }
+
+    public function test_admin_can_bulk_delete_titles_from_title_detail_page(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'title_detail_bulk_delete_admin',
+            'password' => 'secret-123',
+            'email' => 'title-detail-bulk-delete-admin@example.com',
+            'display_name' => 'Title Detail Bulk Delete Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $library = TitleLibrary::query()->create([
+            'name' => '标题详情批量删除库',
+            'description' => '',
+            'title_count' => 2,
+        ]);
+        $firstTitle = Title::query()->create([
+            'library_id' => (int) $library->id,
+            'title' => 'Bulk removable title A',
+            'keyword' => '',
+            'is_ai_generated' => false,
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        $secondTitle = Title::query()->create([
+            'library_id' => (int) $library->id,
+            'title' => 'Bulk removable title B',
+            'keyword' => '',
+            'is_ai_generated' => false,
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.title-libraries.detail', ['libraryId' => (int) $library->id]))
+            ->assertOk()
+            ->assertSee('data-title-select-all', false)
+            ->assertSee('data-title-checkbox', false)
+            ->assertSee(__('admin.title_detail.bulk_delete'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.title-libraries.titles.delete', ['libraryId' => (int) $library->id]), [
+                'title_ids' => [(int) $firstTitle->id, (int) $secondTitle->id],
+            ])
+            ->assertRedirect(route('admin.title-libraries.detail', ['libraryId' => (int) $library->id]));
+
+        $this->assertDatabaseMissing('titles', ['id' => (int) $firstTitle->id]);
+        $this->assertDatabaseMissing('titles', ['id' => (int) $secondTitle->id]);
+        $this->assertDatabaseHas('title_libraries', ['id' => (int) $library->id, 'title_count' => 0]);
+    }
+
+    public function test_admin_can_copy_keywords_between_libraries_with_tags(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'keyword_bulk_organize_admin',
+            'password' => 'secret-123',
+            'email' => 'keyword-bulk-organize-admin@example.com',
+            'display_name' => 'Keyword Bulk Organize Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $source = KeywordLibrary::query()->create([
+            'name' => 'URL采集关键词库',
+            'description' => '',
+            'keyword_count' => 1,
+        ]);
+        $target = KeywordLibrary::query()->create([
+            'name' => '正式关键词库',
+            'description' => '',
+            'keyword_count' => 0,
+        ]);
+        $tag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Product Model',
+            'name' => 'SJ4060',
+            'slug' => 'material-product-model-sj4060',
+            'color' => '',
+        ]);
+        $keyword = Keyword::query()->create([
+            'library_id' => (int) $source->id,
+            'keyword' => 'SJ4060 dispensing machine',
+            'used_count' => 2,
+            'usage_count' => 3,
+        ]);
+        $keyword->tags()->attach((int) $tag->id);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.keyword-libraries.detail', ['libraryId' => (int) $source->id]))
+            ->assertOk()
+            ->assertSee(route('admin.keyword-libraries.keywords.organize', ['libraryId' => (int) $source->id]), false)
+            ->assertSee(__('admin.material_bulk.action_move'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.keyword-libraries.keywords.organize', ['libraryId' => (int) $source->id]), [
+                'bulk_action' => 'copy',
+                'target_library_id' => (int) $target->id,
+                'keyword_ids' => [(int) $keyword->id],
+            ])
+            ->assertRedirect(route('admin.keyword-libraries.detail', ['libraryId' => (int) $source->id]));
+
+        $this->assertDatabaseHas('keywords', [
+            'library_id' => (int) $source->id,
+            'keyword' => 'SJ4060 dispensing machine',
+        ]);
+        $this->assertDatabaseHas('keywords', [
+            'library_id' => (int) $target->id,
+            'keyword' => 'SJ4060 dispensing machine',
+            'used_count' => 2,
+            'usage_count' => 3,
+        ]);
+        $copiedKeywordId = (int) Keyword::query()
+            ->where('library_id', (int) $target->id)
+            ->where('keyword', 'SJ4060 dispensing machine')
+            ->value('id');
+        $this->assertDatabaseHas('taggables', [
+            'tag_id' => (int) $tag->id,
+            'taggable_type' => Keyword::class,
+            'taggable_id' => $copiedKeywordId,
+        ]);
+        $this->assertDatabaseHas('keyword_libraries', ['id' => (int) $source->id, 'keyword_count' => 1]);
+        $this->assertDatabaseHas('keyword_libraries', ['id' => (int) $target->id, 'keyword_count' => 1]);
+    }
+
+    public function test_admin_can_copy_images_between_libraries_with_tags_and_entities(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'image_bulk_organize_admin',
+            'password' => 'secret-123',
+            'email' => 'image-bulk-organize-admin@example.com',
+            'display_name' => 'Image Bulk Organize Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Image Bulk Automation Equipment',
+            'slug' => 'image-bulk-automation-equipment',
+            'description' => '',
+            'status' => 'active',
+        ]);
+        $entity = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060',
+            'entity_type' => 'product_model',
+            'aliases' => '',
+            'description' => '',
+            'attributes_json' => '{}',
+            'source_url' => '',
+        ]);
+        $source = ImageLibrary::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'URL采集图库',
+            'description' => '',
+            'image_count' => 1,
+        ]);
+        $target = ImageLibrary::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => '正式图库',
+            'description' => '',
+            'image_count' => 0,
+        ]);
+        $tag = Tag::query()->create([
+            'type' => 'material',
+            'group_name' => 'Topic',
+            'name' => 'Product Image',
+            'slug' => 'material-topic-product-image',
+            'color' => '',
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $source->id,
+            'filename' => 'sj4060.jpg',
+            'original_name' => 'SJ4060 product image',
+            'file_name' => 'sj4060.jpg',
+            'file_path' => 'storage/images/sj4060.jpg',
+            'file_size' => 1024,
+            'mime_type' => 'image/jpeg',
+            'width' => 800,
+            'height' => 600,
+            'tags' => 'Topic:Product Image',
+            'used_count' => 4,
+            'usage_count' => 5,
+        ]);
+        $image->tags()->attach((int) $tag->id);
+        DB::table('entity_material_links')->insert([
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => Image::class,
+            'linkable_id' => (int) $image->id,
+            'link_role' => 'related',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.image-libraries.detail', ['libraryId' => (int) $source->id]))
+            ->assertOk()
+            ->assertSee(route('admin.image-libraries.images.organize', ['libraryId' => (int) $source->id]), false)
+            ->assertSee(__('admin.material_bulk.action_copy'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.image-libraries.images.organize', ['libraryId' => (int) $source->id]), [
+                'bulk_action' => 'copy',
+                'target_library_id' => (int) $target->id,
+                'image_ids' => [(int) $image->id],
+            ])
+            ->assertRedirect(route('admin.image-libraries.detail', ['libraryId' => (int) $source->id]));
+
+        $copiedImageId = (int) Image::query()
+            ->where('library_id', (int) $target->id)
+            ->where('file_path', 'storage/images/sj4060.jpg')
+            ->value('id');
+        $this->assertGreaterThan(0, $copiedImageId);
+        $this->assertDatabaseHas('images', [
+            'id' => $copiedImageId,
+            'original_name' => 'SJ4060 product image',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
+        $this->assertDatabaseHas('taggables', [
+            'tag_id' => (int) $tag->id,
+            'taggable_type' => Image::class,
+            'taggable_id' => $copiedImageId,
+        ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => Image::class,
+            'linkable_id' => $copiedImageId,
+        ]);
+        $this->assertDatabaseHas('image_libraries', ['id' => (int) $source->id, 'image_count' => 1]);
+        $this->assertDatabaseHas('image_libraries', ['id' => (int) $target->id, 'image_count' => 1]);
+    }
+
+    public function test_admin_can_move_titles_between_libraries(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'title_bulk_organize_admin',
+            'password' => 'secret-123',
+            'email' => 'title-bulk-organize-admin@example.com',
+            'display_name' => 'Title Bulk Organize Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $source = TitleLibrary::query()->create([
+            'name' => 'URL采集标题库',
+            'description' => '',
+            'title_count' => 1,
+        ]);
+        $target = TitleLibrary::query()->create([
+            'name' => '正式标题库',
+            'description' => '',
+            'title_count' => 0,
+        ]);
+        $title = Title::query()->create([
+            'library_id' => (int) $source->id,
+            'title' => 'Best SJ4060 dispensing machine guide',
+            'keyword' => 'SJ4060',
+            'is_ai_generated' => true,
+            'used_count' => 1,
+            'usage_count' => 2,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.title-libraries.detail', ['libraryId' => (int) $source->id]))
+            ->assertOk()
+            ->assertSee(route('admin.title-libraries.titles.organize', ['libraryId' => (int) $source->id]), false)
+            ->assertSee('data-title-bulk-action', false);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.title-libraries.titles.organize', ['libraryId' => (int) $source->id]), [
+                'bulk_action' => 'move',
+                'target_library_id' => (int) $target->id,
+                'title_ids' => [(int) $title->id],
+            ])
+            ->assertRedirect(route('admin.title-libraries.detail', ['libraryId' => (int) $source->id]));
+
+        $this->assertDatabaseMissing('titles', ['id' => (int) $title->id]);
+        $this->assertDatabaseHas('titles', [
+            'library_id' => (int) $target->id,
+            'title' => 'Best SJ4060 dispensing machine guide',
+            'keyword' => 'SJ4060',
+            'is_ai_generated' => true,
+            'used_count' => 1,
+            'usage_count' => 2,
+        ]);
+        $this->assertDatabaseHas('title_libraries', ['id' => (int) $source->id, 'title_count' => 0]);
+        $this->assertDatabaseHas('title_libraries', ['id' => (int) $target->id, 'title_count' => 1]);
     }
 
     public function test_knowledge_base_chunk_generation_is_queued(): void
@@ -1367,6 +1813,49 @@ class AdminMaterialsPagesTest extends TestCase
         $this->assertDatabaseCount('url_import_jobs', 0);
     }
 
+    public function test_url_import_preview_shows_all_generated_titles(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'url_import_preview_admin',
+            'password' => 'secret-123',
+            'email' => 'url-import-preview-admin@example.com',
+            'display_name' => 'Url Import Preview Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $titles = collect(range(1, 13))
+            ->map(static fn (int $index): string => '标题建议 '.$index)
+            ->all();
+        $job = UrlImportJob::query()->create([
+            'url' => 'https://example.test/report',
+            'normalized_url' => 'https://example.test/report',
+            'source_domain' => 'example.test',
+            'page_title' => '预览测试',
+            'status' => 'completed',
+            'current_step' => 'preview',
+            'progress_percent' => 100,
+            'options_json' => json_encode(['title_count' => 13], JSON_UNESCAPED_UNICODE),
+            'result_json' => json_encode([
+                'page' => ['title' => '预览测试'],
+                'analysis' => [
+                    'summary' => '预览测试摘要',
+                    'keywords' => ['测试关键词'],
+                    'titles' => $titles,
+                    'knowledge_markdown' => '# 预览测试',
+                ],
+            ], JSON_UNESCAPED_UNICODE),
+            'error_message' => '',
+            'created_by' => 'url_import_preview_admin',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.url-import.show', ['jobId' => (int) $job->id]))
+            ->assertOk()
+            ->assertSee('标题建议 13')
+            ->assertSee('(13)');
+    }
+
     public function test_admin_can_run_and_commit_url_import_job(): void
     {
         Http::fake([
@@ -1434,15 +1923,27 @@ class AdminMaterialsPagesTest extends TestCase
             'status' => 'active',
         ]);
         $this->createReadyUrlImportAiModel();
+        $collection = CollectionRecord::query()->create([
+            'name' => 'URL 采集 Collection',
+            'slug' => 'url-import-collection',
+            'description' => '',
+            'status' => 'active',
+            'sort_order' => 10,
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.url-import.store'), [
                 'url' => 'example.test/report',
+                'collection_id' => (int) $collection->id,
+                'title_count' => 20,
                 'outputs' => ['knowledge', 'keywords', 'titles'],
             ])
             ->assertRedirect();
 
         $job = UrlImportJob::query()->firstOrFail();
+        $options = json_decode((string) $job->options_json, true);
+        $this->assertSame((int) $collection->id, (int) ($options['collection_id'] ?? 0));
+        $this->assertSame(20, (int) ($options['title_count'] ?? 0));
 
         $this->actingAs($admin, 'admin')
             ->postJson(route('admin.url-import.run', ['jobId' => (int) $job->id]))
@@ -1468,9 +1969,9 @@ class AdminMaterialsPagesTest extends TestCase
             ->post(route('admin.url-import.commit', ['jobId' => (int) $job->id]))
             ->assertRedirect(route('admin.url-import.show', ['jobId' => (int) $job->id]));
 
-        $this->assertDatabaseHas('knowledge_bases', ['name' => 'GEO 内容报告 知识库']);
-        $this->assertDatabaseHas('keyword_libraries', ['name' => 'GEO 内容报告 关键词库']);
-        $this->assertDatabaseHas('title_libraries', ['name' => 'GEO 内容报告 标题库']);
+        $this->assertDatabaseHas('knowledge_bases', ['name' => 'GEO 内容报告 知识库', 'collection_id' => (int) $collection->id]);
+        $this->assertDatabaseHas('keyword_libraries', ['name' => 'GEO 内容报告 关键词库', 'collection_id' => (int) $collection->id]);
+        $this->assertDatabaseHas('title_libraries', ['name' => 'GEO 内容报告 标题库', 'collection_id' => (int) $collection->id]);
         $this->assertDatabaseMissing('image_libraries', ['name' => 'GEO 内容报告 图片库']);
         $this->assertDatabaseHas('url_import_jobs', [
             'id' => (int) $job->id,
@@ -1947,6 +2448,12 @@ class AdminMaterialsPagesTest extends TestCase
             'description' => 'desc',
             'keyword_count' => 0,
         ]);
+        Keyword::query()->create([
+            'library_id' => (int) $keywordLibrary->id,
+            'keyword' => 'SJ4060 keyword',
+            'used_count' => 0,
+            'usage_count' => 0,
+        ]);
         $titleLibrary = TitleLibrary::query()->create([
             'name' => '标题库A',
             'description' => 'desc',
@@ -1990,7 +2497,11 @@ class AdminMaterialsPagesTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.keyword-libraries.detail', ['libraryId' => (int) $keywordLibrary->id]))
             ->assertOk()
-            ->assertSee($keywordLibrary->name);
+            ->assertSee($keywordLibrary->name)
+            ->assertSee('id="keyword-select-all"', false)
+            ->assertSee(__('admin.material_bulk.select_current_page'))
+            ->assertDontSee('data-tag-selector-auto-submit="1"', false)
+            ->assertSee(__('admin.button.save'));
         $this->actingAs($admin, 'admin')
             ->get(route('admin.title-libraries.detail', ['libraryId' => (int) $titleLibrary->id]))
             ->assertOk()
@@ -1999,7 +2510,11 @@ class AdminMaterialsPagesTest extends TestCase
             ->get(route('admin.image-libraries.detail', ['libraryId' => (int) $imageLibrary->id]))
             ->assertOk()
             ->assertSee($imageLibrary->name)
-            ->assertSee('storage/uploads/images/demo.png');
+            ->assertSee('storage/uploads/images/demo.png')
+            ->assertSee('id="image-select-all"', false)
+            ->assertSee(__('admin.material_bulk.select_current_page'))
+            ->assertDontSee('data-tag-selector-auto-submit="1"', false)
+            ->assertSee(__('admin.button.save'));
         $this->actingAs($admin, 'admin')
             ->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
             ->assertOk()

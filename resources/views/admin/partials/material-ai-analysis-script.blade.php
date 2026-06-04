@@ -20,6 +20,14 @@
                         field.dispatchEvent(new Event('change', {bubbles: true}));
                         return;
                     }
+                    if (field.tagName === 'SELECT') {
+                        const stringValue = String(typeof value === 'object' ? '' : value);
+                        const hasOption = Array.from(field.options).some((option) => option.value === stringValue);
+                        field.value = hasOption ? stringValue : (field.querySelector('option[value="业务实体"]') ? '业务实体' : field.value);
+                        field.dispatchEvent(new Event('input', {bubbles: true}));
+                        field.dispatchEvent(new Event('change', {bubbles: true}));
+                        return;
+                    }
                     field.value = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
                     field.dispatchEvent(new Event('input', {bubbles: true}));
                     field.dispatchEvent(new Event('change', {bubbles: true}));

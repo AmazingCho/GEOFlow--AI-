@@ -1,11 +1,29 @@
 @php
     $materialGroups = [
-        'knowledge_base_ids' => ['label' => __('admin.entities.link_group_knowledge'), 'tone' => 'orange'],
-        'keyword_library_ids' => ['label' => __('admin.entities.link_group_keywords'), 'tone' => 'blue'],
-        'title_library_ids' => ['label' => __('admin.entities.link_group_titles'), 'tone' => 'green'],
-        'image_library_ids' => ['label' => __('admin.entities.link_group_image_libraries'), 'tone' => 'purple'],
-        'image_ids' => ['label' => __('admin.entities.link_group_images'), 'tone' => 'purple'],
+        'knowledge_base_ids' => [
+            'label' => __('admin.entities.link_group_knowledge'),
+            'tone' => 'orange',
+            'placeholder' => __('admin.entities.material_selector_search_knowledge'),
+        ],
+        'keyword_library_ids' => [
+            'label' => __('admin.entities.link_group_keywords'),
+            'tone' => 'blue',
+            'placeholder' => __('admin.entities.material_selector_search_keywords'),
+        ],
+        'image_library_ids' => [
+            'label' => __('admin.entities.link_group_image_libraries'),
+            'tone' => 'purple',
+            'placeholder' => __('admin.entities.material_selector_search_image_libraries'),
+        ],
+        'image_ids' => [
+            'label' => __('admin.entities.link_group_images'),
+            'tone' => 'purple',
+            'placeholder' => __('admin.entities.material_selector_search_images'),
+        ],
     ];
+    $knowledgeRelationTypesById = collect(old('knowledge_relation_types', $knowledgeRelationTypesById ?? []))
+        ->mapWithKeys(static fn ($role, $id) => [(int) $id => (string) $role])
+        ->all();
 @endphp
 
 <div class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
@@ -21,35 +39,105 @@
                     ->filter(static fn (int $id): bool => $id > 0)
                     ->values()
                     ->all();
-                $focusClass = match ($group['tone']) {
-                    'purple' => 'focus:border-purple-500 focus:ring-purple-500',
-                    'green' => 'focus:border-green-500 focus:ring-green-500',
-                    'orange' => 'focus:border-orange-500 focus:ring-orange-500',
-                    default => 'focus:border-blue-500 focus:ring-blue-500',
-                };
+                $selectedOptions = collect($materialOptions[$fieldName] ?? [])
+                    ->filter(static fn (array $option): bool => in_array((int) ($option['id'] ?? 0), $selectedIds, true))
+                    ->values();
             @endphp
-            <div>
+            <div @if ($fieldName === 'knowledge_base_ids') data-entity-knowledge-link-block @endif>
                 <label class="mb-2 block text-sm font-medium text-gray-700">{{ $group['label'] }}</label>
                 @if ($fieldName === 'knowledge_base_ids')
-                    <div class="mb-3">
-                        <label class="mb-1 block text-xs font-medium text-gray-500">{{ __('admin.entities.field_knowledge_relation_type') }}</label>
-                        <select name="knowledge_relation_type" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
-                            @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
-                                <option value="{{ $relationTypeOption['value'] }}" @selected(old('knowledge_relation_type', (string) ($knowledgeRelationType ?? 'supporting_reference')) === $relationTypeOption['value'])>
-                                    {{ $relationTypeOption['label'] }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <input type="hidden" name="knowledge_relation_type" value="{{ old('knowledge_relation_type', (string) ($knowledgeRelationType ?? 'supporting_reference')) }}">
                 @endif
-                <select name="{{ $fieldName }}[]" multiple size="{{ min(5, max(3, count($materialOptions[$fieldName] ?? []))) }}" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm {{ $focusClass }}">
-                    @foreach ($materialOptions[$fieldName] ?? [] as $option)
-                        <option value="{{ (int) $option['id'] }}" @selected(in_array((int) $option['id'], $selectedIds, true))>
-                            {{ $option['label'] }}
-                        </option>
-                    @endforeach
-                </select>
+                @include('admin.partials.option-multi-selector', [
+                    'name' => $fieldName,
+                    'options' => $materialOptions[$fieldName] ?? [],
+                    'selectedIds' => $selectedIds,
+                    'tone' => $group['tone'],
+                    'placeholder' => $group['placeholder'],
+                    'emptyText' => __('admin.entities.material_selector_empty'),
+                    'noneSelectedText' => __('admin.entities.material_selector_none_selected'),
+                    'removeText' => __('admin.entities.material_selector_remove'),
+                ])
+                @if ($fieldName === 'knowledge_base_ids')
+                    <div class="mt-3 space-y-2" data-entity-knowledge-relations>
+                        @foreach ($selectedOptions as $selectedOption)
+                            @php
+                                $selectedKnowledgeId = (int) ($selectedOption['id'] ?? 0);
+                                $selectedRole = $knowledgeRelationTypesById[$selectedKnowledgeId] ?? old('knowledge_relation_type', (string) ($knowledgeRelationType ?? 'supporting_reference'));
+                            @endphp
+                            @if ($selectedKnowledgeId > 0)
+                                <div class="flex flex-col gap-2 rounded-md border border-orange-100 bg-orange-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" data-entity-knowledge-relation-row data-id="{{ (int) $selectedKnowledgeId }}">
+                                    <span class="text-sm font-medium text-orange-900">{{ $selectedOption['label'] }}</span>
+                                    <select name="knowledge_relation_types[{{ (int) $selectedKnowledgeId }}]" class="block rounded-md border-orange-200 px-3 py-1.5 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                                        @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
+                                            <option value="{{ $relationTypeOption['value'] }}" @selected($selectedRole === $relationTypeOption['value'])>{{ $relationTypeOption['label'] }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+                    <template data-entity-knowledge-relation-template>
+                        <div class="flex flex-col gap-2 rounded-md border border-orange-100 bg-orange-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" data-entity-knowledge-relation-row>
+                            <span class="text-sm font-medium text-orange-900" data-entity-knowledge-relation-label></span>
+                            <select class="block rounded-md border-orange-200 px-3 py-1.5 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500" data-entity-knowledge-relation-select>
+                                @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
+                                    <option value="{{ $relationTypeOption['value'] }}" @selected((string) ($knowledgeRelationType ?? 'supporting_reference') === $relationTypeOption['value'])>{{ $relationTypeOption['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </template>
+                    <p class="mt-2 text-xs text-orange-700">{{ __('admin.entities.knowledge_relation_per_item_help') }}</p>
+                @endif
             </div>
         @endforeach
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-entity-knowledge-link-block]').forEach((block) => {
+        const selector = block.querySelector('[data-option-multi-selector]');
+        const container = block.querySelector('[data-entity-knowledge-relations]');
+        const template = block.querySelector('[data-entity-knowledge-relation-template]');
+        if (!container || !template) {
+            return;
+        }
+
+        const syncRows = () => {
+            const selected = Array.from(selector?.querySelectorAll('[data-option-chip]') || []).map((chip) => ({
+                id: chip.dataset.optionId || '',
+                label: chip.dataset.optionLabel || chip.textContent.trim(),
+            }));
+            const selectedIds = new Set(selected.map((item) => item.id));
+
+            container.querySelectorAll('[data-entity-knowledge-relation-row]').forEach((row) => {
+                if (!selectedIds.has(row.dataset.id || '')) {
+                    row.remove();
+                }
+            });
+
+            selected.forEach((item) => {
+                let row = container.querySelector(`[data-entity-knowledge-relation-row][data-id="${CSS.escape(item.id)}"]`);
+                if (!row) {
+                    row = template.content.firstElementChild.cloneNode(true);
+                    row.dataset.id = item.id;
+                    const label = row.querySelector('[data-entity-knowledge-relation-label]');
+                    const relationSelect = row.querySelector('[data-entity-knowledge-relation-select]');
+                    if (label) {
+                        label.textContent = item.label;
+                    }
+                    if (relationSelect) {
+                        relationSelect.name = `knowledge_relation_types[${item.id}]`;
+                        relationSelect.removeAttribute('data-entity-knowledge-relation-select');
+                    }
+                    container.appendChild(row);
+                }
+            });
+        };
+
+        block.addEventListener('option-selector:updated', syncRows);
+        syncRows();
+    });
+});
+</script>

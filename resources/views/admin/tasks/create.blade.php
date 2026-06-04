@@ -142,9 +142,9 @@
                                     'collectionOptions' => $formOptions['collections'] ?? [],
                                     'selectedId' => old('collection_id', (string) ($taskForm['collection_id'] ?? '')),
                                     'label' => $t('task_create.field.collection'),
-                                    'help' => $t('task_create.help.collection_required'),
-                                    'required' => true,
-                                    'emptyLabel' => $t('task_create.field.collection'),
+                                    'help' => $t('task_create.help.collection'),
+                                    'required' => false,
+                                    'emptyLabel' => __('admin.collections.option_no_collection'),
                                     'class' => $fieldClass,
                                 ])
                                 <label class="mt-3 flex items-start gap-2 text-sm text-gray-600">

@@ -76,6 +76,7 @@ class KeywordLibraryController extends Controller
             'keywords' => $keywords,
             'usageTotal' => $usageTotal,
             'collectionOptions' => CollectionOptions::all(),
+            'targetLibraryOptions' => $this->targetLibraryOptions($libraryId),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
         ]);
     }
@@ -177,12 +178,7 @@ class KeywordLibraryController extends Controller
     {
         $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
 
-        /** @var array<int, mixed> $rawIds */
-        $rawIds = (array) $request->input('keyword_ids', []);
-        $keywordIds = collect($rawIds)
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->values();
+        $keywordIds = $this->selectedKeywordIds($request);
 
         if ($keywordIds->isEmpty()) {
             return back()->withErrors(__('admin.keyword_detail.error.select_required'));
@@ -199,6 +195,87 @@ class KeywordLibraryController extends Controller
             'message',
             __('admin.keyword_detail.message.delete_success', ['count' => $deletedCount])
         );
+    }
+
+    /**
+     * 批量移动/复制关键词到其他关键词库。
+     */
+    public function organizeKeywords(Request $request, int $libraryId): RedirectResponse
+    {
+        $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $keywordIds = $this->selectedKeywordIds($request);
+        if ($keywordIds->isEmpty()) {
+            return back()->withErrors(__('admin.keyword_detail.error.select_required'));
+        }
+
+        $payload = $request->validate([
+            'bulk_action' => ['required', Rule::in(['move', 'copy'])],
+            'target_library_id' => ['required', 'integer', Rule::exists('keyword_libraries', 'id')],
+        ]);
+
+        $targetLibraryId = (int) $payload['target_library_id'];
+        if ($targetLibraryId === (int) $library->id) {
+            return back()->withErrors(__('admin.keyword_detail.error.target_library_required'));
+        }
+
+        $sourceKeywords = Keyword::query()
+            ->with('tags:id')
+            ->where('library_id', (int) $library->id)
+            ->whereIn('id', $keywordIds->all())
+            ->get();
+        if ($sourceKeywords->isEmpty()) {
+            return back()->withErrors(__('admin.keyword_detail.error.select_required'));
+        }
+
+        $processedCount = 0;
+        $duplicateCount = 0;
+        DB::transaction(function () use ($sourceKeywords, $targetLibraryId, $payload, &$processedCount, &$duplicateCount): void {
+            foreach ($sourceKeywords as $sourceKeyword) {
+                $keywordText = trim((string) $sourceKeyword->keyword);
+                if ($keywordText === '') {
+                    continue;
+                }
+
+                $targetKeyword = Keyword::query()
+                    ->where('library_id', $targetLibraryId)
+                    ->where('keyword', $keywordText)
+                    ->first();
+                if (! $targetKeyword) {
+                    $targetKeyword = Keyword::query()->create([
+                        'library_id' => $targetLibraryId,
+                        'keyword' => $keywordText,
+                        'used_count' => (int) ($sourceKeyword->used_count ?? 0),
+                        'usage_count' => (int) ($sourceKeyword->usage_count ?? 0),
+                    ]);
+                } else {
+                    $duplicateCount++;
+                }
+
+                $tagIds = $sourceKeyword->tags->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+                if ($tagIds !== []) {
+                    $targetKeyword->tags()->syncWithoutDetaching($tagIds);
+                }
+
+                if ((string) $payload['bulk_action'] === 'move') {
+                    $sourceKeyword->delete();
+                }
+
+                $processedCount++;
+            }
+
+            $this->refreshKeywordLibraryCount($targetLibraryId);
+        });
+        $this->refreshKeywordLibraryCount((int) $library->id);
+
+        $messageKey = (string) $payload['bulk_action'] === 'move'
+            ? 'admin.keyword_detail.message.move_success'
+            : 'admin.keyword_detail.message.copy_success';
+        $message = __($messageKey, ['count' => $processedCount]);
+        if ($duplicateCount > 0) {
+            $message .= __('admin.keyword_detail.message.organize_duplicates', ['count' => $duplicateCount]);
+        }
+
+        return redirect()->route('admin.keyword-libraries.detail', ['libraryId' => (int) $library->id])->with('message', $message);
     }
 
     /**
@@ -506,6 +583,40 @@ class KeywordLibraryController extends Controller
         KeywordLibrary::query()->whereKey($libraryId)->update([
             'keyword_count' => $count,
         ]);
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function selectedKeywordIds(Request $request): Collection
+    {
+        /** @var array<int, mixed> $rawIds */
+        $rawIds = (array) $request->input('keyword_ids', []);
+
+        return collect($rawIds)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * @return list<array{id:int,name:string,collection_name:string}>
+     */
+    private function targetLibraryOptions(int $currentLibraryId): array
+    {
+        return KeywordLibrary::query()
+            ->with('collection:id,name')
+            ->select(['id', 'collection_id', 'name'])
+            ->whereKeyNot($currentLibraryId)
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (KeywordLibrary $library): array => [
+                'id' => (int) $library->id,
+                'name' => (string) $library->name,
+                'collection_name' => (string) ($library->collection?->name ?? ''),
+            ])
+            ->all();
     }
 
     /**

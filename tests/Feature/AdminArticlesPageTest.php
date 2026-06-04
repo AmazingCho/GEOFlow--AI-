@@ -7,7 +7,9 @@ use App\Models\Article;
 use App\Models\ArticleDistribution;
 use App\Models\Author;
 use App\Models\Category;
+use App\Models\CollectionRecord;
 use App\Models\DistributionChannel;
+use App\Models\EntityRecord;
 use App\Models\SiteSetting;
 use App\Models\Task;
 use App\Models\TaskRun;
@@ -42,8 +44,71 @@ class AdminArticlesPageTest extends TestCase
             ->get(route('admin.articles.index', ['status' => 'draft']))
             ->assertOk()
             ->assertSee(__('admin.articles.page_title'))
+            ->assertSee('data-article-filter-panel', false)
             ->assertViewHas('articles')
             ->assertViewHas('filters');
+    }
+
+    public function test_article_list_can_filter_by_collection_and_unassigned_scope(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_collection_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-collection-admin@example.com',
+            'display_name' => 'Articles Collection Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Article Collection Scope',
+            'slug' => 'article-collection-scope',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Article Collection Category',
+            'slug' => 'article-collection-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Article Collection Author']);
+        Article::query()->create([
+            'title' => 'Collection Scoped Article',
+            'slug' => 'collection-scoped-article',
+            'content' => 'Collection content',
+            'excerpt' => 'Collection content',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+            'selected_collection_id' => (int) $collection->id,
+        ]);
+        Article::query()->create([
+            'title' => 'Unassigned Article',
+            'slug' => 'unassigned-article',
+            'content' => 'Unassigned content',
+            'excerpt' => 'Unassigned content',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+            'selected_collection_id' => null,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index', ['collection_id' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee('data-article-collection-cloud', false)
+            ->assertSee(__('admin.collections.filter_all'))
+            ->assertDontSee('admin.collections.filter_all')
+            ->assertDontSee('data-collection-sidebar', false)
+            ->assertSee('Article Collection Scope')
+            ->assertSee('Collection Scoped Article')
+            ->assertDontSee('Unassigned Article');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index', ['collection_id' => 'unassigned']))
+            ->assertOk()
+            ->assertSee(__('admin.collections.badge_unassigned'))
+            ->assertSee('Unassigned Article')
+            ->assertDontSee('Collection Scoped Article');
     }
 
     public function test_authenticated_admin_can_open_article_create_page(): void
@@ -61,6 +126,63 @@ class AdminArticlesPageTest extends TestCase
             ->get(route('admin.articles.create'))
             ->assertOk()
             ->assertSee(__('admin.article_create.page_heading'));
+    }
+
+    public function test_article_edit_can_suggest_and_apply_entity_internal_links(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_internal_link_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-internal-link@example.com',
+            'display_name' => 'Articles Internal Link Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '内链分类',
+            'slug' => 'internal-link-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Internal Link Author']);
+        $entity = EntityRecord::query()->create([
+            'name' => 'SJ4060',
+            'entity_type' => '产品型号',
+            'description' => '视觉点胶设备',
+            'canonical_url' => 'https://example.com/sj4060',
+            'link_anchor_text' => '',
+            'link_policy' => 'suggest',
+        ]);
+        $article = Article::query()->create([
+            'title' => 'SJ4060 应用文章',
+            'slug' => 'sj4060-internal-link-article',
+            'excerpt' => '摘要',
+            'content' => 'SJ4060 适合视觉点胶应用。本文介绍 SJ4060 的能力。',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+            'selected_entity_ids' => [(int) $entity->id],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.edit', ['articleId' => (int) $article->id]))
+            ->assertOk()
+            ->assertSee(__('admin.article_edit.internal_links.title'))
+            ->assertSee('https://example.com/sj4060', false);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.articles.internal-links.apply', ['articleId' => (int) $article->id]), [
+                'entity_ids' => [(int) $entity->id],
+            ])
+            ->assertRedirect(route('admin.articles.edit', ['articleId' => (int) $article->id]));
+
+        $article->refresh();
+        $this->assertStringContainsString('[SJ4060](https://example.com/sj4060)', (string) $article->content);
+        $this->assertDatabaseHas('article_internal_links', [
+            'article_id' => (int) $article->id,
+            'entity_id' => (int) $entity->id,
+            'canonical_url' => 'https://example.com/sj4060',
+            'status' => 'applied',
+        ]);
     }
 
     public function test_admin_can_save_article_hot_and_featured_flags(): void

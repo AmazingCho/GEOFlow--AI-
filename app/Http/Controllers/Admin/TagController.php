@@ -81,6 +81,16 @@ class TagController extends Controller
         ]);
     }
 
+    public function controlledGroups(): View
+    {
+        return view('admin.material-tags.controlled-groups', [
+            'pageTitle' => __('admin.material_tags.controlled_groups_page_title'),
+            'activeMenu' => 'material_tags',
+            'adminSiteName' => AdminWeb::siteName(),
+            'controlledTagGroups' => $this->controlledTagGroups(),
+        ]);
+    }
+
     public function storeControlledGroup(Request $request): RedirectResponse
     {
         $payload = $request->validate([

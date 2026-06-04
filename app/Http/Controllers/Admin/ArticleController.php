@@ -10,9 +10,11 @@ use App\Models\DistributionChannel;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Services\GeoFlow\ArticleQualityAssessmentService;
+use App\Services\GeoFlow\ArticleInternalLinkSuggestionService;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,7 +36,8 @@ class ArticleController extends Controller
 
     public function __construct(
         private readonly DistributionOrchestrator $distributionOrchestrator,
-        private readonly ArticleQualityAssessmentService $qualityAssessmentService
+        private readonly ArticleQualityAssessmentService $qualityAssessmentService,
+        private readonly ArticleInternalLinkSuggestionService $internalLinkSuggestionService
     ) {}
 
     /**
@@ -58,6 +61,7 @@ class ArticleController extends Controller
             'filters' => $filters,
             'tasks' => $this->loadTaskOptions(),
             'authors' => $this->loadAuthorOptions(),
+            'collectionOptions' => CollectionOptions::all(),
             'articlesI18n' => $this->articlesI18n(),
             'isTrashView' => $isTrashView,
             'trashI18n' => $this->trashI18n(),
@@ -317,7 +321,39 @@ class ArticleController extends Controller
             'formOptions' => $this->loadFormOptions(),
             'generationTrace' => $generationTrace,
             'qualityReport' => $this->qualityAssessmentService->assess($article, $generationTrace),
+            'internalLinkSuggestions' => $this->internalLinkSuggestionService->suggest($article, $generationTrace),
+            'internalLinkRecords' => $article->internalLinks()->latest()->limit(20)->get(),
         ]);
+    }
+
+    public function refreshInternalLinks(int $articleId): RedirectResponse
+    {
+        Article::query()->whereKey($articleId)->firstOrFail();
+
+        return redirect()
+            ->route('admin.articles.edit', ['articleId' => $articleId])
+            ->with('message', __('admin.article_edit.internal_links.message_refreshed'));
+    }
+
+    public function applyInternalLinks(Request $request, int $articleId): RedirectResponse
+    {
+        $payload = $request->validate([
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', 'min:1'],
+        ]);
+        $article = Article::query()->whereKey($articleId)->firstOrFail();
+        $result = $this->internalLinkSuggestionService->apply(
+            $article,
+            collect($payload['entity_ids'] ?? [])->map(static fn (mixed $id): int => (int) $id)->all(),
+            (string) (auth('admin')->user()?->name ?? '')
+        );
+
+        return redirect()
+            ->route('admin.articles.edit', ['articleId' => $articleId])
+            ->with('message', __('admin.article_edit.internal_links.message_applied', [
+                'applied' => (int) $result['applied'],
+                'skipped' => (int) $result['skipped'],
+            ]));
     }
 
     private function attachQualityReports(LengthAwarePaginator $articles): void
@@ -506,6 +542,7 @@ class ArticleController extends Controller
             'search' => trim((string) $request->query('search', '')),
             'per_page' => min(100, max(10, (int) $request->query('per_page', 20) ?: 20)),
             'trashed' => $request->boolean('trashed'),
+            'collection_id' => trim((string) $request->query('collection_id', '')),
         ];
     }
 
@@ -547,6 +584,12 @@ class ArticleController extends Controller
 
         if ($filters['task_id'] > 0) {
             $query->where('task_id', $filters['task_id']);
+        }
+
+        if (($filters['collection_id'] ?? '') === 'unassigned') {
+            $query->whereNull('selected_collection_id');
+        } elseif ((int) ($filters['collection_id'] ?? 0) > 0) {
+            $query->where('selected_collection_id', (int) $filters['collection_id']);
         }
 
         if (($filters['trashed'] ?? false) === false && $filters['status'] !== '') {

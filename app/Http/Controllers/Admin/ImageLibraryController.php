@@ -15,6 +15,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -87,6 +88,7 @@ class ImageLibraryController extends Controller
             'usageTotal' => $usageTotal,
             'totalImages' => Image::query()->where('library_id', $libraryId)->count(),
             'collectionOptions' => CollectionOptions::all(),
+            'targetLibraryOptions' => $this->targetLibraryOptions($libraryId),
             'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
             'selectedEntityIdsByImage' => $selectedEntityIdsByImage,
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
@@ -310,12 +312,7 @@ class ImageLibraryController extends Controller
     {
         $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
 
-        /** @var array<int, mixed> $rawIds */
-        $rawIds = (array) $request->input('image_ids', []);
-        $imageIds = collect($rawIds)
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->values();
+        $imageIds = $this->selectedImageIds($request);
         if ($imageIds->isEmpty()) {
             return back()->withErrors(__('admin.image_detail.error.select_delete'));
         }
@@ -346,6 +343,82 @@ class ImageLibraryController extends Controller
         }
 
         return redirect()->route('admin.image-libraries.detail', ['libraryId' => $libraryId])->with('message', $message);
+    }
+
+    /**
+     * 批量移动/复制图片到其他图片库。
+     */
+    public function organizeImages(Request $request, int $libraryId): RedirectResponse
+    {
+        $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $imageIds = $this->selectedImageIds($request);
+        if ($imageIds->isEmpty()) {
+            return back()->withErrors(__('admin.image_detail.error.select_delete'));
+        }
+
+        $payload = $request->validate([
+            'bulk_action' => ['required', Rule::in(['move', 'copy'])],
+            'target_library_id' => ['required', 'integer', Rule::exists('image_libraries', 'id')],
+        ]);
+
+        $targetLibraryId = (int) $payload['target_library_id'];
+        if ($targetLibraryId === (int) $library->id) {
+            return back()->withErrors(__('admin.image_detail.error.target_library_required'));
+        }
+
+        $sourceImages = Image::query()
+            ->with('tags:id')
+            ->where('library_id', (int) $library->id)
+            ->whereIn('id', $imageIds->all())
+            ->get();
+        if ($sourceImages->isEmpty()) {
+            return back()->withErrors(__('admin.image_detail.error.select_delete'));
+        }
+
+        $processedCount = 0;
+        DB::transaction(function () use ($sourceImages, $targetLibraryId, $payload, &$processedCount): void {
+            if ((string) $payload['bulk_action'] === 'move') {
+                Image::query()
+                    ->whereIn('id', $sourceImages->pluck('id')->map(static fn ($id): int => (int) $id)->all())
+                    ->update(['library_id' => $targetLibraryId]);
+                $processedCount = $sourceImages->count();
+
+                return;
+            }
+
+            foreach ($sourceImages as $sourceImage) {
+                $newImage = Image::query()->create([
+                    'library_id' => $targetLibraryId,
+                    'filename' => (string) $sourceImage->filename,
+                    'original_name' => (string) $sourceImage->original_name,
+                    'file_name' => (string) $sourceImage->file_name,
+                    'file_path' => (string) $sourceImage->file_path,
+                    'file_size' => (int) ($sourceImage->file_size ?? 0),
+                    'mime_type' => (string) $sourceImage->mime_type,
+                    'width' => (int) ($sourceImage->width ?? 0),
+                    'height' => (int) ($sourceImage->height ?? 0),
+                    'tags' => (string) ($sourceImage->getAttribute('tags') ?? ''),
+                    'used_count' => 0,
+                    'usage_count' => 0,
+                ]);
+
+                $tagIds = collect($sourceImage->getRelation('tags'))->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+                if ($tagIds !== []) {
+                    $newImage->tags()->syncWithoutDetaching($tagIds);
+                }
+                $this->entityMaterialLinkService->syncEntities($newImage, $this->entityMaterialLinkService->selectedEntityIdsFor($sourceImage));
+                $processedCount++;
+            }
+        });
+
+        $this->refreshImageLibraryCount((int) $library->id);
+        $this->refreshImageLibraryCount($targetLibraryId);
+
+        $messageKey = (string) $payload['bulk_action'] === 'move'
+            ? 'admin.image_detail.message.move_success'
+            : 'admin.image_detail.message.copy_success';
+
+        return redirect()->route('admin.image-libraries.detail', ['libraryId' => (int) $library->id])->with('message', __($messageKey, ['count' => $processedCount]));
     }
 
     /**
@@ -632,6 +705,40 @@ class ImageLibraryController extends Controller
         ImageLibrary::query()->whereKey($libraryId)->update([
             'image_count' => $count,
         ]);
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function selectedImageIds(Request $request): Collection
+    {
+        /** @var array<int, mixed> $rawIds */
+        $rawIds = (array) $request->input('image_ids', []);
+
+        return collect($rawIds)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * @return list<array{id:int,name:string,collection_name:string}>
+     */
+    private function targetLibraryOptions(int $currentLibraryId): array
+    {
+        return ImageLibrary::query()
+            ->with('collection:id,name')
+            ->select(['id', 'collection_id', 'name'])
+            ->whereKeyNot($currentLibraryId)
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (ImageLibrary $library): array => [
+                'id' => (int) $library->id,
+                'name' => (string) $library->name,
+                'collection_name' => (string) ($library->collection?->name ?? ''),
+            ])
+            ->all();
     }
 
     /**

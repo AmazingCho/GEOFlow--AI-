@@ -9,10 +9,12 @@ use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Services\GeoFlow\UrlImportProcessingService;
+use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class UrlImportController extends Controller
@@ -27,6 +29,7 @@ class UrlImportController extends Controller
             'stats' => $this->loadStats(),
             'aiModelReady' => $this->urlImportProcessingService->hasReadyAnalysisModel(),
             'aiModelConfigUrl' => route('admin.ai-models.index'),
+            'collectionOptions' => CollectionOptions::all(true),
         ]);
     }
 
@@ -37,6 +40,8 @@ class UrlImportController extends Controller
             'project_name' => ['nullable', 'string', 'max:120'],
             'source_label' => ['nullable', 'string', 'max:120'],
             'content_language' => ['nullable', 'string', 'max:20'],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'title_count' => ['nullable', 'integer', 'min:1', 'max:50'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'outputs' => ['array'],
             'outputs.*' => ['string', 'in:knowledge,keywords,titles,entities,cases'],
@@ -69,6 +74,8 @@ class UrlImportController extends Controller
                 'project_name' => $validated['project_name'] ?? '',
                 'source_label' => $validated['source_label'] ?? '',
                 'content_language' => $validated['content_language'] ?? '',
+                'collection_id' => (int) ($validated['collection_id'] ?? 0) ?: null,
+                'title_count' => min(50, max(1, (int) ($validated['title_count'] ?? 30))),
                 'notes' => $validated['notes'] ?? '',
                 'outputs' => $validated['outputs'] ?? ['knowledge', 'keywords', 'titles', 'entities', 'cases'],
             ], JSON_UNESCAPED_UNICODE),

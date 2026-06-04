@@ -6,6 +6,7 @@ use App\Services\GeoFlow\EntityExtractionService;
 use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\UrlImportProcessingService;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Models\UrlImportJob;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -88,5 +89,38 @@ class UrlImportProcessingServiceTest extends TestCase
         $result = $this->service->normalizeInputUrl('http://www.example.com');
 
         $this->assertSame('http://www.example.com', $result['url']);
+    }
+
+    public function test_it_uses_business_entity_when_ai_returns_generic_library_name(): void
+    {
+        $job = new UrlImportJob([
+            'source_domain' => 'example.test',
+            'options_json' => '{}',
+        ]);
+
+        $name = $this->callPrivate('resolveImportBaseName', [[
+            'library_name' => 'GEOFlow Knowledge Base',
+            'cleaned' => ['title' => 'GEOFlow Title Library'],
+        ], [
+            'title' => 'Keyword Library',
+        ], $job, [[
+            'name' => 'SJ4060',
+        ]], [
+            'visual dispensing machine',
+        ]]);
+
+        $this->assertSame('SJ4060', $name);
+        $this->assertSame('SJ4060 Knowledge Base', $this->callPrivate('materialLibraryName', [$name, ' Knowledge Base']));
+    }
+
+    /**
+     * @param  list<mixed>  $parameters
+     */
+    private function callPrivate(string $method, array $parameters): mixed
+    {
+        $reflection = new \ReflectionMethod($this->service, $method);
+        $reflection->setAccessible(true);
+
+        return $reflection->invokeArgs($this->service, $parameters);
     }
 }

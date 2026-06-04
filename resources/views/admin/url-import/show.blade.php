@@ -241,14 +241,17 @@
                         </div>
                         <div class="rounded-xl border border-gray-200 p-5" data-select-card>
                             <div class="flex items-center justify-between gap-3">
-                                <h4 class="text-base font-semibold text-gray-900">{{ __('admin.url_import.preview.titles') }}</h4>
+                                <h4 class="text-base font-semibold text-gray-900">
+                                    {{ __('admin.url_import.preview.titles') }}
+                                    <span class="text-sm font-normal text-gray-500">({{ count($titles) }})</span>
+                                </h4>
                                 <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
                                     <input type="checkbox" data-select-card-all checked class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                     全选
                                 </label>
                             </div>
                             <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-700">
-                                @forelse (array_slice($titles, 0, 12) as $index => $title)
+                                @forelse ($titles as $index => $title)
                                     <li>
                                         <label class="inline-flex items-start gap-2">
                                             <input type="checkbox" form="url-import-commit-form" name="selected[titles][]" value="{{ $index }}" checked class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500">

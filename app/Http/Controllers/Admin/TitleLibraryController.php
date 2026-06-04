@@ -9,7 +9,6 @@ use App\Models\KeywordLibrary;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
-use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\TagService;
 use App\Services\GeoFlow\TitleAiGenerationService;
 use App\Support\AdminWeb;
@@ -31,7 +30,6 @@ class TitleLibraryController extends Controller
 
     public function __construct(
         private TitleAiGenerationService $titleAiGenerationService,
-        private readonly EntityMaterialLinkService $entityMaterialLinkService,
         private readonly TagService $tagService
     ) {}
 
@@ -70,6 +68,7 @@ class TitleLibraryController extends Controller
             'library' => $library,
             'titles' => $titles,
             'usageTotal' => $usageTotal,
+            'targetLibraryOptions' => $this->targetLibraryOptions($libraryId),
         ]);
     }
 
@@ -349,12 +348,7 @@ class TitleLibraryController extends Controller
     {
         $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
 
-        /** @var array<int, mixed> $rawIds */
-        $rawIds = (array) $request->input('title_ids', []);
-        $titleIds = collect($rawIds)
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->values();
+        $titleIds = $this->selectedTitleIds($request);
         if ($titleIds->isEmpty()) {
             return back()->withErrors(__('admin.title_detail.error.content_required'));
         }
@@ -369,6 +363,83 @@ class TitleLibraryController extends Controller
             'message',
             __('admin.title_detail.message.delete_success', ['count' => $deletedCount])
         );
+    }
+
+    /**
+     * 批量移动/复制标题到其他标题库。
+     */
+    public function organizeTitles(Request $request, int $libraryId): RedirectResponse
+    {
+        $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
+        $titleIds = $this->selectedTitleIds($request);
+        if ($titleIds->isEmpty()) {
+            return back()->withErrors(__('admin.title_detail.error.content_required'));
+        }
+
+        $payload = $request->validate([
+            'bulk_action' => ['required', Rule::in(['move', 'copy'])],
+            'target_library_id' => ['required', 'integer', Rule::exists('title_libraries', 'id')],
+        ]);
+
+        $targetLibraryId = (int) $payload['target_library_id'];
+        if ($targetLibraryId === (int) $library->id) {
+            return back()->withErrors(__('admin.title_detail.error.target_library_required'));
+        }
+
+        $sourceTitles = Title::query()
+            ->where('library_id', (int) $library->id)
+            ->whereIn('id', $titleIds->all())
+            ->get();
+        if ($sourceTitles->isEmpty()) {
+            return back()->withErrors(__('admin.title_detail.error.content_required'));
+        }
+
+        $processedCount = 0;
+        $duplicateCount = 0;
+        DB::transaction(function () use ($sourceTitles, $targetLibraryId, $payload, &$processedCount, &$duplicateCount): void {
+            foreach ($sourceTitles as $sourceTitle) {
+                $titleText = trim((string) $sourceTitle->title);
+                if ($titleText === '') {
+                    continue;
+                }
+
+                $targetTitle = Title::query()
+                    ->where('library_id', $targetLibraryId)
+                    ->where('title', $titleText)
+                    ->first();
+                if (! $targetTitle) {
+                    Title::query()->create([
+                        'library_id' => $targetLibraryId,
+                        'title' => $titleText,
+                        'keyword' => (string) ($sourceTitle->keyword ?? ''),
+                        'is_ai_generated' => (bool) ($sourceTitle->is_ai_generated ?? false),
+                        'used_count' => (int) ($sourceTitle->used_count ?? 0),
+                        'usage_count' => (int) ($sourceTitle->usage_count ?? 0),
+                    ]);
+                } else {
+                    $duplicateCount++;
+                }
+
+                if ((string) $payload['bulk_action'] === 'move') {
+                    $sourceTitle->delete();
+                }
+
+                $processedCount++;
+            }
+
+            $this->refreshTitleLibraryCount($targetLibraryId);
+        });
+        $this->refreshTitleLibraryCount((int) $library->id);
+
+        $messageKey = (string) $payload['bulk_action'] === 'move'
+            ? 'admin.title_detail.message.move_success'
+            : 'admin.title_detail.message.copy_success';
+        $message = __($messageKey, ['count' => $processedCount]);
+        if ($duplicateCount > 0) {
+            $message .= __('admin.title_detail.message.organize_duplicates', ['count' => $duplicateCount]);
+        }
+
+        return redirect()->route('admin.title-libraries.detail', ['libraryId' => (int) $library->id])->with('message', $message);
     }
 
     /**
@@ -439,8 +510,6 @@ class TitleLibraryController extends Controller
             'libraryId' => 0,
             'libraryForm' => $this->emptyForm(),
             'collectionOptions' => CollectionOptions::all(true),
-            'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
-            'selectedEntityIds' => [],
         ]);
     }
 
@@ -453,8 +522,6 @@ class TitleLibraryController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
-            'entity_ids' => ['nullable', 'array'],
-            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
         ], [
             'name.required' => __('admin.title_libraries.error.name_required'),
         ]);
@@ -468,7 +535,6 @@ class TitleLibraryController extends Controller
             'generation_rounds' => 1,
             'is_ai_generated' => 0,
         ]);
-        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
         return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.create_success'));
     }
@@ -493,8 +559,6 @@ class TitleLibraryController extends Controller
                 'description' => (string) ($library->description ?? ''),
             ],
             'collectionOptions' => CollectionOptions::all(),
-            'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($library->collection_id ?? 0) ?: null),
-            'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($library),
             'selectedTagIds' => $selectedTagIds,
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
         ]);
@@ -511,8 +575,6 @@ class TitleLibraryController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
-            'entity_ids' => ['nullable', 'array'],
-            'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
             'tag_ids' => ['nullable', 'array'],
             'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('type', 'material')],
         ], [
@@ -524,7 +586,10 @@ class TitleLibraryController extends Controller
             'name' => trim((string) $payload['name']),
             'description' => trim((string) ($payload['description'] ?? '')),
         ]);
-        $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
+        DB::table('entity_material_links')
+            ->where('linkable_type', TitleLibrary::class)
+            ->where('linkable_id', (int) $library->id)
+            ->delete();
         if ($this->requestHasTagSelection($request)) {
             $this->tagService->syncExisting($library, $this->selectedTagIds($request));
         }
@@ -622,19 +687,6 @@ class TitleLibraryController extends Controller
     /**
      * @return list<int>
      */
-    private function selectedEntityIds(Request $request): array
-    {
-        return collect($request->input('entity_ids', []))
-            ->map(static fn ($id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<int>
-     */
     private function selectedTagIds(Request $request): array
     {
         return collect($request->input('tag_ids', []))
@@ -722,6 +774,40 @@ class TitleLibraryController extends Controller
         TitleLibrary::query()->whereKey($libraryId)->update([
             'title_count' => $count,
         ]);
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function selectedTitleIds(Request $request): Collection
+    {
+        /** @var array<int, mixed> $rawIds */
+        $rawIds = (array) $request->input('title_ids', []);
+
+        return collect($rawIds)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * @return list<array{id:int,name:string,collection_name:string}>
+     */
+    private function targetLibraryOptions(int $currentLibraryId): array
+    {
+        return TitleLibrary::query()
+            ->with('collection:id,name')
+            ->select(['id', 'collection_id', 'name'])
+            ->whereKeyNot($currentLibraryId)
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (TitleLibrary $library): array => [
+                'id' => (int) $library->id,
+                'name' => (string) $library->name,
+                'collection_name' => (string) ($library->collection?->name ?? ''),
+            ])
+            ->all();
     }
 
     /**

@@ -10,6 +10,14 @@
     <title>@isset($pageTitle){{ $pageTitle }} — @endisset{{ $adminBrandName }}</title>
     <script src="{{ asset('js/tailwindcss.play-cdn.js') }}"></script>
     <script src="{{ asset('js/lucide.min.js') }}"></script>
+    <style>
+        main input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not(.border-0),
+        main select:not(.border-0),
+        main textarea:not(.border-0) {
+            border-width: 1px;
+            border-style: solid;
+        }
+    </style>
     @stack('styles')
 </head>
 <body class="bg-gray-50">

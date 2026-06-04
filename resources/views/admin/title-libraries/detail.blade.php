@@ -84,8 +84,36 @@
         </div>
 
         <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex flex-col gap-3 border-b border-gray-200 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.title_detail.list_title') }}</h3>
+                @if (! $titles->isEmpty())
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="text-sm text-gray-500" data-title-selected-label>
+                            {{ __('admin.title_detail.bulk_selected', ['count' => 0]) }}
+                        </span>
+                        <select name="bulk_action" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-green-500 focus:ring-green-500" data-title-bulk-action form="delete-title-form">
+                            <option value="delete">{{ __('admin.material_bulk.action_delete') }}</option>
+                            <option value="move">{{ __('admin.material_bulk.action_move') }}</option>
+                            <option value="copy">{{ __('admin.material_bulk.action_copy') }}</option>
+                        </select>
+                        <select name="target_library_id" class="hidden min-w-[220px] rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm focus:border-green-500 focus:ring-green-500" data-title-target-library form="delete-title-form">
+                            <option value="">{{ __('admin.material_bulk.target_placeholder') }}</option>
+                            @foreach (($targetLibraryOptions ?? []) as $targetLibrary)
+                                <option value="{{ (int) $targetLibrary['id'] }}">
+                                    {{ $targetLibrary['name'] }}@if ((string) ($targetLibrary['collection_name'] ?? '') !== '') / {{ $targetLibrary['collection_name'] }} @endif
+                                </option>
+                            @endforeach
+                        </select>
+                        <button type="button" class="hidden inline-flex items-center rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50" data-title-bulk-organize disabled>
+                            <i data-lucide="folder-input" class="mr-1 h-4 w-4"></i>
+                            <span>{{ __('admin.material_bulk.submit_move') }}</span>
+                        </button>
+                        <button type="button" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50" data-title-bulk-delete disabled>
+                            <i data-lucide="trash-2" class="mr-1 h-4 w-4"></i>
+                            {{ __('admin.title_detail.bulk_delete') }}
+                        </button>
+                    </div>
+                @endif
             </div>
 
             @if ($titles->isEmpty())
@@ -105,10 +133,20 @@
                     </div>
                 </div>
             @else
+                <div class="flex items-center justify-between gap-6 border-b border-gray-200 bg-gray-50 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <label class="inline-flex items-center gap-2 normal-case tracking-normal">
+                        <input type="checkbox" class="rounded border-gray-300 text-green-600 focus:ring-green-500" data-title-select-all>
+                        {{ __('admin.title_detail.bulk_select_all') }}
+                    </label>
+                    <div class="text-right">{{ __('admin.common.actions') }}</div>
+                </div>
                 <div class="divide-y divide-gray-200">
                     @foreach ($titles as $title)
                         <div class="px-6 py-4">
-                            <div class="flex items-center justify-between">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="pt-1">
+                                    <input type="checkbox" form="delete-title-form" name="title_ids[]" value="{{ (int) $title->id }}" class="rounded border-gray-300 text-green-600 focus:ring-green-500" data-title-checkbox>
+                                </div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center space-x-3">
                                         <h4 class="text-lg font-medium text-gray-900 break-all">{{ $title->title }}</h4>
@@ -160,10 +198,40 @@
         </div>
     </div>
 
-    <form method="POST" action="{{ route('admin.title-libraries.titles.delete', ['libraryId' => (int) $library->id]) }}" id="delete-title-form" class="hidden">
+    <form method="POST" action="{{ route('admin.title-libraries.titles.delete', ['libraryId' => (int) $library->id]) }}" id="delete-title-form" class="hidden" data-delete-action="{{ route('admin.title-libraries.titles.delete', ['libraryId' => (int) $library->id]) }}" data-organize-action="{{ route('admin.title-libraries.titles.organize', ['libraryId' => (int) $library->id]) }}">
         @csrf
         <input type="hidden" name="title_ids[]" id="delete-title-id" value="">
     </form>
+
+    <div id="title-bulk-delete-modal" class="hidden fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-slate-900/45" data-title-bulk-cancel></div>
+        <div class="relative flex min-h-screen items-center justify-center p-4">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+                <div class="border-b border-slate-100 px-6 py-5">
+                    <div class="flex items-start gap-4">
+                        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                            <i data-lucide="trash-2" class="h-5 w-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900">{{ __('admin.title_detail.bulk_delete_title') }}</h3>
+                            <p class="mt-1 text-sm leading-6 text-slate-600">{{ __('admin.title_detail.bulk_delete_desc') }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 py-5">
+                    <input type="text" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-red-500 focus:ring-red-500" placeholder="{{ __('admin.title_detail.bulk_delete_placeholder') }}" data-title-bulk-confirm-input>
+                </div>
+                <div class="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+                    <button type="button" class="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" data-title-bulk-cancel>
+                        {{ __('admin.button.cancel') }}
+                    </button>
+                    <button type="button" class="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" data-title-bulk-confirm disabled>
+                        {{ __('admin.title_detail.bulk_delete_submit') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="add-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -294,14 +362,160 @@
                 return;
             }
 
+            document.querySelectorAll('[data-title-checkbox]').forEach((checkbox) => {
+                checkbox.checked = false;
+            });
             document.getElementById('delete-title-id').value = String(titleId);
             document.getElementById('delete-title-form').submit();
         }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const checkboxes = Array.from(document.querySelectorAll('[data-title-checkbox]'));
+            const selectAll = document.querySelector('[data-title-select-all]');
+            const label = document.querySelector('[data-title-selected-label]');
+            const deleteButton = document.querySelector('[data-title-bulk-delete]');
+            const organizeButton = document.querySelector('[data-title-bulk-organize]');
+            const bulkAction = document.querySelector('[data-title-bulk-action]');
+            const targetLibrary = document.querySelector('[data-title-target-library]');
+            const modal = document.getElementById('title-bulk-delete-modal');
+            const confirmInput = document.querySelector('[data-title-bulk-confirm-input]');
+            const confirmButton = document.querySelector('[data-title-bulk-confirm]');
+            const form = document.getElementById('delete-title-form');
+            const singleDeleteInput = document.getElementById('delete-title-id');
+            const confirmText = '确认删除';
+
+            if (!checkboxes.length || !form || !modal) {
+                return;
+            }
+
+            const selectedCount = () => checkboxes.filter((checkbox) => checkbox.checked).length;
+
+            const updateBulkState = () => {
+                const count = selectedCount();
+                if (label) {
+                    label.textContent = @js(__('admin.title_detail.bulk_selected', ['count' => '__COUNT__'])).replace('__COUNT__', count);
+                }
+                if (deleteButton) {
+                    deleteButton.disabled = count === 0;
+                }
+                if (organizeButton) {
+                    organizeButton.disabled = count === 0;
+                }
+                if (selectAll) {
+                    selectAll.checked = count > 0 && count === checkboxes.length;
+                    selectAll.indeterminate = count > 0 && count < checkboxes.length;
+                }
+            };
+
+            const updateBulkControls = () => {
+                const action = bulkAction?.value || 'delete';
+                const organizing = action === 'move' || action === 'copy';
+                targetLibrary?.classList.toggle('hidden', !organizing);
+                organizeButton?.classList.toggle('hidden', !organizing);
+                deleteButton?.classList.toggle('hidden', organizing);
+                if (organizeButton) {
+                    organizeButton.querySelector('span').textContent = action === 'copy'
+                        ? @js(__('admin.material_bulk.submit_copy'))
+                        : @js(__('admin.material_bulk.submit_move'));
+                    organizeButton.querySelector('i')?.setAttribute('data-lucide', action === 'copy' ? 'copy' : 'folder-input');
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }
+            };
+
+            const closeBulkModal = () => {
+                modal.classList.add('hidden');
+                if (confirmInput) {
+                    confirmInput.value = '';
+                }
+                if (confirmButton) {
+                    confirmButton.disabled = true;
+                }
+            };
+
+            checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateBulkState));
+            bulkAction?.addEventListener('change', () => {
+                updateBulkControls();
+                updateBulkState();
+            });
+            if (selectAll) {
+                selectAll.addEventListener('change', () => {
+                    checkboxes.forEach((checkbox) => {
+                        checkbox.checked = selectAll.checked;
+                    });
+                    updateBulkState();
+                });
+            }
+
+            if (deleteButton) {
+                deleteButton.addEventListener('click', () => {
+                    if (selectedCount() === 0) {
+                        return;
+                    }
+                    modal.classList.remove('hidden');
+                    confirmInput?.focus();
+                });
+            }
+
+            if (organizeButton) {
+                organizeButton.addEventListener('click', () => {
+                    const count = selectedCount();
+                    if (count === 0) {
+                        return;
+                    }
+                    if (!targetLibrary?.value) {
+                        alert(@json(__('admin.material_bulk.error_target_required')));
+                        return;
+                    }
+                    const action = bulkAction?.value || 'move';
+                    const confirmTemplate = action === 'copy'
+                        ? @json(__('admin.material_bulk.confirm_copy', ['count' => '{count}']))
+                        : @json(__('admin.material_bulk.confirm_move', ['count' => '{count}']));
+                    if (!confirm(confirmTemplate.replace('{count}', String(count)))) {
+                        return;
+                    }
+                    if (singleDeleteInput) {
+                        singleDeleteInput.value = '';
+                    }
+                    form.action = form.dataset.organizeAction || form.action;
+                    form.submit();
+                });
+            }
+
+            if (confirmInput) {
+                confirmInput.addEventListener('input', () => {
+                    if (confirmButton) {
+                        confirmButton.disabled = confirmInput.value.trim() !== confirmText;
+                    }
+                });
+            }
+
+            document.querySelectorAll('[data-title-bulk-cancel]').forEach((element) => {
+                element.addEventListener('click', closeBulkModal);
+            });
+
+            if (confirmButton) {
+                confirmButton.addEventListener('click', () => {
+                    if (confirmInput?.value.trim() !== confirmText || selectedCount() === 0) {
+                        return;
+                    }
+                    if (singleDeleteInput) {
+                        singleDeleteInput.value = '';
+                    }
+                    form.submit();
+                });
+            }
+
+            updateBulkControls();
+            updateBulkState();
+        });
 
         window.onclick = function (event) {
             const addModal = document.getElementById('add-modal');
             const editModal = document.getElementById('edit-modal');
             const importModal = document.getElementById('import-modal');
+            const bulkDeleteModal = document.getElementById('title-bulk-delete-modal');
 
             if (event.target === addModal) {
                 hideAddModal();
@@ -313,6 +527,10 @@
 
             if (event.target === importModal) {
                 hideImportModal();
+            }
+
+            if (event.target === bulkDeleteModal) {
+                bulkDeleteModal.classList.add('hidden');
             }
         };
     </script>

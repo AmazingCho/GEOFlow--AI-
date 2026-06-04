@@ -9,6 +9,19 @@ use Illuminate\Support\Str;
 
 class EntityExtractionService
 {
+    private const ENTITY_TYPE_PRODUCT_MODEL = '产品型号';
+    private const ENTITY_TYPE_PRODUCT_LINE = '产品线';
+    private const ENTITY_TYPE_INDUSTRY = '行业';
+    private const ENTITY_TYPE_APPLICATION = '应用场景';
+    private const ENTITY_TYPE_MATERIAL = '材料';
+    private const ENTITY_TYPE_TECHNOLOGY = '技术';
+    private const ENTITY_TYPE_BRAND = '品牌';
+    private const ENTITY_TYPE_COMPETITOR = '竞品';
+    private const ENTITY_TYPE_PROCESS = '工艺流程';
+    private const ENTITY_TYPE_COMPONENT = '部件';
+    private const ENTITY_TYPE_AUDIENCE = '目标客户';
+    private const ENTITY_TYPE_GENERAL = '业务实体';
+
     /**
      * @param  array<string,mixed>  $analysis
      * @param  array<string,mixed>  $page
@@ -25,15 +38,17 @@ class EntityExtractionService
 
         $entities = [];
         foreach ($entityNames as $name) {
+            $entityType = $this->inferEntityType($name, $coreBusiness);
             $entities[] = [
                 'name' => $name,
-                'entity_type' => $this->inferEntityType($name, $coreBusiness),
+                'entity_type' => $entityType,
                 'aliases' => '',
-                'description' => Str::limit($summary !== '' ? $summary : implode(' ', array_slice($facts, 0, 3)), 500, ''),
+                'description' => $this->entityDescription($name, $entityType, $summary, $coreBusiness, $facts),
                 'attributes_json' => json_encode([
                     'source' => 'url_import',
                     'source_domain' => (string) ($job->source_domain ?? ''),
                     'source_title' => (string) ($page['title'] ?? ''),
+                    'inferred_type' => $entityType,
                     'evidence_facts' => array_slice($facts, 0, 8),
                     'core_business' => $coreBusiness,
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -53,7 +68,7 @@ class EntityExtractionService
      * @param  array{entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}  $candidates
      * @return array{entities:int,cases:int,entity_ids:list<int>,case_ids:list<int>}
      */
-    public function persistCandidates(array $candidates): array
+    public function persistCandidates(array $candidates, ?int $collectionId = null): array
     {
         $entityMap = [];
         $entityIds = [];
@@ -67,6 +82,7 @@ class EntityExtractionService
             $entity = EntityRecord::query()->where('name', $name)->first();
             if (! $entity) {
                 $entity = EntityRecord::query()->create([
+                    'collection_id' => $collectionId,
                     'name' => $name,
                     'entity_type' => $this->limit((string) ($candidate['entity_type'] ?? ''), 80),
                     'aliases' => $this->limit((string) ($candidate['aliases'] ?? ''), 2000),
@@ -99,6 +115,7 @@ class EntityExtractionService
                 ->first();
             if (! $caseRecord) {
                 $caseRecord = CaseRecord::query()->create([
+                    'collection_id' => $collectionId,
                     'entity_id' => $entity?->id,
                     'title' => $this->limit($title, 200),
                     'case_type' => $this->limit((string) ($candidate['case_type'] ?? ''), 100),
@@ -140,7 +157,7 @@ class EntityExtractionService
             return [];
         }
 
-        $caseTitle = Str::limit($titleSource.' 资料案例', 200, '');
+        $caseTitle = $this->caseTitle($titleSource, $entities, $coreBusiness);
         $challenge = $this->businessValue($coreBusiness, 'target_audience') ?: $this->businessValue($coreBusiness, 'commercial_scenarios');
         $solution = $this->businessValue($coreBusiness, 'products_services') ?: $this->businessValue($coreBusiness, 'value_proposition');
         $result = implode("\n", array_slice($facts, 0, 4));
@@ -182,11 +199,20 @@ class EntityExtractionService
 
     private function inferEntityType(string $name, array $coreBusiness): string
     {
+        $normalizedName = $this->normalize($name);
+        if (preg_match('/\b[A-Z]{1,8}[-_]?\d{2,}[A-Z0-9-]*\b/u', $normalizedName) === 1) {
+            return self::ENTITY_TYPE_PRODUCT_MODEL;
+        }
+
+        if (preg_match('/(客户|用户|团队|audience|customer|client|user|team)/iu', $normalizedName) === 1) {
+            return self::ENTITY_TYPE_AUDIENCE;
+        }
+
         foreach ([
-            'industry' => '行业',
-            'products_services' => '产品/服务',
-            'target_audience' => '目标用户',
-            'commercial_scenarios' => '业务场景',
+            'industry' => self::ENTITY_TYPE_INDUSTRY,
+            'products_services' => self::ENTITY_TYPE_PRODUCT_LINE,
+            'target_audience' => self::ENTITY_TYPE_AUDIENCE,
+            'commercial_scenarios' => self::ENTITY_TYPE_APPLICATION,
         ] as $field => $label) {
             foreach ($this->flattenValue($coreBusiness[$field] ?? []) as $value) {
                 if ($this->normalize($value) !== '' && str_contains($this->normalize($value), $this->normalize($name))) {
@@ -195,7 +221,83 @@ class EntityExtractionService
             }
         }
 
-        return 'URL实体';
+        $lower = mb_strtolower($normalizedName, 'UTF-8');
+        if (preg_match('/(resin|胶|树脂|material|材料|pu|epoxy|硅胶)/iu', $lower) === 1) {
+            return self::ENTITY_TYPE_MATERIAL;
+        }
+        if (preg_match('/(vision|视觉|laser|ai|automation|自动化|technology|技术|system|系统)/iu', $lower) === 1) {
+            return self::ENTITY_TYPE_TECHNOLOGY;
+        }
+        if (preg_match('/(process|工艺|制造|processing|manufacturing|封装|点胶|灌胶)/iu', $lower) === 1) {
+            return self::ENTITY_TYPE_PROCESS;
+        }
+        if (preg_match('/(competitor|竞品|替代|alternative|vs\.?)/iu', $lower) === 1) {
+            return self::ENTITY_TYPE_COMPETITOR;
+        }
+
+        return self::ENTITY_TYPE_GENERAL;
+    }
+
+    /**
+     * @param  list<string>  $facts
+     */
+    private function entityDescription(string $name, string $entityType, string $summary, array $coreBusiness, array $facts): string
+    {
+        $evidence = array_values(array_filter($facts, fn (string $fact): bool => mb_stripos($fact, $name, 0, 'UTF-8') !== false));
+        if ($evidence !== []) {
+            return Str::limit($name.'：'.implode('；', array_slice($evidence, 0, 2)), 500, '');
+        }
+
+        $context = match ($entityType) {
+            self::ENTITY_TYPE_INDUSTRY => $this->businessValue($coreBusiness, 'commercial_scenarios') ?: $summary,
+            self::ENTITY_TYPE_PRODUCT_MODEL, self::ENTITY_TYPE_PRODUCT_LINE => $this->businessValue($coreBusiness, 'products_services') ?: $summary,
+            self::ENTITY_TYPE_AUDIENCE => $this->businessValue($coreBusiness, 'target_audience') ?: $summary,
+            self::ENTITY_TYPE_APPLICATION => $this->businessValue($coreBusiness, 'commercial_scenarios') ?: $summary,
+            default => $summary,
+        };
+
+        $context = $this->normalize($context);
+        if ($context === '') {
+            $context = implode('；', array_slice($facts, 0, 2));
+        }
+
+        return Str::limit($name.' 是从 URL 采集内容中识别出的'.$entityType.($context !== '' ? '，相关上下文：'.$context : '。'), 500, '');
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $entities
+     */
+    private function caseTitle(string $titleSource, array $entities, array $coreBusiness): string
+    {
+        $subject = $this->normalize((string) ($entities[0]['name'] ?? ''));
+        if ($subject === '') {
+            $subject = $this->businessValue($coreBusiness, 'products_services')
+                ?: $this->businessValue($coreBusiness, 'commercial_scenarios')
+                ?: $titleSource;
+        }
+
+        $subject = $this->normalizeCaseSubject($subject);
+        if ($subject === '') {
+            $subject = 'URL采集内容';
+        }
+
+        $suffix = preg_match('/[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]/u', $subject) === 1
+            ? '应用案例'
+            : 'Case';
+
+        if (preg_match('/(案例|case)$/iu', $subject) === 1) {
+            return Str::limit($subject, 200, '');
+        }
+
+        return Str::limit($subject.' '.$suffix, 200, '');
+    }
+
+    private function normalizeCaseSubject(string $subject): string
+    {
+        $subject = $this->normalize($subject);
+        $subject = preg_replace('/\s*(?:资料案例|URL采集案例|Knowledge Base|Title Library|Keyword Library)\s*$/iu', '', $subject) ?? $subject;
+
+        return trim($subject);
     }
 
     private function businessValue(array $coreBusiness, string $field): string

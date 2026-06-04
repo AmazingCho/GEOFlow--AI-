@@ -4,6 +4,7 @@ namespace App\Services\GeoFlow;
 
 use App\Ai\Agents\MarkdownContentWriterAgent;
 use App\Models\AiModel;
+use App\Models\CollectionRecord;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
@@ -209,7 +210,6 @@ final class UrlImportProcessingService
         $page = is_array($result['page'] ?? null) ? $result['page'] : [];
         /** @var array<string, mixed> $analysis */
         $analysis = is_array($result['analysis'] ?? null) ? $result['analysis'] : [];
-        $baseName = $this->safeName((string) ($analysis['library_name'] ?? $page['title'] ?? $job->source_domain ?: 'URL素材'));
         $importAll = $selected === [];
         $selectedIndices = fn (string $type): array => $importAll ? [] : array_values(array_map('intval', $selected[$type] ?? []));
         $typeEnabled = fn (string $type): bool => $importAll || array_key_exists($type, $selected);
@@ -242,12 +242,15 @@ final class UrlImportProcessingService
             is_array($entityExtraction['cases'] ?? null) ? $entityExtraction['cases'] : [],
             $selectedIndices('cases')
         );
+        $baseName = $this->resolveImportBaseName($analysis, $page, $job, $entityCandidates, $keywords);
+        $collectionId = $this->selectedCollectionId($job);
 
-        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titleKeywordCandidates, $titles, $libraryLabels, $typeEnabled, $entityCandidates, $caseCandidates): array {
+        $summary = DB::transaction(function () use ($baseName, $knowledgeContent, $analysis, $keywords, $titleKeywordCandidates, $titles, $libraryLabels, $typeEnabled, $entityCandidates, $caseCandidates, $collectionId): array {
             $knowledgeBaseId = 0;
             if ($typeEnabled('knowledge')) {
                 $knowledgeBase = KnowledgeBase::query()->create([
-                    'name' => $baseName.$libraryLabels['knowledge_suffix'],
+                    'collection_id' => $collectionId,
+                    'name' => $this->materialLibraryName($baseName, $libraryLabels['knowledge_suffix']),
                     'description' => (string) ($analysis['summary'] ?? ''),
                     'content' => $knowledgeContent,
                     'character_count' => mb_strlen($knowledgeContent, 'UTF-8'),
@@ -267,7 +270,8 @@ final class UrlImportProcessingService
             $keywordCount = 0;
             if ($typeEnabled('keywords') && $keywords !== []) {
                 $keywordLibrary = KeywordLibrary::query()->create([
-                    'name' => $baseName.$libraryLabels['keyword_suffix'],
+                    'collection_id' => $collectionId,
+                    'name' => $this->materialLibraryName($baseName, $libraryLabels['keyword_suffix']),
                     'description' => $libraryLabels['description'],
                     'keyword_count' => 0,
                 ]);
@@ -286,7 +290,8 @@ final class UrlImportProcessingService
             $titleCount = 0;
             if ($typeEnabled('titles') && $titles !== []) {
                 $titleLibrary = TitleLibrary::query()->create([
-                    'name' => $baseName.$libraryLabels['title_suffix'],
+                    'collection_id' => $collectionId,
+                    'name' => $this->materialLibraryName($baseName, $libraryLabels['title_suffix']),
                     'description' => $libraryLabels['description'],
                     'title_count' => 0,
                     'generation_type' => 'url_import',
@@ -313,7 +318,7 @@ final class UrlImportProcessingService
             $entityCaseSummary = $this->entityExtractionService->persistCandidates([
                 'entities' => $typeEnabled('entities') ? $entityCandidates : [],
                 'cases' => $typeEnabled('cases') ? $caseCandidates : [],
-            ]);
+            ], $collectionId);
             if ($knowledgeBaseId > 0 && ! empty($entityCaseSummary['entity_ids'])) {
                 $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->first();
                 if ($knowledgeBase) {
@@ -508,6 +513,7 @@ final class UrlImportProcessingService
         $language = $this->resolveContentLanguage($parsed, $job);
         $pageJson = $this->buildPageJson($parsed, $job, $language);
         $outputs = $this->selectedOutputs($job);
+        $titleLimit = $this->requestedTitleCount($job);
 
         $models = $this->assertAnalysisModelsReady();
         $errors = [];
@@ -599,12 +605,12 @@ final class UrlImportProcessingService
                             : array_slice($this->cleanKeywordList($this->extractKeywords($knowledgeForDerivedAssets)), 0, 10);
                         $titlePayload = $this->requestAiJson(
                             $runtime,
-                            $this->buildTitlesSystemPrompt($language),
-                            $this->buildTitlesUserPrompt($pageJson, $cleaned, $knowledgeForDerivedAssets, $titleKeywords, $language),
+                            $this->buildTitlesSystemPrompt($language, $titleLimit),
+                            $this->buildTitlesUserPrompt($pageJson, $cleaned, $knowledgeForDerivedAssets, $titleKeywords, $language, $titleLimit),
                             'titles'
                         );
                         $titleValues = $titlePayload['titles'] ?? (array_is_list($titlePayload) ? $titlePayload : []);
-                        $aiTitles = array_slice($this->stringList($titleValues), 0, 50);
+                        $aiTitles = array_slice($this->stringList($titleValues), 0, $titleLimit);
                         if ($aiTitles === []) {
                             throw new \RuntimeException(__('admin.url_import.error.ai_titles_missing'));
                         }
@@ -692,6 +698,27 @@ final class UrlImportProcessingService
             'entities' => isset($lookup['entities']),
             'cases' => isset($lookup['cases']),
         ];
+    }
+
+    private function requestedTitleCount(UrlImportJob $job): int
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $count = (int) ($options['title_count'] ?? 30);
+
+        return min(50, max(1, $count));
+    }
+
+    private function selectedCollectionId(UrlImportJob $job): ?int
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+        $collectionId = (int) ($options['collection_id'] ?? 0);
+        if ($collectionId <= 0) {
+            return null;
+        }
+
+        return CollectionRecord::query()->whereKey($collectionId)->exists() ? $collectionId : null;
     }
 
     /**
@@ -962,16 +989,15 @@ PROMPT."\n\n".$this->languageDirective($language);
     /**
      * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildTitlesSystemPrompt(array $language): string
+    private function buildTitlesSystemPrompt(array $language, int $titleLimit): string
     {
-        return <<<'PROMPT'
-你是 GEOFlow 的 GEO 标题库构建器。只输出 JSON，不要输出 Markdown 代码块。
-字段固定为：titles。
-titles 最多 50 个，必须使用目标语言，基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。
-标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断、2026 趋势或商业价值。
-每个标题都必须围绕某个核心业务词或业务场景展开，面向 AI 搜索/GEO 的问答、推荐、比较、选型、采购、实施和风险判断。
-不要机械复读网页标题，不要虚构“第一、最好、领先”等无来源支撑的绝对化表述。
-PROMPT."\n\n".$this->languageDirective($language);
+        return "你是 GEOFlow 的 GEO 标题库构建器。只输出 JSON，不要输出 Markdown 代码块。\n"
+            ."字段固定为：titles。\n"
+            ."titles 必须输出 {$titleLimit} 个，必须使用目标语言，基于页面真实信息、知识库和 10 个核心业务词生成，适合后续生成真实可信的 GEO 内容。\n"
+            ."标题角度要多样：是什么、为什么、怎么做、选型、对比、指南、清单、常见问题、场景拆解、趋势判断、2026 趋势或商业价值。\n"
+            ."每个标题都必须围绕某个核心业务词或业务场景展开，面向 AI 搜索/GEO 的问答、推荐、比较、选型、采购、实施和风险判断。\n"
+            ."不要机械复读网页标题，不要虚构“第一、最好、领先”等无来源支撑的绝对化表述。\n\n"
+            .$this->languageDirective($language);
     }
 
     /**
@@ -980,10 +1006,10 @@ PROMPT."\n\n".$this->languageDirective($language);
      * @param  list<string>  $keywords
      * @param  array{code:string,name:string,source:string,requested:string,hint:string}  $language
      */
-    private function buildTitlesUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $keywords, array $language): string
+    private function buildTitlesUserPrompt(array $pageJson, array $cleaned, string $knowledgeMarkdown, array $keywords, array $language, int $titleLimit): string
     {
         return $this->languageDirective($language)."\n\n"
-            ."请为 GEOFlow 标题库生成 50 个可用于内容任务的标题。标题要围绕核心业务词展开，必须服务于用户在 AI 搜索中的真实问题、比较、选型、采购、实施或运营决策。\n\n"
+            ."请为 GEOFlow 标题库生成 {$titleLimit} 个可用于内容任务的标题。标题要围绕核心业务词展开，必须服务于用户在 AI 搜索中的真实问题、比较、选型、采购、实施或运营决策。\n\n"
             ."后台正文提示词参考（仅作结构参考；若与目标输出语言冲突，以目标输出语言为准）：\n".$this->latestPromptContent('content')."\n\n"
             ."输入：\n".json_encode([
                 'source_url' => $pageJson['source_url'] ?? '',
@@ -1573,6 +1599,119 @@ PROMPT."\n\n".$this->languageDirective($language);
             .'Keep JSON field names and source URLs unchanged. Preserve brand names, product names, and quoted proper nouns when appropriate. '
             .'If any backend prompt or source page language conflicts with this target language, the target output language wins. '
             .'Do not output Chinese text unless the target output language is Chinese.';
+    }
+
+    /**
+     * @param  array<string,mixed>  $analysis
+     * @param  array<string,mixed>  $page
+     * @param  list<array<string,mixed>>  $entityCandidates
+     * @param  list<string>  $keywords
+     */
+    private function resolveImportBaseName(array $analysis, array $page, UrlImportJob $job, array $entityCandidates, array $keywords): string
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+
+        $entityNames = collect($entityCandidates)
+            ->map(static fn (mixed $candidate): string => is_array($candidate) ? trim((string) ($candidate['name'] ?? '')) : '')
+            ->filter(static fn (string $name): bool => $name !== '')
+            ->values()
+            ->all();
+
+        $candidates = array_merge([
+            (string) ($analysis['library_name'] ?? ''),
+            (string) data_get($analysis, 'cleaned.title', ''),
+            (string) data_get($analysis, 'cleaned.clean_title', ''),
+            (string) ($page['title'] ?? ''),
+        ], $entityNames, [
+            (string) ($options['source_label'] ?? ''),
+            (string) ($options['project_name'] ?? ''),
+            (string) ($keywords[0] ?? ''),
+            (string) ($job->source_domain ?? ''),
+            'URL素材',
+        ]);
+
+        foreach ($candidates as $candidate) {
+            $name = $this->safeName($this->stripMaterialNameSuffix((string) $candidate));
+            if ($name !== '' && ! $this->isGenericImportName($name)) {
+                return $name;
+            }
+        }
+
+        return $this->safeName((string) ($job->source_domain ?: 'URL素材'));
+    }
+
+    private function materialLibraryName(string $baseName, string $suffix): string
+    {
+        $baseName = $this->safeName($this->stripMaterialNameSuffix($baseName));
+        if ($this->isGenericImportName($baseName)) {
+            $baseName = 'URL素材';
+        }
+
+        $suffix = trim($suffix);
+        if ($suffix === '') {
+            return $baseName;
+        }
+
+        $normalizedBase = mb_strtolower($baseName, 'UTF-8');
+        $normalizedSuffix = mb_strtolower($suffix, 'UTF-8');
+        if (str_ends_with($normalizedBase, $normalizedSuffix)) {
+            return $baseName;
+        }
+
+        return Str::limit($baseName.' '.$suffix, 120, '');
+    }
+
+    private function stripMaterialNameSuffix(string $name): string
+    {
+        $name = $this->normalizeText($name);
+        $name = preg_replace('/\s*(?:GEOFlow\s*)?(?:Knowledge Base|Keyword Library|Title Library|Base de conocimiento|Biblioteca de palabras clave|Biblioteca de títulos|Base de conhecimento|Biblioteca de palavras-chave|Biblioteca de títulos|知识库|关键词库|标题库|资料案例|URL采集案例)\s*$/iu', '', $name) ?? $name;
+
+        return trim($name);
+    }
+
+    private function isGenericImportName(string $name): bool
+    {
+        $name = $this->stripMaterialNameSuffix($name);
+        $normalized = mb_strtolower(trim(preg_replace('/[\s\-_]+/u', ' ', $name) ?? $name), 'UTF-8');
+        $generic = [
+            '',
+            'geoflow',
+            'geo flow',
+            'url',
+            'url素材',
+            'url material',
+            'material',
+            'source',
+            'page',
+            'knowledge',
+            'keyword',
+            'title',
+            'knowledge base',
+            'keyword library',
+            'title library',
+            'base de conocimiento',
+            'biblioteca de palabras clave',
+            'biblioteca de títulos',
+            'base de conhecimento',
+            'biblioteca de palavras chave',
+            'biblioteca de títulos',
+            '知识',
+            '知识库',
+            '关键词',
+            '关键词库',
+            '标题',
+            '标题库',
+            '资料',
+            '案例',
+            '资料案例',
+        ];
+
+        if (in_array($normalized, $generic, true)) {
+            return true;
+        }
+
+        return preg_match('/^(?:geoflow\s*)?(?:knowledge base|keyword library|title library)$/iu', $normalized) === 1;
     }
 
     /**

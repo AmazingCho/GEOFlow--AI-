@@ -6,6 +6,7 @@
     $selectedStatus = (string) ($filters['status'] ?? '');
     $selectedReviewStatus = (string) ($filters['review_status'] ?? '');
     $selectedAuthorId = (int) ($filters['author_id'] ?? 0);
+    $selectedCollectionId = (string) ($filters['collection_id'] ?? '');
     $selectedDateFrom = (string) ($filters['date_from'] ?? '');
     $selectedDateTo = (string) ($filters['date_to'] ?? '');
     $selectedSearch = (string) ($filters['search'] ?? '');
@@ -22,6 +23,14 @@
     $trashUrl = route('admin.articles.index', ['trashed' => 1]);
     $articlesIndexUrl = route('admin.articles.index');
     $clearTaskFilterUrl = route('admin.articles.index', request()->except(['task_id', 'page']));
+    $collectionQueryBase = request()->except(['collection_id', 'page']);
+    $hasActiveArticleFilters = $selectedTaskId > 0
+        || $selectedStatus !== ''
+        || $selectedReviewStatus !== ''
+        || $selectedAuthorId > 0
+        || $selectedDateFrom !== ''
+        || $selectedDateTo !== ''
+        || $selectedSearch !== '';
 @endphp
 
 @section('content')
@@ -140,10 +149,34 @@
         </div>
         @endif
 
-        <div class="bg-white shadow rounded-lg mb-6">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.articles.filters.title') }}</h3>
+        <div class="mb-6 rounded-lg bg-white px-6 py-4 shadow" data-article-collection-cloud>
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <i data-lucide="layers" class="h-4 w-4 text-blue-500"></i>
+                <span>{{ __('admin.collections.sidebar_title') }}</span>
             </div>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ route('admin.articles.index', $collectionQueryBase) }}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium {{ $selectedCollectionId === '' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700' }}">
+                    {{ __('admin.collections.filter_all') }}
+                </a>
+                <a href="{{ route('admin.articles.index', array_merge($collectionQueryBase, ['collection_id' => 'unassigned'])) }}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium {{ $selectedCollectionId === 'unassigned' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700' }}">
+                    {{ __('admin.collections.badge_unassigned') }}
+                </a>
+                @foreach(($collectionOptions ?? []) as $collectionOption)
+                    @php
+                        $cloudCollectionId = (string) ($collectionOption['id'] ?? '');
+                    @endphp
+                    <a href="{{ route('admin.articles.index', array_merge($collectionQueryBase, ['collection_id' => $cloudCollectionId])) }}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium {{ $selectedCollectionId === $cloudCollectionId ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700' }}">
+                        {{ $collectionOption['name'] ?? '' }}
+                    </a>
+                @endforeach
+            </div>
+        </div>
+
+        <details class="bg-white shadow rounded-lg mb-6" data-article-filter-panel @if($hasActiveArticleFilters) open @endif>
+            <summary class="flex cursor-pointer list-none items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">{{ __('admin.articles.filters.title') }}</h3>
+                <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400"></i>
+            </summary>
             <div class="px-6 py-4">
                 @if($selectedTaskId > 0)
                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -160,6 +193,9 @@
                 <form method="GET" class="space-y-4">
                     @if($isTrashView)
                         <input type="hidden" name="trashed" value="1">
+                    @endif
+                    @if($selectedCollectionId !== '')
+                        <input type="hidden" name="collection_id" value="{{ $selectedCollectionId }}">
                     @endif
                     <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
                         <div>
@@ -228,7 +264,7 @@
                     </div>
                 </form>
             </div>
-        </div>
+        </details>
 
         <div class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">

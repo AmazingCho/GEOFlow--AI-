@@ -7,6 +7,7 @@ use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
 use App\Models\Task;
+use App\Support\GeoFlow\EntityTypes;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -350,7 +351,7 @@ class RagRetrievalService
             })
             ->orderBy('name')
             ->limit(12)
-            ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json']);
+            ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json', 'canonical_url', 'link_policy']);
 
         $cases = CaseRecord::query()
             ->with('entity:id,name')
@@ -384,6 +385,10 @@ class RagRetrievalService
                 'id' => (int) $entity->id,
                 'name' => (string) $entity->name,
                 'type' => (string) ($entity->entity_type ?? ''),
+                'role' => EntityTypes::roleDescription((string) ($entity->entity_type ?? '')),
+                'linkable' => EntityTypes::isLinkable((string) ($entity->entity_type ?? ''))
+                    && (string) ($entity->link_policy ?? '') === EntityTypes::LINK_POLICY_SUGGEST
+                    && trim((string) ($entity->canonical_url ?? '')) !== '',
             ])
             ->values()
             ->all();
@@ -411,6 +416,7 @@ class RagRetrievalService
                     $line .= '（类型：'.(string) $entity->entity_type.'）';
                 }
                 $lines[] = $line;
+                $lines[] = '  写作角色：'.EntityTypes::roleDescription((string) ($entity->entity_type ?? ''));
                 if ((string) ($entity->aliases ?? '') !== '') {
                     $lines[] = '  别名：'.$this->shortContextText($entity->aliases, 180);
                 }

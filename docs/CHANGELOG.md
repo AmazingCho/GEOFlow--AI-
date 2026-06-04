@@ -2,6 +2,33 @@
 
 该文档记录公开仓库可见功能的持续更新。后续每次推送到 GitHub 时，同步更新本文件和英文版 `CHANGELOG_en.md`。
 
+## 2026-06-04
+
+### Entity 内链建议与 UI 规范沉淀
+
+- 新增 Entity 受控类型体系：
+  - 将 Entity 类型收敛为产品型号、产品线、行业领域、应用场景、材料/部件、技术/工艺、品牌/公司、竞品、目标客户、业务实体等可控选项。
+  - 历史自由类型仍可在编辑页兼容显示，避免旧数据无法维护。
+  - 仅产品型号、产品线、应用场景、技术/工艺、品牌/公司等适合落地页承接的 Entity 类型显示内链目标 URL、优先锚文本和内链策略字段。
+- 新增文章草稿内链建议：
+  - 文章编辑页在“文章内容”后、“生成来源”前新增内链建议卡片。
+  - 系统根据文章关联 Entity、Collection 范围和正文匹配结果生成候选内链。
+  - 管理员需手动选择并确认后才会把 Markdown 内链写入正文，避免生成阶段直接插入不受控链接。
+  - 新增 `article_internal_links` 表记录已应用内链，便于后续审核和追踪。
+- 优化 RAG 与生成上下文中的 Entity 表达：
+  - Entity trace 增加写作角色和是否可参与内链建议标记。
+  - 正文生成最终提示明确要求 AI 不自行插入站内链接，由草稿审核页单独处理。
+- 优化 AI 表单分析兜底：
+  - Entity AI 自动分析返回非受控类型时，自动规范为“业务实体”，避免自由类型继续污染数据。
+- 新增本地 Codex UI 规范 skill：
+  - 新建 `/Users/leo/.codex/skills/geoflow-ui-guidelines/SKILL.md`。
+  - 后续涉及 GEOFlow 后台 UI、Blade、Tailwind、表单、下拉框、选择器、CSS 或 JS 优化时，应自动读取该 skill。
+  - 规则强调优先复用现有 partial/component、统一输入区域 border/focus 样式、避免重复造 CSS/JS 轮子。
+- 验证：
+  - 已执行新增迁移 `2026_06_03_090000_add_entity_link_fields_and_article_internal_links`。
+  - 相关 PHP 语法检查通过。
+  - 重点 Feature 测试通过，覆盖 Entity 类型/内链字段、文章内链建议应用和 RAG Entity trace。
+
 ## 2026-06-03
 
 ### 分类与标签系统简化

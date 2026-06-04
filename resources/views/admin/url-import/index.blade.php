@@ -80,7 +80,7 @@
                             required
                             value="{{ old('url') }}"
                             placeholder="{{ __('admin.materials.url_import_placeholder') }}"
-                            class="mt-3 block min-h-14 w-full rounded-xl border-gray-300 px-5 text-base shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            class="mt-3 block min-h-14 w-full rounded-xl border border-gray-300 px-5 text-base shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         >
                         <p class="mt-2 text-sm text-gray-500">{{ __('admin.url_import.help.url_optional_scheme') }}</p>
                         @error('url')
@@ -91,16 +91,16 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.project_name') }}</label>
-                            <input name="project_name" value="{{ old('project_name') }}" placeholder="{{ __('admin.url_import.placeholder.project_name') }}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <input name="project_name" value="{{ old('project_name') }}" placeholder="{{ __('admin.url_import.placeholder.project_name') }}" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.source_label') }}</label>
-                            <input name="source_label" value="{{ old('source_label') }}" placeholder="{{ __('admin.url_import.placeholder.source_label') }}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <input name="source_label" value="{{ old('source_label') }}" placeholder="{{ __('admin.url_import.placeholder.source_label') }}" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.content_language') }}</label>
                             @php($selectedContentLanguage = (string) old('content_language', ''))
-                            <select name="content_language" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <select name="content_language" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                                 <option value="" @selected($selectedContentLanguage === '')>{{ __('admin.url_import.option.auto_detect') }}</option>
                                 <option value="zh-CN" @selected($selectedContentLanguage === 'zh-CN')>{{ __('admin.url_import.language.zh_cn') }}</option>
                                 <option value="en" @selected($selectedContentLanguage === 'en')>{{ __('admin.url_import.language.en') }}</option>
@@ -116,15 +116,33 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.author') }}</label>
-                            <select disabled class="mt-2 block w-full rounded-md border-gray-300 bg-gray-50 shadow-sm sm:text-sm">
+                            <select disabled class="mt-2 block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 shadow-sm sm:text-sm">
                                 <option>{{ __('admin.url_import.option.not_specified') }}</option>
                             </select>
+                        </div>
+                        @include('admin.partials.collection-select', [
+                            'name' => 'collection_id',
+                            'selectedId' => (string) old('collection_id', ''),
+                            'collectionOptions' => $collectionOptions ?? [],
+                            'label' => __('admin.url_import.field.collection'),
+                            'help' => __('admin.url_import.help.collection'),
+                            'emptyLabel' => __('admin.url_import.option.not_specified'),
+                            'class' => 'mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500',
+                        ])
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.title_count') }}</label>
+                            <select name="title_count" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                @foreach ([10, 20, 30, 50] as $titleCountOption)
+                                    <option value="{{ $titleCountOption }}" @selected((int) old('title_count', 30) === $titleCountOption)>{{ __('admin.url_import.option.title_count', ['count' => $titleCountOption]) }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">{{ __('admin.url_import.help.title_count') }}</p>
                         </div>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.notes') }}</label>
-                        <textarea name="notes" rows="3" placeholder="{{ __('admin.url_import.placeholder.notes') }}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">{{ old('notes') }}</textarea>
+                        <textarea name="notes" rows="3" placeholder="{{ __('admin.url_import.placeholder.notes') }}" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">{{ old('notes') }}</textarea>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

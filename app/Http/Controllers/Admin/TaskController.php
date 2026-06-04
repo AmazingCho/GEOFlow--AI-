@@ -598,7 +598,7 @@ class TaskController extends Controller
     {
         $rules = [
             'task_name' => ['required', 'string', 'max:200'],
-            'collection_id' => ['required', 'integer', 'min:1', Rule::exists('collections', 'id')],
+            'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'cross_collection_mode' => ['nullable', 'string'],
             'entity_ids' => ['nullable', 'array'],
             'entity_ids.*' => ['integer', 'min:1', Rule::exists('entities', 'id')],
