@@ -2,6 +2,73 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-05
+
+### Article Skill Prompt v1
+
+- Added a lightweight Master Prompt + Skill Prompt generation layer:
+  - Existing `prompt_id` remains the required Master Prompt for tasks, preserving old task-generation behavior.
+  - Added optional `tasks.skill_prompt_id` for task create/edit pages.
+  - During article generation, the Worker composes Master Prompt and Skill Prompt before rendering title, keyword, and RAG knowledge variables.
+  - Generation traces now record `skill_prompt_id`, `skill_prompt`, and `has_skill_prompt` for article review and debugging.
+- Expanded the Article Prompt Configuration entry:
+  - The former content prompt page now manages both `content` Master Prompts and `skill` Skill Prompts.
+  - Added starter Skill Prompt templates for Comparison, Buying Guide, and Application article types.
+  - Prompts already referenced by tasks cannot change type directly, preventing semantic drift for existing tasks.
+- Added `skill_prompts` to the API catalog response for future external task creation flows.
+- Verification:
+  - Applied migration `2026_06_05_010000_add_skill_prompt_id_to_tasks`.
+  - `WorkerExecutionServicePromptTest`, `AdminAiPromptsPageTest`, `AdminTasksPageTest`, and focused API catalog / task-create tests passed.
+
+### AI Material Analysis Prompts and URL Import Language Fixes
+
+- Added AI analysis model selection when creating URL Smart Import jobs:
+  - Admins can choose a specific chat model or keep the default auto-select behavior.
+  - The selected model is tried first for page cleaning, knowledge organization, keyword generation, and title generation.
+  - Existing failover remains in place, so other available models are still tried if the selected model fails.
+- Added shared AI material analysis rules:
+  - Centralized language consistency, fact-grounding, table/spec preservation, and JSON-only output constraints.
+  - Manual Knowledge Base, Entity, and Case AI analysis now reuse these rules.
+  - Knowledge analysis now clearly separates summary, admin-facing description, and storage-ready Markdown content instead of encouraging raw paragraph copying across fields.
+- Improved preset analysis rules for Knowledge Base, Entity, and Case forms:
+  - Knowledge Base analysis prioritizes product parameters, FAQ, steps, constraints, and table content.
+  - Entity analysis treats Entities as lightweight index nodes rather than full knowledge documents.
+  - Case analysis only extracts cases when real scenarios, problems, solutions, results, or metrics are present, and metrics must not be invented.
+- Added a collapsible supplemental analysis instructions field:
+  - Available on Knowledge Base create/detail, Entity, and Case forms.
+  - Includes quick templates for table/spec preservation, English output, and conservative Case extraction.
+  - Supplemental instructions act only as additional guidance and cannot override schema, language, or fact-grounding rules.
+- Fixed mixed-language URL Smart Import Entity descriptions:
+  - Non-Chinese pages no longer use a hard-coded Chinese description template.
+  - Entity descriptions now preserve evidence/context according to the resolved import language.
+- Verification:
+  - Added tests for English URL Entity descriptions and shared prompt rules.
+  - Relevant PHP syntax checks and focused material page tests passed.
+
+### Knowledge Base Entity Relations and Case Type Governance
+
+- Improved the Knowledge Base to Entity linking workflow:
+  - Knowledge base create, edit, and detail pages now reuse the same multi-select plus per-item relation UI used by Entity material links.
+  - A single knowledge base can link to multiple Entities and assign each Entity its own relation, such as primary subject, supporting reference, application reference, competitor reference, or troubleshooting reference.
+  - The global default relation field remains as a compatibility fallback for existing data, bulk actions, and older form submissions.
+  - Entity edit pages also reuse the same shared relation selector component when linking knowledge bases, reducing duplicated JavaScript and UI rules.
+- Added a shared relation multi-selector component:
+  - Added `resources/views/admin/partials/relation-multi-selector.blade.php`.
+  - Centralizes the interaction where selected items each receive an independent relation setting.
+- Improved Case type governance:
+  - Added controlled Case types for customer success, application scenario, troubleshooting, comparison validation, implementation delivery, ROI/metrics, and general cases.
+  - URL Smart Import and AI form analysis now normalize generated Cases to controlled types instead of creating free-form types such as `URL采集案例`.
+  - RAG and Worker generation context now includes Case-type reference rules so article generation can use case evidence more accurately.
+- Improved material list deletion behavior:
+  - Keyword library, title library, image library, and knowledge base deletes preserve the current query filters and return to the material list section.
+  - Knowledge base saved views now include a Clear option that clears view filters while keeping the current Collection.
+- Documentation:
+  - Updated the feature docs for overview, Entity/Case, Knowledge Base RAG, material management, and URL Smart Import.
+  - Updated agent implementation status so future agents can quickly understand the workflow changes.
+- Verification:
+  - Relevant PHP, Blade, and translation syntax checks passed.
+  - `AdminMaterialsPagesTest` passed, covering per-Entity knowledge base relations, shared Entity-page relation UI, and core material workflows.
+
 ## 2026-06-04
 
 ### Entity Internal Link Suggestions and UI Guidelines

@@ -5,6 +5,7 @@ namespace App\Services\GeoFlow;
 use App\Models\CaseRecord;
 use App\Models\EntityRecord;
 use App\Models\UrlImportJob;
+use App\Support\GeoFlow\CaseTypes;
 use Illuminate\Support\Str;
 
 class EntityExtractionService
@@ -35,6 +36,7 @@ class EntityExtractionService
         $entityNames = $this->entityNames($cleaned['entities'] ?? [], $analysis['keywords'] ?? [], $coreBusiness);
         $summary = $this->normalize((string) ($analysis['summary'] ?? $cleaned['summary'] ?? $page['summary'] ?? ''));
         $sourceUrl = (string) ($job->normalized_url ?: $job->url);
+        $language = $this->resolvedLanguage($analysis, $page);
 
         $entities = [];
         foreach ($entityNames as $name) {
@@ -43,7 +45,7 @@ class EntityExtractionService
                 'name' => $name,
                 'entity_type' => $entityType,
                 'aliases' => '',
-                'description' => $this->entityDescription($name, $entityType, $summary, $coreBusiness, $facts),
+                'description' => $this->entityDescription($name, $entityType, $summary, $coreBusiness, $facts, $language),
                 'attributes_json' => json_encode([
                     'source' => 'url_import',
                     'source_domain' => (string) ($job->source_domain ?? ''),
@@ -56,7 +58,7 @@ class EntityExtractionService
             ];
         }
 
-        $cases = $this->caseCandidates($analysis, $page, $job, $coreBusiness, $facts, $entities);
+        $cases = $this->caseCandidates($analysis, $page, $job, $coreBusiness, $facts, $entities, $language);
 
         return [
             'entities' => array_slice($entities, 0, 12),
@@ -118,7 +120,7 @@ class EntityExtractionService
                     'collection_id' => $collectionId,
                     'entity_id' => $entity?->id,
                     'title' => $this->limit($title, 200),
-                    'case_type' => $this->limit((string) ($candidate['case_type'] ?? ''), 100),
+                    'case_type' => CaseTypes::normalize((string) ($candidate['case_type'] ?? '')),
                     'summary' => $this->limit((string) ($candidate['summary'] ?? ''), 10000),
                     'challenge' => $this->limit((string) ($candidate['challenge'] ?? ''), 10000),
                     'solution' => $this->limit((string) ($candidate['solution'] ?? ''), 10000),
@@ -149,7 +151,7 @@ class EntityExtractionService
      * @param  list<array<string,mixed>>  $entities
      * @return list<array<string,mixed>>
      */
-    private function caseCandidates(array $analysis, array $page, UrlImportJob $job, array $coreBusiness, array $facts, array $entities): array
+    private function caseCandidates(array $analysis, array $page, UrlImportJob $job, array $coreBusiness, array $facts, array $entities, array $language): array
     {
         $summary = $this->normalize((string) ($analysis['summary'] ?? data_get($analysis, 'cleaned.summary', '') ?: $page['summary'] ?? ''));
         $titleSource = $this->normalize((string) ($analysis['library_name'] ?? $page['title'] ?? $job->source_domain ?? 'URL素材'));
@@ -157,14 +159,14 @@ class EntityExtractionService
             return [];
         }
 
-        $caseTitle = $this->caseTitle($titleSource, $entities, $coreBusiness);
+        $caseTitle = $this->caseTitle($titleSource, $entities, $coreBusiness, $language);
         $challenge = $this->businessValue($coreBusiness, 'target_audience') ?: $this->businessValue($coreBusiness, 'commercial_scenarios');
         $solution = $this->businessValue($coreBusiness, 'products_services') ?: $this->businessValue($coreBusiness, 'value_proposition');
         $result = implode("\n", array_slice($facts, 0, 4));
         return [[
             'entity_name' => (string) ($entities[0]['name'] ?? ''),
             'title' => $caseTitle,
-            'case_type' => 'URL采集案例',
+            'case_type' => CaseTypes::APPLICATION_SCENARIO,
             'summary' => $summary,
             'challenge' => $challenge,
             'solution' => $solution,
@@ -241,11 +243,12 @@ class EntityExtractionService
     /**
      * @param  list<string>  $facts
      */
-    private function entityDescription(string $name, string $entityType, string $summary, array $coreBusiness, array $facts): string
+    private function entityDescription(string $name, string $entityType, string $summary, array $coreBusiness, array $facts, array $language): string
     {
+        $isChinese = $this->isChineseLanguage($language);
         $evidence = array_values(array_filter($facts, fn (string $fact): bool => mb_stripos($fact, $name, 0, 'UTF-8') !== false));
         if ($evidence !== []) {
-            return Str::limit($name.'：'.implode('；', array_slice($evidence, 0, 2)), 500, '');
+            return Str::limit($name.($isChinese ? '：' : ': ').implode($isChinese ? '；' : '; ', array_slice($evidence, 0, 2)), 500, '');
         }
 
         $context = match ($entityType) {
@@ -261,13 +264,17 @@ class EntityExtractionService
             $context = implode('；', array_slice($facts, 0, 2));
         }
 
+        if (! $isChinese) {
+            return Str::limit($context !== '' ? $name.': '.$context : $name, 500, '');
+        }
+
         return Str::limit($name.' 是从 URL 采集内容中识别出的'.$entityType.($context !== '' ? '，相关上下文：'.$context : '。'), 500, '');
     }
 
     /**
      * @param  list<array<string,mixed>>  $entities
      */
-    private function caseTitle(string $titleSource, array $entities, array $coreBusiness): string
+    private function caseTitle(string $titleSource, array $entities, array $coreBusiness, array $language): string
     {
         $subject = $this->normalize((string) ($entities[0]['name'] ?? ''));
         if ($subject === '') {
@@ -278,10 +285,10 @@ class EntityExtractionService
 
         $subject = $this->normalizeCaseSubject($subject);
         if ($subject === '') {
-            $subject = 'URL采集内容';
+            $subject = $this->isChineseLanguage($language) ? 'URL采集内容' : 'URL imported content';
         }
 
-        $suffix = preg_match('/[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]/u', $subject) === 1
+        $suffix = $this->isChineseLanguage($language) || preg_match('/[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]/u', $subject) === 1
             ? '应用案例'
             : 'Case';
 
@@ -290,6 +297,52 @@ class EntityExtractionService
         }
 
         return Str::limit($subject.' '.$suffix, 200, '');
+    }
+
+    /**
+     * @param  array<string,mixed>  $analysis
+     * @param  array<string,mixed>  $page
+     * @return array{code:string,name:string}
+     */
+    private function resolvedLanguage(array $analysis, array $page): array
+    {
+        $language = $analysis['language'] ?? $page['language'] ?? [];
+        if (is_string($language)) {
+            $language = ['code' => $language, 'name' => $language];
+        }
+        if (! is_array($language)) {
+            $language = [];
+        }
+
+        $code = trim((string) ($language['code'] ?? $page['resolved_content_language'] ?? ''));
+        $name = trim((string) ($language['name'] ?? $page['resolved_content_language_name'] ?? ''));
+
+        if ($code === '' && $name === '') {
+            $source = implode(' ', array_filter([
+                (string) ($analysis['summary'] ?? ''),
+                (string) data_get($analysis, 'cleaned.summary', ''),
+                (string) ($page['summary'] ?? ''),
+                (string) ($page['title'] ?? ''),
+            ]));
+            $code = preg_match('/[\p{Han}]/u', $source) === 1 ? 'zh' : 'en';
+            $name = $code === 'zh' ? 'Chinese' : 'English';
+        }
+
+        return [
+            'code' => $code !== '' ? mb_strtolower($code, 'UTF-8') : 'en',
+            'name' => $name !== '' ? $name : ($code === 'zh' ? 'Chinese' : 'English'),
+        ];
+    }
+
+    /**
+     * @param  array{code:string,name:string}  $language
+     */
+    private function isChineseLanguage(array $language): bool
+    {
+        $code = mb_strtolower((string) ($language['code'] ?? ''), 'UTF-8');
+        $name = mb_strtolower((string) ($language['name'] ?? ''), 'UTF-8');
+
+        return str_starts_with($code, 'zh') || str_contains($name, 'chinese') || str_contains($name, '中文');
     }
 
     private function normalizeCaseSubject(string $subject): string

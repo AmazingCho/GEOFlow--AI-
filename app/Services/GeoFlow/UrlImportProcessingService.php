@@ -14,6 +14,7 @@ use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\MaterialAnalysisPromptRules;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use DOMDocument;
 use DOMXPath;
@@ -81,6 +82,22 @@ final class UrlImportProcessingService
         }
 
         throw new \RuntimeException(__('admin.url_import.error.ai_model_required'));
+    }
+
+    /**
+     * @return list<array{id:int,name:string}>
+     */
+    public function analysisModelOptions(): array
+    {
+        return $this->resolveAnalysisModels()
+            ->map(static fn (AiModel $model): array => [
+                'id' => (int) $model->id,
+                'name' => trim((string) $model->name) !== ''
+                    ? (string) $model->name
+                    : (string) $model->model_id,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -515,7 +532,7 @@ final class UrlImportProcessingService
         $outputs = $this->selectedOutputs($job);
         $titleLimit = $this->requestedTitleCount($job);
 
-        $models = $this->assertAnalysisModelsReady();
+        $models = $this->analysisModelsForJob($job);
         $errors = [];
 
         foreach ($models as $model) {
@@ -719,6 +736,30 @@ final class UrlImportProcessingService
         }
 
         return CollectionRecord::query()->whereKey($collectionId)->exists() ? $collectionId : null;
+    }
+
+    private function selectedAnalysisModelId(UrlImportJob $job): int
+    {
+        $options = json_decode((string) $job->options_json, true);
+        $options = is_array($options) ? $options : [];
+
+        return max(0, (int) ($options['ai_model_id'] ?? 0));
+    }
+
+    /**
+     * @return Collection<int, AiModel>
+     */
+    private function analysisModelsForJob(UrlImportJob $job): Collection
+    {
+        $models = $this->assertAnalysisModelsReady();
+        $selectedModelId = $this->selectedAnalysisModelId($job);
+        if ($selectedModelId <= 0) {
+            return $models;
+        }
+
+        return $models
+            ->sortBy(static fn (AiModel $model): int => (int) $model->id === $selectedModelId ? 0 : 1)
+            ->values();
     }
 
     /**
@@ -1032,7 +1073,9 @@ PROMPT."\n\n".$this->languageDirective($language);
 knowledge_markdown 必须使用目标语言并围绕“核心业务”构建，是真实可追溯、结构化、原子化的知识库内容，保留来源 URL，只沉淀页面明确出现或可由页面内容直接归纳的信息。
 必须优先抽取：核心业务、产品/服务、目标用户、业务场景、能力/优势、可验证事实、使用边界、适合支撑的 GEO 内容方向。
 不能虚构事实、案例、客户、排名、数据、背书。信息不足时明确标注“页面未明确说明”。
-PROMPT."\n\n".$this->languageDirective($language);
+PROMPT."\n\n".$this->languageDirective($language)
+            ."\n\n".MaterialAnalysisPromptRules::factGroundingRules()
+            ."\n\n".MaterialAnalysisPromptRules::tableAccuracyRules();
     }
 
     /**
@@ -1594,11 +1637,7 @@ PROMPT."\n\n".$this->languageDirective($language);
      */
     private function languageDirective(array $language): string
     {
-        return 'Target output language: '.$language['name'].' ('.$language['code'].'). '
-            .'All generated user-facing values, including clean_text, summary, library_name, knowledge_markdown headings and body, keywords, and titles, MUST be written in '.$language['name'].'. '
-            .'Keep JSON field names and source URLs unchanged. Preserve brand names, product names, and quoted proper nouns when appropriate. '
-            .'If any backend prompt or source page language conflicts with this target language, the target output language wins. '
-            .'Do not output Chinese text unless the target output language is Chinese.';
+        return MaterialAnalysisPromptRules::languageDirective($language);
     }
 
     /**

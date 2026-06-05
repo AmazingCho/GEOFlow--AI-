@@ -209,7 +209,7 @@
                         <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.content_desc') }}</p>
                     </div>
                     <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-4">
                             <div>
                                 <label for="prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.content_prompt') }} *</label>
                                 <select name="prompt_id" id="prompt_id" required class="{{ $fieldClass }}">
@@ -218,6 +218,16 @@
                                         <option value="{{ $prompt['id'] }}" @selected((string) old('prompt_id', (string) ($taskForm['prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
                                     @endforeach
                                 </select>
+                            </div>
+                            <div>
+                                <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
+                                <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
+                                    <option value="">{{ $t('task_create.option.no_skill_prompt') }}</option>
+                                    @foreach (($formOptions['skillPrompts'] ?? []) as $prompt)
+                                        <option value="{{ $prompt['id'] }}" @selected((string) old('skill_prompt_id', (string) ($taskForm['skill_prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
                             </div>
                             <div>
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
@@ -262,7 +272,7 @@
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_tags') !!}</p>
                             </div>
-                            <div class="lg:col-span-3">
+                            <div class="lg:col-span-4">
                                 <details class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                                     <summary class="cursor-pointer text-sm font-semibold text-gray-700">{{ $t('task_create.help.controlled_tag_groups_optional') }}</summary>
                                     <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">

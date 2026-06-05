@@ -52,7 +52,8 @@ class WorkerExecutionServicePromptTest extends TestCase
         $this->assertStringContainsString('- Article title: What is AI CRM?', $prompt);
         $this->assertStringContainsString('- Core keyword: AI CRM', $prompt);
         $this->assertStringContainsString('Reference knowledge from the business knowledge base.', $prompt);
-        $this->assertStringContainsString('Please output only the final article body in Markdown.', $prompt);
+        $this->assertStringContainsString('The final article must be written entirely in English.', $prompt);
+        $this->assertStringContainsString('Output only the final article body in Markdown.', $prompt);
     }
 
     public function test_unknown_template_blocks_are_preserved_for_future_extensions(): void
@@ -68,12 +69,31 @@ class WorkerExecutionServicePromptTest extends TestCase
         $this->assertStringContainsString('标题：AI CRM 到底是什么？', $prompt);
     }
 
+    public function test_master_and_skill_prompts_are_composed_without_dropping_context(): void
+    {
+        $service = app(WorkerExecutionService::class);
+        $method = new ReflectionMethod($service, 'composeMasterAndSkillPrompt');
+        $method->setAccessible(true);
+
+        $prompt = (string) $method->invoke(
+            $service,
+            'Write a trustworthy GEO article for {{title}}.',
+            'Add a comparison table and decision framework.'
+        );
+
+        $this->assertStringContainsString('=== Master Prompt ===', $prompt);
+        $this->assertStringContainsString('Write a trustworthy GEO article for {{title}}.', $prompt);
+        $this->assertStringContainsString('=== Skill Prompt ===', $prompt);
+        $this->assertStringContainsString('Add a comparison table and decision framework.', $prompt);
+    }
+
     private function renderContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext): string
     {
         $service = app(WorkerExecutionService::class);
         $method = new ReflectionMethod($service, 'buildContentPrompt');
         $method->setAccessible(true);
+        $targetLanguage = preg_match('/[\x{4e00}-\x{9fff}]/u', $title) === 1 ? 'zh' : 'en';
 
-        return (string) $method->invoke($service, $title, $keyword, $promptContent, $knowledgeContext);
+        return (string) $method->invoke($service, $title, $keyword, $promptContent, $knowledgeContext, $targetLanguage);
     }
 }

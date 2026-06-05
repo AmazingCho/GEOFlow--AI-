@@ -211,6 +211,7 @@ class TaskController extends Controller
                 'cross_collection_mode' => (int) ($task['cross_collection_mode'] ?? 0),
                 'title_library_id' => (string) ($task['title_library_id'] ?? ''),
                 'prompt_id' => (string) ($task['prompt_id'] ?? ''),
+                'skill_prompt_id' => (string) (($task['skill_prompt_id'] ?? '') ?: ''),
                 'ai_model_id' => (string) ($task['ai_model_id'] ?? ''),
                 'author_id' => (string) (($task['author_id'] ?? 0) ?: 0),
                 'image_library_id' => (string) (($task['image_library_id'] ?? '') ?: ''),
@@ -427,6 +428,7 @@ class TaskController extends Controller
      * @return array{
      *     titleLibraries: list<array{id:int,name:string}>,
      *     prompts: list<array{id:int,name:string}>,
+     *     skillPrompts: list<array{id:int,name:string}>,
      *     aiModels: list<array{id:int,name:string}>,
      *     imageLibraries: list<array{id:int,name:string,count:int}>,
      *     imageTags: list<array{id:int,label:string,count:int}>,
@@ -458,6 +460,14 @@ class TaskController extends Controller
             ->select(['id', 'name'])
             ->where('type', 'content')
             ->orderByDesc('id')
+            ->get()
+            ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->all();
+
+        $skillPrompts = Prompt::query()
+            ->select(['id', 'name'])
+            ->where('type', 'skill')
+            ->orderBy('name')
             ->get()
             ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
@@ -561,6 +571,7 @@ class TaskController extends Controller
             'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
             'titleLibraries' => $titleLibraries,
             'prompts' => $prompts,
+            'skillPrompts' => $skillPrompts,
             'aiModels' => $aiModels,
             'imageLibraries' => $imageLibraries,
             'imageTags' => $imageTags,
@@ -578,6 +589,7 @@ class TaskController extends Controller
      *     task_name: string,
      *     title_library_id: int,
      *     prompt_id: int,
+     *     skill_prompt_id: int|null,
      *     ai_model_id: int,
      *     author_id: int|null,
      *     image_library_id: int|null,
@@ -605,7 +617,8 @@ class TaskController extends Controller
             'case_ids' => ['nullable', 'array'],
             'case_ids.*' => ['integer', 'min:1', Rule::exists('case_records', 'id')],
             'title_library_id' => ['required', 'integer', 'min:1'],
-            'prompt_id' => ['required', 'integer', 'min:1'],
+            'prompt_id' => ['required', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'content')],
+            'skill_prompt_id' => ['nullable', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'skill')],
             'ai_model_id' => ['required', 'integer', 'min:1'],
             'author_id' => ['nullable', 'integer', 'min:0'],
             'image_library_id' => ['nullable', 'integer', 'min:1'],
@@ -658,6 +671,7 @@ class TaskController extends Controller
             'image_count' => (int) ($payload['image_count'] ?? 0),
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
+            'skill_prompt_id' => isset($payload['skill_prompt_id']) ? (int) $payload['skill_prompt_id'] : null,
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
             'knowledge_base_id' => isset($payload['knowledge_base_id']) ? (int) $payload['knowledge_base_id'] : null,

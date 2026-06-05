@@ -166,6 +166,7 @@ return new class extends Migration
             $table->foreignId('image_library_id')->nullable()->constrained('image_libraries');
             $table->foreignId('knowledge_base_id')->nullable()->constrained('knowledge_bases');
             $table->foreignId('prompt_id')->nullable()->constrained('prompts');
+            $table->foreignId('skill_prompt_id')->nullable()->constrained('prompts');
             $table->foreignId('ai_model_id')->nullable()->constrained('ai_models');
             $table->integer('image_count')->default(0);
             $table->unsignedBigInteger('author_id')->nullable();

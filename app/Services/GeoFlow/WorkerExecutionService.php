@@ -18,6 +18,7 @@ use App\Models\Task;
 use App\Models\Title;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\ArticleWorkflow;
+use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
@@ -128,6 +129,7 @@ class WorkerExecutionService
                     author: $author,
                     category: $category,
                     prompt: $pipeline['prompt'],
+                    skillPrompt: $pipeline['skillPrompt'],
                     aiModel: $aiModel,
                     generationAttempts: $pipeline['generationAttempts'],
                     knowledgeContext: (string) $pipeline['knowledgeContext'],
@@ -144,6 +146,7 @@ class WorkerExecutionService
      *   author:Author|null,
      *   category:Category|null,
      *   prompt:Prompt|null,
+     *   skillPrompt:Prompt|null,
      *   keyword:string,
      *   knowledgeContext:string,
      *   contentPrompt:string,
@@ -165,12 +168,14 @@ class WorkerExecutionService
         $author = $this->pickAuthor($task);
         $category = $this->pickCategory($task);
         $prompt = $task->prompt_id ? Prompt::query()->find((int) $task->prompt_id) : null;
+        $skillPrompt = $task->skill_prompt_id ? Prompt::query()->whereKey((int) $task->skill_prompt_id)->where('type', 'skill')->first() : null;
         $keyword = (string) ($titleRow->keyword ?? '');
         $pipelineSteps[] = $this->pipelineStep('select_sources', [
             'title_id' => (int) $titleRow->id,
             'author_id' => $author?->id,
             'category_id' => $category?->id,
             'prompt_id' => $prompt?->id,
+            'skill_prompt_id' => $skillPrompt?->id,
         ]);
 
         $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
@@ -182,11 +187,13 @@ class WorkerExecutionService
             'cases' => count($this->lastKnowledgeTrace['cases'] ?? []),
         ]);
 
-        $targetLanguage = $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $prompt?->content);
-        $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext, $targetLanguage);
+        $composedPromptContent = $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content);
+        $targetLanguage = $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $composedPromptContent);
+        $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $composedPromptContent, $knowledgeContext, $targetLanguage);
         $pipelineSteps[] = $this->pipelineStep('compose_prompt', [
             'prompt_length' => mb_strlen($contentPrompt, 'UTF-8'),
             'has_custom_prompt' => $prompt !== null,
+            'has_skill_prompt' => $skillPrompt !== null,
             'target_language' => $targetLanguage,
         ]);
 
@@ -226,6 +233,7 @@ class WorkerExecutionService
             'author' => $author,
             'category' => $category,
             'prompt' => $prompt,
+            'skillPrompt' => $skillPrompt,
             'keyword' => $keyword,
             'knowledgeContext' => $knowledgeContext,
             'contentPrompt' => $contentPrompt,
@@ -354,6 +362,7 @@ class WorkerExecutionService
         ?Author $author,
         ?Category $category,
         ?Prompt $prompt,
+        ?Prompt $skillPrompt,
         AiModel $aiModel,
         array $generationAttempts,
         string $knowledgeContext,
@@ -381,8 +390,9 @@ class WorkerExecutionService
             'author' => $author ? ['id' => (int) $author->id, 'name' => (string) $author->name] : null,
             'category' => $category ? ['id' => (int) $category->id, 'name' => (string) $category->name] : null,
             'prompt' => $prompt ? ['id' => (int) $prompt->id, 'name' => (string) $prompt->name, 'type' => (string) $prompt->type] : null,
+            'skill_prompt' => $skillPrompt ? ['id' => (int) $skillPrompt->id, 'name' => (string) $skillPrompt->name, 'type' => (string) $skillPrompt->type] : null,
             'language' => [
-                'code' => $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $prompt?->content),
+                'code' => $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content)),
             ],
             'model' => [
                 'id' => (int) $aiModel->id,
@@ -806,6 +816,22 @@ class WorkerExecutionService
     /**
      * 构造正文提示词：优先精确替换变量；无变量的自定义提示词自动补齐任务上下文。
      */
+    private function composeMasterAndSkillPrompt(?string $masterPromptContent, ?string $skillPromptContent): ?string
+    {
+        $masterPrompt = trim((string) $masterPromptContent);
+        $skillPrompt = trim((string) $skillPromptContent);
+
+        if ($masterPrompt === '') {
+            return $skillPrompt !== '' ? $skillPrompt : null;
+        }
+
+        if ($skillPrompt === '') {
+            return $masterPrompt;
+        }
+
+        return trim("=== Master Prompt ===\n{$masterPrompt}\n\n=== Skill Prompt ===\n{$skillPrompt}");
+    }
+
     private function buildContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext, string $targetLanguage): string
     {
         $prompt = trim((string) $promptContent);
@@ -1071,6 +1097,7 @@ class WorkerExecutionService
                     'id' => (int) $caseRecord->id,
                     'title' => (string) $caseRecord->title,
                     'type' => (string) ($caseRecord->case_type ?? ''),
+                    'role' => CaseTypes::referenceRule((string) ($caseRecord->case_type ?? '')),
                     'entity_id' => $caseRecord->entity_id !== null ? (int) $caseRecord->entity_id : null,
                     'entity_name' => (string) ($caseRecord->entity?->name ?? ''),
                 ])
@@ -1111,6 +1138,7 @@ class WorkerExecutionService
                     $line .= '，关联实体：'.(string) $caseRecord->entity->name;
                 }
                 $lines[] = $line;
+                $lines[] = '  引用规则：'.CaseTypes::referenceRule((string) ($caseRecord->case_type ?? ''));
 
                 foreach ([
                     'summary' => '摘要',

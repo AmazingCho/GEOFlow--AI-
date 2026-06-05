@@ -94,9 +94,26 @@ class EntityMaterialLinkService
     }
 
     /**
-     * @param  list<int>  $entityIds
+     * @return array<int,string>
      */
-    public function syncEntities(Model $model, array $entityIds, string $relationType = 'supporting_reference'): void
+    public function selectedKnowledgeRelationTypesFor(Model $model): array
+    {
+        return DB::table('entity_material_links')
+            ->where('linkable_type', $model::class)
+            ->where('linkable_id', (int) $model->getKey())
+            ->whereIn('link_role', self::KNOWLEDGE_RELATION_TYPES)
+            ->pluck('link_role', 'entity_id')
+            ->mapWithKeys(fn (mixed $role, mixed $id): array => [
+                (int) $id => $this->normalizeKnowledgeRelationType(is_string($role) ? $role : ''),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $entityIds
+     * @param  array<int,string>  $relationTypesByEntityId
+     */
+    public function syncEntities(Model $model, array $entityIds, string $relationType = 'supporting_reference', array $relationTypesByEntityId = []): void
     {
         $entityIds = $this->existingEntityIds($entityIds);
         $linkableType = $model::class;
@@ -104,12 +121,25 @@ class EntityMaterialLinkService
         $linkRole = $model instanceof KnowledgeBase
             ? $this->normalizeKnowledgeRelationType($relationType)
             : 'related';
+        $relationTypesByEntityId = collect($relationTypesByEntityId)
+            ->mapWithKeys(fn (mixed $role, mixed $id): array => [
+                (int) $id => $this->normalizeKnowledgeRelationType(is_string($role) ? $role : ''),
+            ])
+            ->all();
 
-        DB::transaction(function () use ($entityIds, $linkableType, $linkableId, $linkRole): void {
+        DB::transaction(function () use ($model, $entityIds, $linkableType, $linkableId, $linkRole, $relationTypesByEntityId): void {
             DB::table('entity_material_links')
                 ->where('linkable_type', $linkableType)
                 ->where('linkable_id', $linkableId)
                 ->delete();
+
+            if ($model instanceof KnowledgeBase) {
+                foreach ($entityIds as $entityId) {
+                    $this->insertRows([$entityId], $linkableType, $linkableId, $relationTypesByEntityId[$entityId] ?? $linkRole);
+                }
+
+                return;
+            }
 
             $this->insertRows($entityIds, $linkableType, $linkableId, $linkRole);
         });

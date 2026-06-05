@@ -8,7 +8,9 @@ use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
 use App\Models\Tag;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
+use App\Support\GeoFlow\MaterialAnalysisPromptRules;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use Illuminate\Support\Str;
 use Throwable;
@@ -20,26 +22,26 @@ class MaterialFormAnalysisService
     /**
      * @return array<string, mixed>
      */
-    public function analyzeEntity(string $text, int $modelId = 0): array
+    public function analyzeEntity(string $text, int $modelId = 0, string $supplementalInstructions = ''): array
     {
-        return $this->analyze($text, $modelId, 'entity');
+        return $this->analyze($text, $modelId, 'entity', [], $supplementalInstructions);
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function analyzeCase(string $text, int $modelId = 0): array
+    public function analyzeCase(string $text, int $modelId = 0, string $supplementalInstructions = ''): array
     {
-        return $this->analyze($text, $modelId, 'case');
+        return $this->analyze($text, $modelId, 'case', [], $supplementalInstructions);
     }
 
     /**
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
-    public function analyzeKnowledge(string $text, int $modelId = 0, array $context = []): array
+    public function analyzeKnowledge(string $text, int $modelId = 0, array $context = [], string $supplementalInstructions = ''): array
     {
-        return $this->analyze($text, $modelId, 'knowledge', $context);
+        return $this->analyze($text, $modelId, 'knowledge', $context, $supplementalInstructions);
     }
 
     /**
@@ -68,7 +70,7 @@ class MaterialFormAnalysisService
     /**
      * @return array<string, mixed>
      */
-    private function analyze(string $text, int $modelId, string $type, array $context = []): array
+    private function analyze(string $text, int $modelId, string $type, array $context = [], string $supplementalInstructions = ''): array
     {
         $text = trim($text);
         if ($text === '') {
@@ -81,7 +83,7 @@ class MaterialFormAnalysisService
         }
 
         try {
-            $content = $this->requestJson($model, $text, $type, $context);
+            $content = $this->requestJson($model, $text, $type, $context, $supplementalInstructions);
             $decoded = json_decode($content, true);
 
             return is_array($decoded) ? $this->normalize($decoded, $text, $type, $context) : $this->fallback($text, $type, $context);
@@ -107,7 +109,7 @@ class MaterialFormAnalysisService
         return $query->orderBy('failover_priority')->orderBy('id')->first();
     }
 
-    private function requestJson(AiModel $model, string $text, string $type, array $context = []): string
+    private function requestJson(AiModel $model, string $text, string $type, array $context = [], string $supplementalInstructions = ''): string
     {
         $providerUrl = OpenAiRuntimeProvider::resolveChatBaseUrl((string) ($model->api_url ?? ''));
         $apiKey = $this->apiKeyCrypto->decrypt((string) ($model->getRawOriginal('api_key') ?? ''));
@@ -117,17 +119,8 @@ class MaterialFormAnalysisService
 
         $driver = OpenAiRuntimeProvider::resolveChatDriver($providerUrl, (string) ($model->model_id ?? ''));
         $providerName = OpenAiRuntimeProvider::registerProvider('material_form_analysis', $driver, $providerUrl, $apiKey);
-        $schema = match ($type) {
-            'entity' => 'name, entity_type, aliases, description, attributes_json, source_url, tags',
-            'knowledge' => 'collection_id, knowledge_type, knowledge_role, importance, summary, description, content, entity_ids, tags',
-            default => 'title, case_type, summary, challenge, solution, result, metrics, source_url, tags',
-        };
-        $system = '你是GEOFlow素材分析助手。只输出JSON，不要Markdown。';
-        $contextText = $type === 'knowledge' ? $this->knowledgeContextPrompt($context) : '';
-        $knowledgeInstruction = $type === 'knowledge'
-            ? '知识库 content 字段必须返回可直接入库的 Markdown 正文：保留事实、参数、FAQ、步骤、案例线索和重要细节，可以清理格式和去重，但不要改写成短摘要，也不要包含表单标题或来源 URL。'
-            : '';
-        $prompt = "请分析以下内容并提取{$type}表单字段。JSON字段固定为：{$schema}。tags为字符串数组，attributes_json必须是可解析JSON字符串。知识库 role 只能使用 primary_source、supporting_context、constraint、comparison_reference、style_reference、archive；importance 为 1 到 5。{$knowledgeInstruction}\n{$contextText}\n\n内容：\n{$text}";
+        $system = 'You are the GEOFlow material form analysis assistant. '.MaterialAnalysisPromptRules::jsonOnlyRule();
+        $prompt = $this->buildPrompt($type, $text, $context, $supplementalInstructions);
 
         $response = agent($system)->prompt($prompt, [], $providerName, (string) ($model->model_id ?? ''));
         $content = OpenAiRuntimeProvider::normalizeGeneratedText((string) ($response->text ?? ''));
@@ -136,6 +129,33 @@ class MaterialFormAnalysisService
         }
 
         return trim(preg_replace('/^```(?:json)?|```$/m', '', $content) ?? $content);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function buildPrompt(string $type, string $text, array $context, string $supplementalInstructions): string
+    {
+        $typeRules = match ($type) {
+            'entity' => MaterialAnalysisPromptRules::entityRules(),
+            'knowledge' => MaterialAnalysisPromptRules::knowledgeRules(),
+            default => MaterialAnalysisPromptRules::caseRules(),
+        };
+
+        $contextText = $type === 'knowledge' ? $this->knowledgeContextPrompt($context) : '';
+        $supplemental = MaterialAnalysisPromptRules::supplementalInstructions($supplementalInstructions);
+        $parts = array_filter([
+            MaterialAnalysisPromptRules::autoLanguageDirective(),
+            MaterialAnalysisPromptRules::jsonOnlyRule(),
+            MaterialAnalysisPromptRules::factGroundingRules(),
+            MaterialAnalysisPromptRules::tableAccuracyRules(),
+            $typeRules,
+            $contextText !== '' ? "Available existing context for matching only:\n".$contextText : '',
+            $supplemental,
+            "Analyze the following submitted material and fill the {$type} form fields. Return only the JSON object.\n\nSubmitted material:\n".$text,
+        ], static fn (string $part): bool => trim($part) !== '');
+
+        return implode("\n\n", $parts);
     }
 
     /**
@@ -148,6 +168,10 @@ class MaterialFormAnalysisService
 
         if ($type === 'entity') {
             $payload['entity_type'] = EntityTypes::normalize((string) ($payload['entity_type'] ?? ''));
+        }
+
+        if ($type === 'case') {
+            $payload['case_type'] = CaseTypes::normalize((string) ($payload['case_type'] ?? ''));
         }
 
         if ($type === 'knowledge') {
@@ -186,7 +210,7 @@ class MaterialFormAnalysisService
 
         return [
             'title' => Str::limit($firstLine !== '' ? $firstLine : $summary, 200, ''),
-            'case_type' => 'AI识别案例',
+            'case_type' => CaseTypes::GENERAL,
             'summary' => $summary,
             'challenge' => '',
             'solution' => '',

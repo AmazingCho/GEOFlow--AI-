@@ -53,7 +53,7 @@
                         <p class="mt-1 text-sm text-orange-800">{{ __('admin.knowledge_bases.ai_classify_desc') }}</p>
                     </div>
                     <div class="flex min-w-[260px] flex-col gap-2 sm:flex-row">
-                        <select data-ai-analysis-model class="rounded-md border-orange-200 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                        <select data-ai-analysis-model class="rounded-md border border-orange-200 bg-white text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
                             <option value="0">{{ __('admin.knowledge_bases.ai_classify_auto_model') }}</option>
                             @foreach(($aiModelOptions ?? []) as $model)
                                 <option value="{{ (int) $model['id'] }}">{{ $model['name'] }}</option>
@@ -65,7 +65,8 @@
                         </button>
                     </div>
                 </div>
-                <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border-orange-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500" placeholder="{{ __('admin.knowledge_bases.ai_classify_placeholder') }}"></textarea>
+                <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border border-orange-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500" placeholder="{{ __('admin.knowledge_bases.ai_classify_placeholder') }}"></textarea>
+                @include('admin.partials.material-ai-analysis-instructions')
                 <p data-ai-analysis-status class="mt-2 hidden text-sm text-orange-800"></p>
                 <p data-ai-analysis-tags class="mt-2 hidden text-xs text-orange-700"></p>
             </div>
@@ -123,17 +124,22 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_entity_relation') }}</label>
                             <p class="-mt-1 mb-3 text-xs leading-5 text-gray-500">{{ __('admin.knowledge_bases.entity_relation_help') }}</p>
-                            <select name="entity_relation_type" class="mb-3 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
-                                @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
-                                    <option value="{{ $relationTypeOption['value'] }}" @selected(old('entity_relation_type', (string) ($entityRelationType ?? 'supporting_reference')) === $relationTypeOption['value'])>
-                                        {{ $relationTypeOption['label'] }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @include('admin.partials.entity-selector', [
-                                'entityOptions' => $entityOptions ?? [],
-                                'selectedEntityIds' => old('entity_ids', $selectedEntityIds ?? []),
+                            @include('admin.partials.relation-multi-selector', [
+                                'selectorName' => 'entity_ids',
+                                'options' => $entityOptions ?? [],
+                                'selectedIds' => old('entity_ids', $selectedEntityIds ?? []),
+                                'relationFieldName' => 'entity_relation_types',
+                                'defaultRelationFieldName' => 'entity_relation_type',
+                                'defaultRelationType' => (string) ($entityRelationType ?? 'supporting_reference'),
+                                'relationTypesById' => $entityRelationTypesById ?? [],
+                                'relationOptions' => $knowledgeRelationTypeOptions ?? [],
                                 'tone' => 'orange',
+                                'placeholder' => __('admin.entities.selector_placeholder'),
+                                'emptyText' => __('admin.entities.no_entity_options'),
+                                'noneSelectedText' => __('admin.entities.selector_none_selected'),
+                                'removeText' => __('admin.entities.selector_remove'),
+                                'relationSuffixText' => __('admin.knowledge_bases.relation_suffix'),
+                                'helpText' => __('admin.knowledge_bases.entity_relation_per_item_help'),
                             ])
                         </div>
                         <div>
@@ -224,17 +230,22 @@
                                 <div class="lg:col-span-2">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">{{ __('admin.knowledge_bases.field_entity_relation') }}</label>
                                     <p class="-mt-1 mb-3 text-xs leading-5 text-gray-500">{{ __('admin.knowledge_bases.entity_relation_help') }}</p>
-                                    <select name="entity_relation_type" class="mb-3 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500">
-                                        @foreach ($knowledgeRelationTypeOptions ?? [] as $relationTypeOption)
-                                            <option value="{{ $relationTypeOption['value'] }}" @selected(old('entity_relation_type', (string) ($entityRelationType ?? 'supporting_reference')) === $relationTypeOption['value'])>
-                                                {{ $relationTypeOption['label'] }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @include('admin.partials.entity-selector', [
-                                        'entityOptions' => $entityOptions ?? [],
-                                        'selectedEntityIds' => old('entity_ids', $selectedEntityIds ?? []),
+                                    @include('admin.partials.relation-multi-selector', [
+                                        'selectorName' => 'entity_ids',
+                                        'options' => $entityOptions ?? [],
+                                        'selectedIds' => old('entity_ids', $selectedEntityIds ?? []),
+                                        'relationFieldName' => 'entity_relation_types',
+                                        'defaultRelationFieldName' => 'entity_relation_type',
+                                        'defaultRelationType' => (string) ($entityRelationType ?? 'supporting_reference'),
+                                        'relationTypesById' => $entityRelationTypesById ?? [],
+                                        'relationOptions' => $knowledgeRelationTypeOptions ?? [],
                                         'tone' => 'orange',
+                                        'placeholder' => __('admin.entities.selector_placeholder'),
+                                        'emptyText' => __('admin.entities.no_entity_options'),
+                                        'noneSelectedText' => __('admin.entities.selector_none_selected'),
+                                        'removeText' => __('admin.entities.selector_remove'),
+                                        'relationSuffixText' => __('admin.knowledge_bases.relation_suffix'),
+                                        'helpText' => __('admin.knowledge_bases.entity_relation_per_item_help'),
                                     ])
                                 </div>
                             </div>

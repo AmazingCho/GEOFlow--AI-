@@ -18,6 +18,8 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review 的 GEO
 6. Article generation 不依赖 Entity 字段本身，而依赖 Entity 关联的知识库、案例、关键词和图片。
 7. 知识库 role 和 status 会影响 RAG 检索。
 8. 质量评分用于生成后的审核优先级判断。
+9. 任务生成提示词采用 Master Prompt + 可选 Skill Prompt 分层，Skill 只负责文章结构策略增强。
+10. AI 素材分析入口应复用公共规则，不允许用户补充提示词覆盖系统字段、语言和事实约束。
 
 详细规则见 [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)。
 
@@ -43,6 +45,10 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review 的 GEO
 - 创建任务页改为 Collection 必选，Entity / Case 多选。
 - 创建任务页受控标签筛选改为 accordion，作为可选高级筛选。
 - 关键词库和图片库移除库级标签，只保留标题库库级标签。
+- 文章提示词配置页支持 `content` Master Prompt 与 `skill` Skill Prompt，任务创建页可选 Skill Prompt。
+- Knowledge / Entity / Case 的 AI 自动分析已统一使用公共提示词规则，并支持“补充分析要求”折叠输入区。
+- URL 智能采集创建任务时可选择 AI 分析模型；默认自动选择，指定模型优先执行并保留 failover。
+- URL 智能采集生成 Entity 时已修复非中文页面混入中文描述模板的问题。
 - 新增 `功能说明文档/`，用于用户操作说明。
 
 ## 新 agent 接手时优先检查
@@ -58,10 +64,11 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review 的 GEO
 - AI 知识库纠错助手尚未实现。
 - 大数据量下的标签远程搜索、懒加载、统计缓存仍需要继续压测和补强。
 - 旧文章可能没有完整生成 trace，因此文章编辑页不一定显示生成来源。
+- Skill Prompt 自动匹配标题意图尚未实现，目前仅支持任务页手动选择。
+- URL 采集和手动 AI 分析仍依赖模型返回质量；表格保真规则已增强，但复杂表格仍建议人工复核。
 
 更多风险见 [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)。
 
 ## 功能说明入口
 
 如果需要了解用户如何操作系统，请读取 [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md)，它会跳转到 `功能说明文档`。
-

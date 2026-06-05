@@ -447,13 +447,15 @@ class KeywordLibraryController extends Controller
         ]);
         $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
-        return redirect()->route('admin.keyword-libraries.index')->with('message', __('admin.keyword_libraries.message.update_success'));
+        return redirect()
+            ->route('admin.keyword-libraries.edit', ['libraryId' => (int) $library->id])
+            ->with('message', __('admin.keyword_libraries.message.update_success'));
     }
 
     /**
      * 删除关键词库（包含词条）。
      */
-    public function destroy(int $libraryId): RedirectResponse
+    public function destroy(Request $request, int $libraryId): RedirectResponse
     {
         $library = KeywordLibrary::query()->whereKey($libraryId)->firstOrFail();
 
@@ -466,7 +468,10 @@ class KeywordLibraryController extends Controller
         Keyword::query()->where('library_id', $libraryId)->delete();
         $library->delete();
 
-        return redirect()->route('admin.keyword-libraries.index')->with('message', __('admin.keyword_libraries.message.delete_success'));
+        return redirect()
+            ->route('admin.keyword-libraries.index', $request->query())
+            ->withFragment('material-list')
+            ->with('message', __('admin.keyword_libraries.message.delete_success'));
     }
 
     /**

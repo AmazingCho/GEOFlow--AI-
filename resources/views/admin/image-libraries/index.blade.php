@@ -108,7 +108,7 @@
             ])
             <div class="min-w-0">
 
-        <div class="bg-white shadow rounded-lg">
+        <div id="material-list" class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.image_libraries.list_title') }}</h3>
             </div>
@@ -174,7 +174,7 @@
                                         <i data-lucide="pencil" class="w-4 h-4 mr-1"></i>
                                         {{ __('admin.button.edit') }}
                                     </a>
-                                    <form method="POST" action="{{ route('admin.image-libraries.delete', ['libraryId' => (int) $library['id']]) }}" onsubmit="return confirm(@js(__('admin.image_libraries.confirm_delete', ['name' => $library['name']])));" class="inline-block">
+                                    <form method="POST" action="{{ route('admin.image-libraries.delete', ['libraryId' => (int) $library['id']] + request()->query()) }}" onsubmit="return confirm(@js(__('admin.image_libraries.confirm_delete', ['name' => $library['name']])));" class="inline-block">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
                                             <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>

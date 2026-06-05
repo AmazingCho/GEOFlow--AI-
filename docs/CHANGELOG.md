@@ -2,6 +2,73 @@
 
 该文档记录公开仓库可见功能的持续更新。后续每次推送到 GitHub 时，同步更新本文件和英文版 `CHANGELOG_en.md`。
 
+## 2026-06-05
+
+### 文章 Skill Prompt v1
+
+- 新增轻量级 Master Prompt + Skill Prompt 生成机制：
+  - 保留原 `prompt_id` 作为任务必选 Master Prompt，不改变旧任务正文生成逻辑。
+  - 新增 `tasks.skill_prompt_id`，任务创建/编辑页可选 Skill Prompt。
+  - Worker 生成文章时会将 Master Prompt 与 Skill Prompt 拼接后再渲染标题、关键词和 RAG 知识变量。
+  - 生成追踪中记录 `skill_prompt_id`、`skill_prompt` 与 `has_skill_prompt`，便于文章审核时回溯。
+- 扩展“文章提示词配置”入口：
+  - 原正文提示词页面同时管理 `content` Master Prompt 与 `skill` Skill Prompt。
+  - 新增默认 Skill Prompt 模板：Comparison、Buying Guide、Application。
+  - 已被任务引用的提示词不允许直接切换类型，避免旧任务引用语义改变。
+- API catalog 增加 `skill_prompts` 输出，方便后续外部任务创建入口复用。
+- 验证：
+  - 已执行迁移 `2026_06_05_010000_add_skill_prompt_id_to_tasks`。
+  - `WorkerExecutionServicePromptTest`、`AdminAiPromptsPageTest`、`AdminTasksPageTest` 和相关 API catalog / task create 测试通过。
+
+### AI 素材分析提示词与 URL 采集语言修复
+
+- URL 智能采集创建任务新增 AI 分析模型选择：
+  - 新建采集任务时可选择具体聊天模型，也可保留“自动选择模型”。
+  - 指定模型会优先用于 URL 页面清洗、知识库整理、关键词和标题生成。
+  - 保留原有失败切换机制，指定模型不可用或调用失败时仍会尝试其他可用模型。
+- 新增素材 AI 分析公共规则：
+  - 抽出语言一致性、事实不可编造、表格/参数保真和 JSON 输出约束。
+  - 手动知识库、Entity 和 Case 的 AI 自动分析统一复用这些规则。
+  - 知识库分析更明确地区分摘要、后台描述和可入库 Markdown 正文，避免整段原文简单复制到多个字段。
+- 优化知识库、Entity 和 Case 的预制分析规则：
+  - 知识库重点保留产品参数、FAQ、步骤、边界条件和表格内容。
+  - Entity 明确作为轻量索引节点，不再鼓励塞入整段资料。
+  - Case 仅在存在真实场景、问题、方案、结果或指标时提取，指标不得编造。
+- 新增“补充分析要求”折叠输入区：
+  - 知识库新增/详情页、Entity 表单和 Case 表单均可补充本次 AI 分析重点。
+  - 提供“表格参数保真”“英文输出”“谨慎提取案例”快捷模板。
+  - 补充要求只作为附加约束，不能覆盖系统字段结构、语言规则和事实约束。
+- 修复 URL 智能采集 Entity 描述语言混杂：
+  - 英文等非中文页面不再套用中文描述模板。
+  - Entity 描述改为依据采集语言保留证据/上下文，避免出现“是从 URL 采集内容中识别出的……”这类中文固定句。
+- 验证：
+  - 新增英文 URL Entity 描述测试和公共提示词规则测试。
+  - 相关 PHP 语法检查通过，素材页面聚焦测试通过。
+
+### 知识库 Entity 关系与 Case 类型治理
+
+- 优化知识库与 Entity 的关联工作流：
+  - 知识库创建、编辑和详情页复用 Entity 页“多选 + 每项关系下拉”的交互。
+  - 同一知识库可关联多个 Entity，并为每个 Entity 独立设置主资料、辅助参考、应用参考、竞品参考或故障排查参考。
+  - 保留全局默认关系字段作为旧数据、批量操作和旧表单提交的兜底兼容。
+  - Entity 编辑页关联知识库也改为复用同一通用关系选择组件，减少重复 JS 和 UI 规则。
+- 新增通用关系多选组件：
+  - 新增 `resources/views/admin/partials/relation-multi-selector.blade.php`。
+  - 统一处理“选择多个对象后，每个对象单独设置关系”的前端交互。
+- 优化 Case 类型治理：
+  - 新增受控 Case 类型体系，覆盖客户成功案例、应用场景案例、问题排查案例、对比验证案例、实施交付案例、ROI/指标案例和通用案例。
+  - URL 智能采集和 AI 表单分析生成 Case 时会归一到受控类型，不再继续产生 `URL采集案例` 等自由类型。
+  - RAG 和 Worker 生成上下文会根据 Case 类型补充引用规则，帮助文章生成更准确地使用案例证据。
+- 优化素材列表删除后的操作体验：
+  - 关键词库、标题库、图片库和知识库删除后保留当前筛选 query，并回到素材列表区域。
+  - 知识库保存视图新增“清除”入口，可清除视图筛选并保留当前 Collection。
+- 文档同步：
+  - 更新 `功能说明文档/` 中的总览、Entity/Case、知识库 RAG、素材管理和 URL 智能采集说明。
+  - 更新 agent 实现状态，方便后续 agent 快速理解当前工作流变化。
+- 验证：
+  - 相关 PHP / Blade / 翻译文件语法检查通过。
+  - `AdminMaterialsPagesTest` 全量通过，覆盖知识库与 Entity 独立关系保存、Entity 页关系 UI 复用和素材页面主要工作流。
+
 ## 2026-06-04
 
 ### Entity 内链建议与 UI 规范沉淀

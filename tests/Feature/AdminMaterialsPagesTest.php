@@ -620,6 +620,7 @@ class AdminMaterialsPagesTest extends TestCase
             ->get(route('admin.knowledge-bases.create'))
             ->assertOk()
             ->assertSee('data-ai-analysis-form', false)
+            ->assertSee('data-ai-analysis-instructions', false)
             ->assertSee('name="summary"', false)
             ->assertSee('archive', false);
 
@@ -627,6 +628,7 @@ class AdminMaterialsPagesTest extends TestCase
             'title' => 'SJ4060 产品手册',
             'content' => 'Automation Equipment 的 SJ4060 product manual，包含视觉点胶参数和 FAQ。',
             'ai_model_id' => 0,
+            'analysis_instructions' => '请重点保留表格中的型号和单位。',
         ]);
 
         $response->assertOk()
@@ -807,6 +809,7 @@ class AdminMaterialsPagesTest extends TestCase
             ->assertSee('name="image_ids[]"', false)
             ->assertSee('storage/images/sj4060.jpg', false)
             ->assertSee('name="knowledge_relation_types['.(int) $knowledgeBase->id.']"', false)
+            ->assertSee('知识库 / SJ4060 手册 - 关系', false)
             ->assertDontSee('name="title_library_ids[]"', false)
             ->assertDontSee('不应关联的标题库');
 
@@ -814,7 +817,43 @@ class AdminMaterialsPagesTest extends TestCase
             ->get(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
             ->assertOk()
             ->assertSee('name="entity_relation_type"', false)
+            ->assertSee('name="entity_relation_types['.(int) $linkedEntity->id.']"', false)
+            ->assertSee('SJ4060 Pro / 产品型号 - 关系', false)
             ->assertSee('primary_subject', false);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.knowledge-bases.detail.update', ['knowledgeBaseId' => (int) $knowledgeBase->id]), [
+                'name' => 'SJ4060 手册',
+                'description' => '',
+                'summary' => '',
+                'source_url' => '',
+                'content' => 'SJ4060 产品资料',
+                'file_type' => 'markdown',
+                'knowledge_type' => 'product_manual',
+                'knowledge_role' => 'primary_source',
+                'importance' => 5,
+                'status' => 'active',
+                'entity_ids' => [(int) $linkedEntity->id, (int) $entity->id],
+                'entity_relation_type' => 'supporting_reference',
+                'entity_relation_types' => [
+                    (int) $linkedEntity->id => 'primary_subject',
+                    (int) $entity->id => 'application_reference',
+                ],
+            ])
+            ->assertRedirect(route('admin.knowledge-bases.detail', ['knowledgeBaseId' => (int) $knowledgeBase->id]));
+
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $linkedEntity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'primary_subject',
+        ]);
+        $this->assertDatabaseHas('entity_material_links', [
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'application_reference',
+        ]);
     }
 
     public function test_entity_form_uses_controlled_types_and_link_fields(): void
@@ -936,7 +975,7 @@ class AdminMaterialsPagesTest extends TestCase
                 'tag_ids' => [(int) $tag->id],
                 'tag_ids_present' => '1',
             ])
-            ->assertRedirect(route('admin.title-libraries.index'));
+            ->assertRedirect(route('admin.title-libraries.edit', ['libraryId' => (int) $titleLibrary->id]));
 
         $this->assertDatabaseHas('taggables', [
             'tag_id' => (int) $tag->id,
@@ -1586,7 +1625,7 @@ class AdminMaterialsPagesTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.knowledge-bases.delete', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
-            ->assertRedirect(route('admin.knowledge-bases.index'));
+            ->assertRedirect(route('admin.knowledge-bases.index').'#material-list');
 
         Storage::disk('local')->assertMissing('knowledge-bases/2026/alpha.md');
         Storage::disk('local')->assertMissing('knowledge-bases/2026/beta.md');
@@ -1811,6 +1850,120 @@ class AdminMaterialsPagesTest extends TestCase
             ->assertSessionHasErrors('ai_model');
 
         $this->assertDatabaseCount('url_import_jobs', 0);
+    }
+
+    public function test_url_import_can_prioritize_selected_ai_model(): void
+    {
+        Http::fake([
+            'https://source.test/manual' => Http::response(
+                '<!doctype html><html><head><title>SJ4060 Manual</title><meta name="description" content="Product manual"></head><body><main><h1>SJ4060 Manual</h1><p>SJ4060 supports vision dispensing workflows.</p></main></body></html>',
+                200,
+                ['Content-Type' => 'text/html; charset=utf-8']
+            ),
+            'https://selected-ai.test/v1/chat/completions' => Http::sequence()
+                ->push([
+                    'id' => 'chatcmpl-clean-selected',
+                    'object' => 'chat.completion',
+                    'choices' => [[
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => json_encode([
+                                'clean_title' => 'Selected Model Clean Title',
+                                'clean_summary' => 'Selected model cleaned the product manual.',
+                                'clean_text' => 'SJ4060 supports vision dispensing workflows.',
+                                'core_business' => [
+                                    'products_services' => ['SJ4060'],
+                                    'commercial_scenarios' => ['vision dispensing workflows'],
+                                ],
+                                'entities' => ['SJ4060'],
+                                'facts' => ['SJ4060 supports vision dispensing workflows.'],
+                                'noise_removed' => [],
+                            ], JSON_UNESCAPED_UNICODE),
+                        ],
+                        'finish_reason' => 'stop',
+                    ]],
+                ], 200)
+                ->push([
+                    'id' => 'chatcmpl-knowledge-selected',
+                    'object' => 'chat.completion',
+                    'choices' => [[
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => json_encode([
+                                'summary' => 'Selected model generated the knowledge summary.',
+                                'library_name' => 'Selected Model Material',
+                                'knowledge_markdown' => "# Selected Model Material\n\n- SJ4060 supports vision dispensing workflows.",
+                            ], JSON_UNESCAPED_UNICODE),
+                        ],
+                        'finish_reason' => 'stop',
+                    ]],
+                ], 200),
+        ]);
+
+        AiModel::query()->create([
+            'name' => 'Default URL Import Model',
+            'version' => '',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'model_id' => 'default-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://default-ai.test/v1',
+            'failover_priority' => 1,
+            'daily_limit' => 100,
+            'used_today' => 0,
+            'total_used' => 0,
+            'status' => 'active',
+        ]);
+        $selectedModel = AiModel::query()->create([
+            'name' => 'Selected URL Import Model',
+            'version' => '',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'model_id' => 'selected-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://selected-ai.test/v1',
+            'failover_priority' => 50,
+            'daily_limit' => 100,
+            'used_today' => 0,
+            'total_used' => 0,
+            'status' => 'active',
+        ]);
+
+        $admin = Admin::query()->create([
+            'username' => 'url_import_selected_model',
+            'password' => 'secret-123',
+            'email' => 'url-import-selected-model@example.com',
+            'display_name' => 'Url Import Selected Model',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.url-import'))
+            ->assertOk()
+            ->assertSee('name="ai_model_id"', false)
+            ->assertSee('Selected URL Import Model');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.url-import.store'), [
+                'url' => 'source.test/manual',
+                'ai_model_id' => (int) $selectedModel->id,
+                'outputs' => ['knowledge'],
+            ])
+            ->assertRedirect();
+
+        $job = UrlImportJob::query()->firstOrFail();
+        $options = json_decode((string) $job->options_json, true);
+        $this->assertSame((int) $selectedModel->id, (int) ($options['ai_model_id'] ?? 0));
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.url-import.run', ['jobId' => (int) $job->id]))
+            ->assertOk()
+            ->assertJsonPath('status', 'completed');
+
+        $result = json_decode((string) $job->refresh()->result_json, true);
+        $this->assertSame((int) $selectedModel->id, (int) data_get($result, 'analysis.model.id'));
+        $this->assertSame('Selected Model Material', data_get($result, 'analysis.library_name'));
     }
 
     public function test_url_import_preview_shows_all_generated_titles(): void

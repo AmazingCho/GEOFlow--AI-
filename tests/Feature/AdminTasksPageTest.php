@@ -210,6 +210,73 @@ class AdminTasksPageTest extends TestCase
         ]);
     }
 
+    public function test_task_can_be_created_with_optional_skill_prompt(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_with_skill_prompt',
+            'password' => 'secret-123',
+            'email' => 'tasks-with-skill-prompt@example.com',
+            'display_name' => 'Tasks Skill Prompt Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Skill Prompt Collection',
+            'slug' => 'skill-prompt-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Skill Prompt Titles']);
+        $prompt = Prompt::query()->create([
+            'name' => 'Skill Prompt Master',
+            'type' => 'content',
+            'content' => 'Write an article.',
+            'status' => 'active',
+        ]);
+        $skillPrompt = Prompt::query()->create([
+            'name' => 'Comparison Skill',
+            'type' => 'skill',
+            'content' => 'Add a comparison table.',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Skill Prompt Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Skill Prompt Category',
+            'slug' => 'skill-prompt-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '带 Skill Prompt 的任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'skill_prompt_id' => (int) $skillPrompt->id,
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $this->assertDatabaseHas('tasks', [
+            'name' => '带 Skill Prompt 的任务',
+            'prompt_id' => (int) $prompt->id,
+            'skill_prompt_id' => (int) $skillPrompt->id,
+        ]);
+    }
+
     public function test_task_create_and_edit_forms_use_full_admin_content_width(): void
     {
         $admin = Admin::query()->create([

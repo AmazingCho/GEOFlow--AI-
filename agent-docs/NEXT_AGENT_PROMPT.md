@@ -16,6 +16,9 @@
 如果涉及具体功能操作，再读取：
 
 - agent-docs/FEATURE_DOC_INDEX.md
+- agent-docs/PROMPT_SKILL_SYSTEM.md（仅在涉及提示词、创建任务或生成流程时读取）
+- 功能说明文档/08-URL智能采集使用说明.md（仅在涉及 URL 采集、AI 分析模型或采集入库时读取）
+- 功能说明文档/04-知识库治理与RAG检索使用说明.md（仅在涉及知识库 AI 分析、RAG 或表格参数保真时读取）
 
 读取后请用 10 条以内总结：
 
@@ -37,4 +40,3 @@
 每完成一个阶段后，运行核心自检或相关测试，并更新 agent-docs/IMPLEMENTATION_STATUS.md、agent-docs/KNOWN_ISSUES.md、agent-docs/AGENT_HANDOFF.md。
 如果改变了用户操作流程，同步更新 功能说明文档/ 中对应文档。
 ```
-

@@ -52,6 +52,15 @@
                             </tr>
                         @else
                             @foreach ($prompts as $prompt)
+                                @php
+                                    $promptType = (string) ($prompt['type'] ?? 'content');
+                                    $typeClass = $promptType === 'skill'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-green-100 text-green-800';
+                                    $typeLabel = $promptType === 'skill'
+                                        ? __('admin.ai_prompts.type_skill')
+                                        : __('admin.ai_prompts.type_content');
+                                @endphp
                                 <tr>
                                     <td class="px-6 py-4">
                                         <div>
@@ -62,8 +71,8 @@
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                            {{ __('admin.ai_prompts.type_content') }}
+                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full {{ $typeClass }}">
+                                            {{ $typeLabel }}
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -106,14 +115,23 @@
                     <div>
                         <label for="prompt_name" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_prompts.field_name') }}</label>
                         <input type="text" name="name" id="prompt_name" required
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500"
                                placeholder="{{ __('admin.ai_prompts.placeholder_name') }}">
+                    </div>
+
+                    <div>
+                        <label for="prompt_type" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_prompts.field_type') }}</label>
+                        <select name="type" id="prompt_type" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500">
+                            <option value="content">{{ __('admin.ai_prompts.type_content') }}</option>
+                            <option value="skill">{{ __('admin.ai_prompts.type_skill') }}</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">{{ __('admin.ai_prompts.type_help') }}</p>
                     </div>
 
                     <div>
                         <label for="prompt_content" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_prompts.field_content') }}</label>
                         <textarea name="content" id="prompt_content" required rows="12"
-                                  class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                                  class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500"
                                   placeholder="{{ __('admin.ai_prompts.placeholder_content') }}"></textarea>
 
                         <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
@@ -155,6 +173,7 @@
             document.getElementById('promptForm').action = createPromptAction;
             document.getElementById('promptFormMethod').value = 'POST';
             document.getElementById('prompt_name').value = '';
+            document.getElementById('prompt_type').value = 'content';
             document.getElementById('prompt_content').value = '';
             document.getElementById('promptModal').classList.remove('hidden');
         }
@@ -164,6 +183,7 @@
             document.getElementById('promptForm').action = updateActionTemplate.replace('__ID__', String(prompt.id));
             document.getElementById('promptFormMethod').value = 'PUT';
             document.getElementById('prompt_name').value = prompt.name ?? '';
+            document.getElementById('prompt_type').value = prompt.type ?? 'content';
             document.getElementById('prompt_content').value = prompt.content ?? '';
             document.getElementById('promptModal').classList.remove('hidden');
         }
@@ -195,4 +215,3 @@
         });
     </script>
 @endpush
-

@@ -39,7 +39,7 @@
                                 <p class="mt-1 text-sm text-emerald-800">粘贴案例材料后，系统会自动填入标题、背景、方案、结果、指标和标签建议。</p>
                             </div>
                             <div class="flex min-w-[260px] flex-col gap-2 sm:flex-row">
-                                <select data-ai-analysis-model class="rounded-md border-emerald-200 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                <select data-ai-analysis-model class="rounded-md border border-emerald-200 bg-white text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
                                     <option value="0">自动选择模型</option>
                                     @foreach(($aiModelOptions ?? []) as $model)
                                         <option value="{{ (int) $model['id'] }}">{{ $model['name'] }}</option>
@@ -51,7 +51,8 @@
                                 </button>
                             </div>
                         </div>
-                        <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border-emerald-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="粘贴客户案例、项目描述、成果数据或一段待识别内容"></textarea>
+                        <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="粘贴客户案例、项目描述、成果数据或一段待识别内容"></textarea>
+                        @include('admin.partials.material-ai-analysis-instructions')
                         <p data-ai-analysis-status class="mt-2 hidden text-sm text-emerald-800"></p>
                     </div>
 
@@ -62,7 +63,12 @@
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.cases.field_type') }}</label>
-                            <input type="text" name="case_type" maxlength="100" value="{{ old('case_type', (string) ($caseForm['case_type'] ?? '')) }}" data-tag-source="case-form" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500" placeholder="{{ __('admin.cases.placeholder_type') }}">
+                            <select name="case_type" data-tag-source="case-form" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
+                                @foreach ($caseTypeOptions ?? [] as $caseTypeOption)
+                                    <option value="{{ $caseTypeOption['value'] }}" @selected((string) old('case_type', (string) ($caseForm['case_type'] ?? '')) === (string) $caseTypeOption['value'])>{{ $caseTypeOption['label'] }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs leading-5 text-gray-500">{{ __('admin.cases.case_type_help') }}</p>
                         </div>
                     </div>
 

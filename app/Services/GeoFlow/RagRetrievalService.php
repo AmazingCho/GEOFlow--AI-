@@ -7,6 +7,7 @@ use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
 use App\Models\Task;
+use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -397,6 +398,7 @@ class RagRetrievalService
                 'id' => (int) $caseRecord->id,
                 'title' => (string) $caseRecord->title,
                 'type' => (string) ($caseRecord->case_type ?? ''),
+                'role' => CaseTypes::referenceRule((string) ($caseRecord->case_type ?? '')),
                 'entity_id' => $caseRecord->entity_id !== null ? (int) $caseRecord->entity_id : null,
                 'entity_name' => (string) ($caseRecord->entity?->name ?? ''),
             ])
@@ -440,6 +442,7 @@ class RagRetrievalService
                     $line .= '，关联实体：'.(string) $caseRecord->entity->name;
                 }
                 $lines[] = $line;
+                $lines[] = '  引用规则：'.CaseTypes::referenceRule((string) ($caseRecord->case_type ?? ''));
 
                 foreach ([
                     'summary' => '摘要',

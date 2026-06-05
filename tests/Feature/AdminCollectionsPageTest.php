@@ -10,6 +10,7 @@ use App\Models\ImageLibrary;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\TitleLibrary;
+use App\Support\GeoFlow\CaseTypes;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -69,7 +70,7 @@ class AdminCollectionsPageTest extends TestCase
                 'status' => 'inactive',
                 'sort_order' => 9,
             ])
-            ->assertRedirect(route('admin.collections.index'));
+            ->assertRedirect(route('admin.collections.edit', ['collectionId' => (int) $collection->id]));
 
         $this->assertDatabaseHas('collections', [
             'id' => (int) $collection->id,
@@ -126,7 +127,7 @@ class AdminCollectionsPageTest extends TestCase
 
         $this->actingAs($admin, 'admin')->post(route('admin.entities.store'), [
             'name' => 'SJ4060 Cooling Entity',
-            'entity_type' => 'Product',
+            'entity_type' => '产品型号',
             'aliases' => '',
             'description' => '',
             'attributes_json' => '{}',
@@ -136,7 +137,7 @@ class AdminCollectionsPageTest extends TestCase
 
         $this->actingAs($admin, 'admin')->post(route('admin.cases.store'), [
             'title' => 'Cooling Customer Case',
-            'case_type' => 'Application',
+            'case_type' => CaseTypes::APPLICATION_SCENARIO,
             'entity_id' => '',
             'summary' => '',
             'challenge' => '',

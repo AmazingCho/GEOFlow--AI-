@@ -121,7 +121,7 @@ class CollectionController extends Controller
         $collection->update($this->normalizePayload($payload, $collectionId));
 
         return redirect()
-            ->route('admin.collections.index')
+            ->route('admin.collections.edit', ['collectionId' => (int) $collection->id])
             ->with('message', __('admin.collections.message.update_success'));
     }
 

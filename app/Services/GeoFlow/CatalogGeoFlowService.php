@@ -43,6 +43,13 @@ class CatalogGeoFlowService
             ->map(fn (Prompt $p) => $p->getAttributes())
             ->all();
 
+        $skillPrompts = Prompt::query()
+            ->where('type', 'skill')
+            ->orderBy('name')
+            ->get(['id', 'name', 'type'])
+            ->map(fn (Prompt $p) => $p->getAttributes())
+            ->all();
+
         $titleLibraries = TitleLibrary::query()
             ->withCount(['titles as title_count'])
             ->orderBy('name')
@@ -98,6 +105,7 @@ class CatalogGeoFlowService
         return [
             'models' => $models,
             'prompts' => $prompts,
+            'skill_prompts' => $skillPrompts,
             'keyword_libraries' => $keywordLibraries,
             'title_libraries' => $titleLibraries,
             'image_libraries' => $imageLibraries,

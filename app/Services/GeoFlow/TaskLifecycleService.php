@@ -89,6 +89,7 @@ class TaskLifecycleService
                 'image_count' => $normalized['image_count'],
                 'image_tag_filter' => $normalized['image_tag_filter'],
                 'prompt_id' => $normalized['prompt_id'],
+                'skill_prompt_id' => $normalized['skill_prompt_id'],
                 'ai_model_id' => $normalized['ai_model_id'],
                 'need_review' => $normalized['need_review'],
                 'publish_interval' => $normalized['publish_interval'],
@@ -470,6 +471,7 @@ class TaskLifecycleService
             'title_library_id' => ['model' => TitleLibrary::class, 'message' => '选择的标题库不存在', 'required' => ! $isUpdate],
             'image_library_id' => ['model' => ImageLibrary::class, 'message' => '选择的图片库不存在', 'required' => false],
             'prompt_id' => ['model' => Prompt::class, 'message' => '选择的内容提示词不存在', 'required' => ! $isUpdate, 'prompt_content' => true],
+            'skill_prompt_id' => ['model' => Prompt::class, 'message' => '选择的 Skill Prompt 不存在', 'required' => false, 'prompt_skill' => true],
             'ai_model_id' => ['model' => AiModel::class, 'message' => '选择的AI模型不存在或未激活', 'required' => ! $isUpdate, 'ai_active_chat' => true],
             'author_id' => ['model' => Author::class, 'message' => '选择的作者不存在', 'required' => false],
             'knowledge_base_id' => ['model' => KnowledgeBase::class, 'message' => '选择的知识库不存在', 'required' => false],
@@ -503,6 +505,8 @@ class TaskLifecycleService
             // prompt 与 ai_model 的校验规则与普通外键不同，这里单独处理业务约束。
             if (! empty($config['prompt_content'])) {
                 $exists = Prompt::query()->whereKey($id)->where('type', 'content')->exists();
+            } elseif (! empty($config['prompt_skill'])) {
+                $exists = Prompt::query()->whereKey($id)->where('type', 'skill')->exists();
             } elseif (! empty($config['ai_active_chat'])) {
                 $exists = AiModel::query()
                     ->whereKey($id)

@@ -27,6 +27,7 @@
 - Entity 为什么不是完整资料库。
 - Case 为什么单独存在。
 - Entity 和知识库、图片、关键词、Case 如何关联。
+- Entity / Case AI 自动分析如何使用补充分析要求。
 
 ## 标签与白名单分组
 
@@ -47,10 +48,12 @@
 - knowledge_type 和 knowledge_role。
 - 为什么 `case_study` 不属于 knowledge_type。
 - RAG 如何使用 Entity-linked knowledge bases。
+- 知识库 AI 自动分析如何处理摘要、描述、Markdown 正文和表格参数。
 
 ## 创建任务
 
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
+- [Prompt Skill System v1](./PROMPT_SKILL_SYSTEM.md)
 
 适合理解：
 
@@ -58,6 +61,7 @@
 - Entity / Case 多选。
 - 受控分组标签是否必须选择。
 - 图片配置中“不指定图库”和“不配图”的区别。
+- Master Prompt 与可选 Skill Prompt 的职责边界。
 
 ## 文章质量
 
@@ -87,6 +91,6 @@
 适合理解：
 
 - 自动检测语言。
+- AI 分析模型选择。
 - Entity / Case 生成勾选。
 - 采集结果入库确认。
-

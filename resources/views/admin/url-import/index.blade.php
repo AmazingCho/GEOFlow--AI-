@@ -115,6 +115,17 @@
                             </select>
                         </div>
                         <div>
+                            <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.ai_model') }}</label>
+                            @php($selectedAiModelId = (string) old('ai_model_id', '0'))
+                            <select name="ai_model_id" class="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="0" @selected($selectedAiModelId === '0' || $selectedAiModelId === '')>{{ __('admin.url_import.option.auto_model') }}</option>
+                                @foreach (($aiModelOptions ?? []) as $model)
+                                    <option value="{{ (int) $model['id'] }}" @selected($selectedAiModelId === (string) $model['id'])>{{ $model['name'] }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">{{ __('admin.url_import.help.ai_model') }}</p>
+                        </div>
+                        <div>
                             <label class="block text-sm font-medium text-gray-700">{{ __('admin.url_import.field.author') }}</label>
                             <select disabled class="mt-2 block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 shadow-sm sm:text-sm">
                                 <option>{{ __('admin.url_import.option.not_specified') }}</option>

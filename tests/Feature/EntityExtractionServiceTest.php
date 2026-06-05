@@ -7,6 +7,7 @@ use App\Models\EntityRecord;
 use App\Models\UrlImportJob;
 use App\Services\GeoFlow\EntityExtractionService;
 use App\Services\GeoFlow\TagService;
+use App\Support\GeoFlow\CaseTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -53,9 +54,48 @@ class EntityExtractionServiceTest extends TestCase
         $this->assertSame('制造业客户A', $result['entities'][0]['name']);
         $this->assertSame('目标客户', $result['entities'][0]['entity_type']);
         $this->assertStringContainsString('制造业客户A', $result['entities'][0]['description']);
-        $this->assertSame('URL采集案例', $result['cases'][0]['case_type']);
+        $this->assertSame(CaseTypes::APPLICATION_SCENARIO, $result['cases'][0]['case_type']);
         $this->assertSame('制造业客户A 应用案例', $result['cases'][0]['title']);
         $this->assertSame('响应时间下降 40%。', $result['cases'][0]['metrics']);
+    }
+
+    public function test_it_keeps_english_url_import_entity_description_in_english(): void
+    {
+        $job = UrlImportJob::query()->create([
+            'url' => 'https://example.test/pj180',
+            'normalized_url' => 'https://example.test/pj180',
+            'source_domain' => 'example.test',
+            'page_title' => 'PJ180 Semi-Automatic Doming Machine',
+            'status' => 'completed',
+            'current_step' => 'preview',
+            'progress_percent' => 100,
+            'options_json' => json_encode(['content_language' => 'en']),
+            'result_json' => '',
+            'error_message' => '',
+            'created_by' => 'tester',
+        ]);
+
+        $analysis = [
+            'summary' => 'The page introduces a semi-automatic doming machine for resin dispensing workflows.',
+            'library_name' => 'PJ180 Semi-Automatic Doming Machine',
+            'keywords' => ['PJ180', 'doming machine'],
+            'language' => ['code' => 'en', 'name' => 'English'],
+            'cleaned' => [
+                'entities' => ['PJ180 semi-automatic doming machine'],
+                'facts' => ['It supports semi-automatic resin doming workflows.'],
+                'core_business' => [
+                    'products_services' => ['semi-automatic doming machine'],
+                    'commercial_scenarios' => ['resin dispensing workflows'],
+                ],
+            ],
+        ];
+
+        $result = app(EntityExtractionService::class)->extractFromUrlImport($analysis, ['title' => 'PJ180'], $job);
+        $description = (string) ($result['entities'][0]['description'] ?? '');
+
+        $this->assertStringContainsString('PJ180 semi-automatic doming machine', $description);
+        $this->assertDoesNotMatchRegularExpression('/[\x{4e00}-\x{9fff}]/u', $description);
+        $this->assertStringNotContainsString('URL 采集内容', $description);
     }
 
     public function test_it_persists_candidates_without_duplicate_entities(): void
@@ -78,7 +118,7 @@ class EntityExtractionServiceTest extends TestCase
             'cases' => [[
                 'entity_name' => '制造业客户A',
                 'title' => '制造业客户A 应用案例',
-                'case_type' => 'URL采集案例',
+                'case_type' => CaseTypes::APPLICATION_SCENARIO,
                 'summary' => '智能客服帮助售后团队提升响应效率。',
                 'challenge' => '售后团队',
                 'solution' => '智能客服',

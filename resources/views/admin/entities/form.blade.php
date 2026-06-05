@@ -54,6 +54,7 @@
                             </div>
                         </div>
                         <textarea data-ai-analysis-content rows="5" class="mt-4 block w-full rounded-md border border-blue-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="粘贴官网介绍、产品描述、公司资料或一段待识别内容"></textarea>
+                        @include('admin.partials.material-ai-analysis-instructions')
                         <p data-ai-analysis-status class="mt-2 hidden text-sm text-blue-800"></p>
                     </div>
 

@@ -69,9 +69,27 @@
 - 是否其实应该是 Entity 类型。
 - 是否其实应该是 Knowledge Base type 或 role。
 
+### 7. AI 表格解析已增强但仍需人工复核
+
+`MaterialAnalysisPromptRules` 已加入表格/参数保真规则，但复杂网页表格、合并单元格、图片表格、PDF 转文本错位等场景仍可能出错。
+
+涉及产品参数、尺寸、电压、功率、容量、价格、测试条件等内容时，入库前必须人工检查 Markdown 表格或 key-value 列表。
+
+### 8. Skill Prompt 自动匹配尚未实现
+
+当前 Prompt Skill System v1 支持任务页人工选择 Skill Prompt。
+
+尚未实现：
+
+- 根据标题自动识别 comparison / buying guide / application 等意图。
+- 根据关键词 intent 自动匹配 Skill。
+- AI Intent Classification。
+
+后续开发自动匹配时，应保留人工覆盖入口。
+
 ## 低优先级
 
-### 7. 当前项目路径容易混淆
+### 9. 当前项目路径容易混淆
 
 历史工作主要在：
 
@@ -83,7 +101,7 @@
 
 但该目录可能不是完整项目。新 agent 开始写文件前必须先确认项目根目录中是否存在 `app/`、`database/`、`resources/`、`artisan`。
 
-### 8. Docker 缓存可能导致前端刷新不生效
+### 10. Docker 缓存可能导致前端刷新不生效
 
 如果代码已改但页面无变化，先检查：
 
@@ -91,4 +109,3 @@
 - config cache。
 - Docker app 容器是否需要重启。
 - 浏览器缓存。
-

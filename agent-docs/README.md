@@ -25,6 +25,7 @@
 - [标签与白名单分组使用说明](../功能说明文档/03-标签与白名单分组使用说明.md)
 - [知识库治理与 RAG 检索使用说明](../功能说明文档/04-知识库治理与RAG检索使用说明.md)
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
+- [Prompt Skill System v1](./PROMPT_SKILL_SYSTEM.md)
 - [文章质量评分与审核使用说明](../功能说明文档/06-文章质量评分与审核使用说明.md)
 - [素材管理与关联使用说明](../功能说明文档/07-素材管理与关联使用说明.md)
 - [URL 智能采集使用说明](../功能说明文档/08-URL智能采集使用说明.md)
@@ -41,6 +42,7 @@
 | [DOC_READ_POLICY.md](./DOC_READ_POLICY.md) | 文档读取策略，避免每次任务全量读取造成 token 浪费 |
 | [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) | 每个 agent 开发前后必须遵守的交接规则 |
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
+| [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
 | [NEXT_AGENT_PROMPT.md](./NEXT_AGENT_PROMPT.md) | 可以直接复制给新 agent 的启动提示词 |
 
 ## 每次开发后必须更新
@@ -52,3 +54,10 @@
 3. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
 
 如果新增或改变了用户操作方式，还要同步更新 `功能说明文档` 中对应说明。
+
+## 最近需要特别记住的变化
+
+- URL 智能采集创建任务页可以选择 AI 分析模型；不选时自动选择，指定模型优先并保留 failover。
+- Knowledge / Entity / Case 的 AI 自动分析共用 `MaterialAnalysisPromptRules`。
+- AI 自动分析的自定义输入是“补充分析要求”，不是完整替换系统提示词。
+- 复杂表格、参数表和规格表虽然已有保真规则，仍建议人工复核。

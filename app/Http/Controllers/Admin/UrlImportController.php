@@ -28,6 +28,7 @@ class UrlImportController extends Controller
             'activeMenu' => 'materials',
             'stats' => $this->loadStats(),
             'aiModelReady' => $this->urlImportProcessingService->hasReadyAnalysisModel(),
+            'aiModelOptions' => $this->urlImportProcessingService->analysisModelOptions(),
             'aiModelConfigUrl' => route('admin.ai-models.index'),
             'collectionOptions' => CollectionOptions::all(true),
         ]);
@@ -40,6 +41,7 @@ class UrlImportController extends Controller
             'project_name' => ['nullable', 'string', 'max:120'],
             'source_label' => ['nullable', 'string', 'max:120'],
             'content_language' => ['nullable', 'string', 'max:20'],
+            'ai_model_id' => ['nullable', 'integer', 'min:0'],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'title_count' => ['nullable', 'integer', 'min:1', 'max:50'],
             'notes' => ['nullable', 'string', 'max:1000'],
@@ -74,6 +76,7 @@ class UrlImportController extends Controller
                 'project_name' => $validated['project_name'] ?? '',
                 'source_label' => $validated['source_label'] ?? '',
                 'content_language' => $validated['content_language'] ?? '',
+                'ai_model_id' => (int) ($validated['ai_model_id'] ?? 0),
                 'collection_id' => (int) ($validated['collection_id'] ?? 0) ?: null,
                 'title_count' => min(50, max(1, (int) ($validated['title_count'] ?? 30))),
                 'notes' => $validated['notes'] ?? '',

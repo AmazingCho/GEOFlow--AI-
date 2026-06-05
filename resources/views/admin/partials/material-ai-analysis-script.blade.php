@@ -51,6 +51,20 @@
                 }
 
                 document.addEventListener('click', (event) => {
+                    const templateButton = event.target.closest('[data-ai-analysis-template]');
+                    if (templateButton) {
+                        const form = templateButton.closest('[data-ai-analysis-form]');
+                        const instructions = form?.querySelector('[data-ai-analysis-instructions]');
+                        const template = templateButton.dataset.aiAnalysisTemplate || '';
+                        if (instructions && template !== '') {
+                            const current = instructions.value.trim();
+                            instructions.value = current === '' ? template : `${current}\n${template}`;
+                            instructions.dispatchEvent(new Event('input', {bubbles: true}));
+                            instructions.focus();
+                        }
+                        return;
+                    }
+
                     const button = event.target.closest('[data-ai-analysis-submit]');
                     if (!button) {
                         return;
@@ -85,6 +99,7 @@
                             title: form.querySelector('[name="name"]')?.value || form.querySelector('[name="title"]')?.value || '',
                             source_url: form.querySelector('[name="source_url"]')?.value || '',
                             ai_model_id: form.querySelector('[data-ai-analysis-model]')?.value || 0,
+                            analysis_instructions: form.querySelector('[data-ai-analysis-instructions]')?.value || '',
                         }),
                     })
                         .then((response) => response.ok ? response.json() : Promise.reject(response))

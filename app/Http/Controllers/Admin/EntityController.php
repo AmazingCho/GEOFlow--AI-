@@ -98,12 +98,14 @@ class EntityController extends Controller
         $payload = $request->validate([
             'content' => ['required', 'string', 'max:20000'],
             'ai_model_id' => ['nullable', 'integer', 'min:0'],
+            'analysis_instructions' => ['nullable', 'string', 'max:4000'],
         ]);
 
         return response()->json([
             'fields' => $this->materialFormAnalysisService->analyzeEntity(
                 (string) $payload['content'],
-                (int) ($payload['ai_model_id'] ?? 0)
+                (int) ($payload['ai_model_id'] ?? 0),
+                (string) ($payload['analysis_instructions'] ?? '')
             ),
         ]);
     }
@@ -179,7 +181,7 @@ class EntityController extends Controller
         );
 
         return redirect()
-            ->route('admin.entities.index')
+            ->route('admin.entities.edit', ['entityId' => (int) $entity->id])
             ->with('message', __('admin.entities.message.update_success'));
     }
 

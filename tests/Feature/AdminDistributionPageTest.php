@@ -142,6 +142,7 @@ class AdminDistributionPageTest extends TestCase
         $this->assertSame('static', (string) $channel->front_mode);
         $this->assertNotSame(session('distribution_secret.secret'), $secret->secret_ciphertext);
         $this->assertStringStartsWith('gfk_', (string) $secret->key_id);
+        $this->assertNotContains('site.settings.update', $secret->scopes ?? []);
     }
 
     public function test_admin_can_create_distribution_channel_with_host_only_endpoint(): void
@@ -172,8 +173,8 @@ class AdminDistributionPageTest extends TestCase
             ->assertOk()
             ->assertSee('name="endpoint_url" type="text"', false)
             ->assertDontSee('name="endpoint_url" type="url"', false)
-            ->assertSee('静态文件模式')
-            ->assertSee('伪静态模式')
+            ->assertDontSee('静态文件模式')
+            ->assertDontSee('伪静态模式')
             ->assertSee(__('admin.distribution.help.endpoint_url'));
     }
 
@@ -388,17 +389,17 @@ class AdminDistributionPageTest extends TestCase
             ->assertOk()
             ->assertSee(__('admin.distribution.edit_heading'))
             ->assertSee('旧渠道')
-            ->assertSee('目标站点设置')
-            ->assertSee('网站名称')
-            ->assertSee('版权信息')
-            ->assertSee('网站模板')
-            ->assertSee('静态文件模式')
-            ->assertSee('伪静态模式')
-            ->assertSee('默认前台模板')
-            ->assertSee('Toutiao News Inspired')
-            ->assertSee('更新目标站点')
-            ->assertSee('覆盖新版站点包后')
-            ->assertSee(route('admin.distribution.sync-settings', ['channelId' => (int) $channel->id]), false);
+            ->assertDontSee('目标站点设置')
+            ->assertDontSee('网站名称')
+            ->assertDontSee('版权信息')
+            ->assertDontSee('网站模板')
+            ->assertDontSee('静态文件模式')
+            ->assertDontSee('伪静态模式')
+            ->assertDontSee('默认前台模板')
+            ->assertDontSee('Toutiao News Inspired')
+            ->assertDontSee('更新目标站点')
+            ->assertDontSee('覆盖新版站点包后')
+            ->assertDontSee(route('admin.distribution.sync-settings', ['channelId' => (int) $channel->id]), false);
 
         $this->actingAs($admin, 'admin')
             ->put(route('admin.distribution.update', ['channelId' => (int) $channel->id]), [
@@ -450,14 +451,9 @@ class AdminDistributionPageTest extends TestCase
         ], $channel->site_settings);
     }
 
-    public function test_admin_update_distribution_channel_syncs_remote_site_settings_when_secret_exists(): void
+    public function test_admin_update_distribution_channel_does_not_sync_remote_site_settings_when_secret_exists(): void
     {
-        Http::fake([
-            'https://example.com/geoflow-agent/v1/site-settings' => Http::response([
-                'ok' => true,
-                'updated' => true,
-            ]),
-        ]);
+        Http::fake();
 
         $admin = $this->admin();
         $channel = DistributionChannel::query()->create([
@@ -497,30 +493,18 @@ class AdminDistributionPageTest extends TestCase
                 'per_page' => 12,
             ])
             ->assertRedirect(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
-            ->assertSessionHas('message', __('admin.distribution.message.updated_and_settings_synced'));
+            ->assertSessionHas('message', __('admin.distribution.message.updated'));
 
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow-agent/v1/site-settings'
-            && $request->hasHeader('X-GEOFlow-Event', 'site.settings.update')
-            && $request['settings']['site_name'] === '更新后的远程门户'
-            && $request['settings']['active_theme'] === 'netease-news-20260507'
-            && $request['settings']['front_mode'] === 'static'
-            && $request['settings']['per_page'] === 12);
-
-        $this->assertDatabaseHas('distribution_logs', [
+        Http::assertNothingSent();
+        $this->assertDatabaseMissing('distribution_logs', [
             'distribution_channel_id' => (int) $channel->id,
             'event' => 'site.settings.synced',
         ]);
     }
 
-    public function test_site_settings_sync_falls_back_to_index_php_entry_when_rewrite_is_missing(): void
+    public function test_site_settings_sync_endpoint_is_disabled(): void
     {
-        Http::fake([
-            'https://example.com/geoflow/geoflow-agent/v1/site-settings' => Http::response('<html><body>Not Found</body></html>', 404),
-            'https://example.com/geoflow/index.php/geoflow-agent/v1/site-settings' => Http::response([
-                'ok' => true,
-                'updated' => true,
-            ]),
-        ]);
+        Http::fake();
 
         $channel = DistributionChannel::query()->create([
             'name' => '二级目录站点',
@@ -540,15 +524,13 @@ class AdminDistributionPageTest extends TestCase
         $this->actingAs($this->admin(), 'admin')
             ->post(route('admin.distribution.sync-settings', ['channelId' => (int) $channel->id]))
             ->assertRedirect(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
-            ->assertSessionHas('message', __('admin.distribution.message.settings_synced'));
+            ->assertSessionHas('message', __('admin.distribution.message.remote_site_sync_disabled'));
 
         $this->assertDatabaseHas('distribution_channels', [
             'id' => (int) $channel->id,
-            'endpoint_url' => 'https://example.com/geoflow/index.php',
+            'endpoint_url' => 'https://example.com/geoflow',
         ]);
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow/geoflow-agent/v1/site-settings');
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow/index.php/geoflow-agent/v1/site-settings'
-            && $request->hasHeader('X-GEOFlow-Event', 'site.settings.update'));
+        Http::assertNothingSent();
     }
 
     public function test_admin_can_pause_distribution_channel_and_hide_it_from_task_form(): void
@@ -732,7 +714,7 @@ class AdminDistributionPageTest extends TestCase
             ->assertSessionMissing('distribution_secret');
     }
 
-    public function test_distribution_channel_detail_guides_agent_deployment(): void
+    public function test_distribution_channel_detail_hides_agent_static_site_deployment_modules(): void
     {
         $channel = DistributionChannel::query()->create([
             'name' => '官网主站',
@@ -751,21 +733,21 @@ class AdminDistributionPageTest extends TestCase
         $this->actingAs($this->admin(), 'admin')
             ->get(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
             ->assertOk()
-            ->assertSee('目标站部署引导')
-            ->assertSee('目标站点包 ZIP')
-            ->assertSee('llms.txt')
-            ->assertSee('sitemap.txt')
-            ->assertSee('目标站点包')
-            ->assertSee('下载站点包')
-            ->assertSee('首页列表页')
-            ->assertSee('文章详情页')
+            ->assertDontSee('目标站部署引导')
+            ->assertDontSee('目标站点包 ZIP')
+            ->assertDontSee('llms.txt')
+            ->assertDontSee('sitemap.txt')
+            ->assertDontSee('目标站点包')
+            ->assertDontSee('下载站点包')
+            ->assertDontSee('首页列表页')
+            ->assertDontSee('文章详情页')
             ->assertSee('测试连接')
             ->assertSee('https://example.com/geoflow-agent/v1/health')
-            ->assertSee('未部署目标站点包')
-            ->assertSee('任务绑定渠道');
+            ->assertDontSee('未部署目标站点包')
+            ->assertSee(__('admin.distribution.jobs_title'));
     }
 
-    public function test_distribution_channel_detail_and_edit_show_copyable_rewrite_rules(): void
+    public function test_distribution_channel_detail_and_edit_hide_copyable_rewrite_rules(): void
     {
         $admin = $this->admin();
         $channel = DistributionChannel::query()->create([
@@ -778,34 +760,34 @@ class AdminDistributionPageTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
             ->assertOk()
-            ->assertSee('伪静态规则')
-            ->assertSee('复制 Apache .htaccess')
-            ->assertSee('复制 Nginx server 规则')
-            ->assertSee('复制宝塔纯 rewrite 规则')
-            ->assertSee('Nginx server 配置')
-            ->assertSee('location = /geoflow/')
-            ->assertSee('rewrite ^ /geoflow/index.php last;', false)
-            ->assertSee('location /geoflow/', false)
-            ->assertSee('try_files $uri /geoflow/index.php?$query_string;', false)
-            ->assertSee('rewrite ^/geoflow/?$ /geoflow/index.php last;', false)
-            ->assertSee('rewrite ^/geoflow/(geoflow-agent/.*)$ /geoflow/index.php/$1 last;', false)
-            ->assertSee('rewrite ^/geoflow/(article/.*)$ /geoflow/index.php/$1 last;', false)
+            ->assertDontSee('伪静态规则')
+            ->assertDontSee('复制 Apache .htaccess')
+            ->assertDontSee('复制 Nginx server 规则')
+            ->assertDontSee('复制宝塔纯 rewrite 规则')
+            ->assertDontSee('Nginx server 配置')
+            ->assertDontSee('location = /geoflow/')
+            ->assertDontSee('rewrite ^ /geoflow/index.php last;', false)
+            ->assertDontSee('location /geoflow/', false)
+            ->assertDontSee('try_files $uri /geoflow/index.php?$query_string;', false)
+            ->assertDontSee('rewrite ^/geoflow/?$ /geoflow/index.php last;', false)
+            ->assertDontSee('rewrite ^/geoflow/(geoflow-agent/.*)$ /geoflow/index.php/$1 last;', false)
+            ->assertDontSee('rewrite ^/geoflow/(article/.*)$ /geoflow/index.php/$1 last;', false)
             ->assertDontSee('try_files $uri $uri/ /geoflow/index.php?$query_string;', false)
-            ->assertSee('RewriteRule ^ index.php [L]', false);
+            ->assertDontSee('RewriteRule ^ index.php [L]', false);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.distribution.edit', ['channelId' => (int) $channel->id]))
             ->assertOk()
-            ->assertSee('伪静态规则')
-            ->assertSee('复制 Apache .htaccess')
-            ->assertSee('复制 Nginx server 规则')
-            ->assertSee('复制宝塔纯 rewrite 规则')
-            ->assertSee('Nginx server 配置')
-            ->assertSee('location = /geoflow/')
-            ->assertSee('location /geoflow/', false)
-            ->assertSee('try_files $uri /geoflow/index.php?$query_string;', false)
-            ->assertSee('rewrite ^/geoflow/?$ /geoflow/index.php last;', false)
-            ->assertSee('rewrite ^/geoflow/(geoflow-agent/.*)$ /geoflow/index.php/$1 last;', false)
+            ->assertDontSee('伪静态规则')
+            ->assertDontSee('复制 Apache .htaccess')
+            ->assertDontSee('复制 Nginx server 规则')
+            ->assertDontSee('复制宝塔纯 rewrite 规则')
+            ->assertDontSee('Nginx server 配置')
+            ->assertDontSee('location = /geoflow/')
+            ->assertDontSee('location /geoflow/', false)
+            ->assertDontSee('try_files $uri /geoflow/index.php?$query_string;', false)
+            ->assertDontSee('rewrite ^/geoflow/?$ /geoflow/index.php last;', false)
+            ->assertDontSee('rewrite ^/geoflow/(geoflow-agent/.*)$ /geoflow/index.php/$1 last;', false)
             ->assertDontSee('try_files $uri $uri/ /geoflow/index.php?$query_string;', false);
     }
 
@@ -1270,14 +1252,9 @@ class AdminDistributionPageTest extends TestCase
             ->assertSessionHasErrors('package_password');
     }
 
-    public function test_admin_can_sync_channel_site_settings_to_remote_agent(): void
+    public function test_admin_cannot_sync_channel_site_settings_to_remote_agent(): void
     {
-        Http::fake([
-            'https://example.com/geoflow-agent/v1/site-settings' => Http::response([
-                'ok' => true,
-                'updated' => true,
-            ]),
-        ]);
+        Http::fake();
 
         $channel = DistributionChannel::query()->create([
             'name' => '官网主站',
@@ -1302,30 +1279,20 @@ class AdminDistributionPageTest extends TestCase
 
         $this->actingAs($this->admin(), 'admin')
             ->post(route('admin.distribution.sync-settings', ['channelId' => (int) $channel->id]))
-            ->assertRedirect(route('admin.distribution.show', ['channelId' => (int) $channel->id]));
+            ->assertRedirect(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
+            ->assertSessionHas('message', __('admin.distribution.message.remote_site_sync_disabled'));
 
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow-agent/v1/site-settings'
-            && $request->hasHeader('X-GEOFlow-Event', 'site.settings.update')
-            && $request['settings']['site_name'] === '远程门户'
-            && $request['settings']['active_theme'] === 'toutiao-news-20260426'
-            && $request['settings']['front_mode'] === 'static'
-            && $request['settings']['per_page'] === 14);
-
-        $this->assertDatabaseHas('distribution_logs', [
+        Http::assertNothingSent();
+        $this->assertDatabaseMissing('distribution_logs', [
             'distribution_channel_id' => (int) $channel->id,
             'event' => 'site.settings.synced',
         ]);
     }
 
-    public function test_sync_channel_settings_requeues_existing_articles_for_target_refresh(): void
+    public function test_disabled_channel_settings_sync_does_not_requeue_existing_articles_for_target_refresh(): void
     {
         Queue::fake();
-        Http::fake([
-            'https://example.com/geoflow-agent/v1/site-settings' => Http::response([
-                'ok' => true,
-                'updated' => true,
-            ]),
-        ]);
+        Http::fake();
 
         $fixtures = $this->taskFixtures();
         $channel = DistributionChannel::query()->create([
@@ -1383,13 +1350,13 @@ class AdminDistributionPageTest extends TestCase
         $this->actingAs($this->admin(), 'admin')
             ->post(route('admin.distribution.sync-settings', ['channelId' => (int) $channel->id]))
             ->assertRedirect(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
-            ->assertSessionHas('message', __('admin.distribution.message.settings_synced_with_content_refresh', ['count' => 1]));
+            ->assertSessionHas('message', __('admin.distribution.message.remote_site_sync_disabled'));
 
         $this->assertDatabaseHas('article_distributions', [
             'id' => (int) $distribution->id,
-            'action' => 'update',
-            'status' => 'queued',
-            'idempotency_key' => 'article-'.$article->id.'-channel-'.$channel->id.'-update-v1',
+            'action' => 'publish',
+            'status' => 'synced',
+            'idempotency_key' => 'old-key',
         ]);
         $this->assertDatabaseHas('article_distributions', [
             'id' => (int) $deletedDistribution->id,
@@ -1397,7 +1364,8 @@ class AdminDistributionPageTest extends TestCase
             'status' => 'synced',
             'idempotency_key' => 'deleted-key',
         ]);
-        Queue::assertPushed(ProcessArticleDistributionJob::class, 1);
+        Http::assertNothingSent();
+        Queue::assertNotPushed(ProcessArticleDistributionJob::class);
     }
 
     public function test_task_create_page_lists_active_distribution_channels(): void

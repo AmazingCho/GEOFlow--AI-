@@ -127,6 +127,7 @@ class KnowledgeBaseController extends Controller
             'entityOptions' => $this->entityMaterialLinkService->entityOptions(),
             'selectedEntityIds' => [],
             'entityRelationType' => 'supporting_reference',
+            'entityRelationTypesById' => [],
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'tagsText' => '',
@@ -142,6 +143,7 @@ class KnowledgeBaseController extends Controller
             'title' => ['nullable', 'string', 'max:200'],
             'source_url' => ['nullable', 'string', 'max:500'],
             'ai_model_id' => ['nullable', 'integer', 'min:0'],
+            'analysis_instructions' => ['nullable', 'string', 'max:4000'],
         ]);
 
         $text = trim(implode("\n\n", array_filter([
@@ -156,7 +158,8 @@ class KnowledgeBaseController extends Controller
                 (int) ($payload['ai_model_id'] ?? 0),
                 array_merge($this->knowledgeClassificationContext(), [
                     'raw_content' => (string) $payload['content'],
-                ])
+                ]),
+                (string) ($payload['analysis_instructions'] ?? '')
             ),
         ]);
     }
@@ -182,6 +185,7 @@ class KnowledgeBaseController extends Controller
             'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($knowledgeBase->collection_id ?? 0) ?: null),
             'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($knowledgeBase),
             'entityRelationType' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypeFor($knowledgeBase),
+            'entityRelationTypesById' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypesFor($knowledgeBase),
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
@@ -217,6 +221,8 @@ class KnowledgeBaseController extends Controller
             'entity_ids' => ['nullable', 'array'],
             'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
             'entity_relation_type' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
+            'entity_relation_types' => ['nullable', 'array'],
+            'entity_relation_types.*' => ['string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
         ], [
             'name.required' => __('admin.knowledge_bases.error.name_required'),
             'content.required' => __('admin.knowledge_bases.error.content_required'),
@@ -246,7 +252,8 @@ class KnowledgeBaseController extends Controller
         $this->entityMaterialLinkService->syncEntities(
             $knowledgeBase,
             $this->selectedEntityIds($request),
-            $this->selectedKnowledgeRelationTypeFromPayload($payload)
+            $this->selectedKnowledgeRelationTypeFromPayload($payload),
+            $this->selectedEntityRelationTypesById($payload)
         );
 
         return $this->redirectAfterChunkSync(
@@ -310,6 +317,7 @@ class KnowledgeBaseController extends Controller
             'entityOptions' => $this->entityMaterialLinkService->entityOptions((int) ($knowledgeBase->collection_id ?? 0) ?: null),
             'selectedEntityIds' => $this->entityMaterialLinkService->selectedEntityIdsFor($knowledgeBase),
             'entityRelationType' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypeFor($knowledgeBase),
+            'entityRelationTypesById' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypesFor($knowledgeBase),
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'tagsText' => $this->tagService->tagTextFor($knowledgeBase),
@@ -351,14 +359,15 @@ class KnowledgeBaseController extends Controller
         $this->entityMaterialLinkService->syncEntities(
             $knowledgeBase,
             $this->selectedEntityIds($request),
-            $this->selectedKnowledgeRelationTypeFromPayload($payload)
+            $this->selectedKnowledgeRelationTypeFromPayload($payload),
+            $this->selectedEntityRelationTypesById($payload)
         );
 
         return $this->redirectAfterChunkSync(
             $knowledgeBase,
             $content,
-            'admin.knowledge-bases.index',
-            [],
+            'admin.knowledge-bases.detail',
+            ['knowledgeBaseId' => (int) $knowledgeBase->id],
             'update_success'
         );
     }
@@ -366,7 +375,7 @@ class KnowledgeBaseController extends Controller
     /**
      * 删除知识库（存在任务引用时阻止）。
      */
-    public function destroy(int $knowledgeBaseId): RedirectResponse
+    public function destroy(Request $request, int $knowledgeBaseId): RedirectResponse
     {
         $knowledgeBase = KnowledgeBase::query()->whereKey($knowledgeBaseId)->firstOrFail();
 
@@ -379,7 +388,10 @@ class KnowledgeBaseController extends Controller
         $knowledgeBase->delete();
         $this->cleanupKnowledgeFile($filePath);
 
-        return redirect()->route('admin.knowledge-bases.index')->with('message', __('admin.knowledge_bases.message.delete_success'));
+        return redirect()
+            ->route('admin.knowledge-bases.index', $request->query())
+            ->withFragment('material-list')
+            ->with('message', __('admin.knowledge_bases.message.delete_success'));
     }
 
     public function refreshChunks(int $knowledgeBaseId): RedirectResponse
@@ -703,6 +715,8 @@ class KnowledgeBaseController extends Controller
             'entity_ids' => ['nullable', 'array'],
             'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
             'entity_relation_type' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
+            'entity_relation_types' => ['nullable', 'array'],
+            'entity_relation_types.*' => ['string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
         ], [
             'name.required' => __('admin.knowledge_bases.error.name_required'),
             'content.required' => __('admin.knowledge_bases.error.content_required'),
@@ -737,6 +751,8 @@ class KnowledgeBaseController extends Controller
             'entity_ids' => ['nullable', 'array'],
             'entity_ids.*' => ['integer', Rule::exists('entities', 'id')],
             'entity_relation_type' => ['nullable', 'string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
+            'entity_relation_types' => ['nullable', 'array'],
+            'entity_relation_types.*' => ['string', Rule::in(EntityMaterialLinkService::KNOWLEDGE_RELATION_TYPES)],
         ], [
             'knowledge_file.mimes' => __('admin.knowledge_bases.error.file_type_invalid'),
             'knowledge_file.max' => __('admin.knowledge_bases.error.file_too_large'),
@@ -841,7 +857,8 @@ class KnowledgeBaseController extends Controller
                 $this->entityMaterialLinkService->syncEntities(
                     $knowledgeBase,
                     $this->selectedEntityIdsFromPayload($payload),
-                    $this->selectedKnowledgeRelationTypeFromPayload($payload)
+                    $this->selectedKnowledgeRelationTypeFromPayload($payload),
+                    $this->selectedEntityRelationTypesById($payload)
                 );
 
                 return $knowledgeBase;
@@ -952,6 +969,27 @@ class KnowledgeBaseController extends Controller
     private function selectedKnowledgeRelationTypeFromPayload(array $payload): string
     {
         return $this->entityMaterialLinkService->normalizeKnowledgeRelationType((string) ($payload['entity_relation_type'] ?? ''));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int,string>
+     */
+    private function selectedEntityRelationTypesById(array $payload): array
+    {
+        $relationTypes = $payload['entity_relation_types'] ?? [];
+        if (! is_array($relationTypes)) {
+            $relationTypes = [];
+        }
+
+        $result = [];
+        foreach ($this->selectedEntityIdsFromPayload($payload) as $entityId) {
+            $result[(int) $entityId] = $this->entityMaterialLinkService->normalizeKnowledgeRelationType(
+                (string) ($relationTypes[(string) $entityId] ?? $relationTypes[(int) $entityId] ?? $payload['entity_relation_type'] ?? '')
+            );
+        }
+
+        return $result;
     }
 
     /**

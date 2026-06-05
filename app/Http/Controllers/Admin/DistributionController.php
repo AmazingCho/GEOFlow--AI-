@@ -166,23 +166,9 @@ class DistributionController extends Controller
             $this->createWordPressSecret($channel, (string) $payload['wordpress_application_password']);
         }
 
-        $message = __('admin.distribution.message.updated');
-        $channel->load('activeSecret');
-        if ($channel->activeSecret) {
-            try {
-                $this->syncChannelSiteSettings($channel);
-                $message = __('admin.distribution.message.updated_and_settings_synced');
-            } catch (Throwable $e) {
-                return redirect()
-                    ->route('admin.distribution.show', ['channelId' => (int) $channel->id])
-                    ->with('message', $message)
-                    ->withErrors(__('admin.distribution.message.settings_sync_failed', ['message' => $e->getMessage()]));
-            }
-        }
-
         return redirect()
             ->route('admin.distribution.show', ['channelId' => (int) $channel->id])
-            ->with('message', $message);
+            ->with('message', __('admin.distribution.message.updated'));
     }
 
     public function show(int $channelId): View|RedirectResponse
@@ -578,26 +564,14 @@ class DistributionController extends Controller
 
     public function syncSettings(int $channelId): RedirectResponse
     {
-        $channel = DistributionChannel::query()
-            ->with('activeSecret')
-            ->whereKey($channelId)
-            ->first();
+        $channel = DistributionChannel::query()->whereKey($channelId)->first();
         if (! $channel) {
             return redirect()->route('admin.distribution.index')->withErrors(__('admin.distribution.message.not_found'));
         }
 
-        try {
-            $this->syncChannelSiteSettings($channel);
-            $refreshCount = $this->distributionOrchestrator->enqueueChannelContentRefresh($channel);
-
-            return redirect()
-                ->route('admin.distribution.show', ['channelId' => (int) $channel->id])
-                ->with('message', $refreshCount > 0
-                    ? __('admin.distribution.message.settings_synced_with_content_refresh', ['count' => $refreshCount])
-                    : __('admin.distribution.message.settings_synced'));
-        } catch (Throwable $e) {
-            return back()->withErrors(__('admin.distribution.message.settings_sync_failed', ['message' => $e->getMessage()]));
-        }
+        return redirect()
+            ->route('admin.distribution.show', ['channelId' => (int) $channel->id])
+            ->with('message', __('admin.distribution.message.remote_site_sync_disabled'));
     }
 
     /**
@@ -819,7 +793,7 @@ class DistributionController extends Controller
             'key_id' => $keyId,
             'secret_ciphertext' => $this->apiKeyCrypto->encrypt($plainSecret),
             'status' => 'active',
-            'scopes' => ['article.publish', 'article.update', 'article.delete', 'site.settings.update', 'health.check'],
+            'scopes' => ['article.publish', 'article.update', 'article.delete', 'health.check'],
         ]);
 
         return [

@@ -169,6 +169,15 @@
                 {{ __('admin.knowledge_bases.saved_views.title') }}
             </div>
             <div class="flex flex-wrap gap-2">
+                @php
+                    $clearSavedViewUrl = route('admin.knowledge-bases.index', array_filter([
+                        'collection_id' => $collectionId ?? null,
+                    ], static fn ($value) => $value !== null && $value !== ''));
+                    $isSavedViewClear = (string) ($knowledgePurpose ?? '') === '' && (string) ($savedView ?? '') === '';
+                @endphp
+                <a href="{{ $clearSavedViewUrl }}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold {{ $isSavedViewClear ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50' }}">
+                    {{ __('admin.knowledge_bases.saved_views.clear') }}
+                </a>
                 @foreach ($knowledgePurposeOptions ?? [] as $purposeOption)
                     @php
                         $purposeUrl = route('admin.knowledge-bases.index', array_filter([
@@ -268,7 +277,7 @@
         </form>
         </details>
 
-        <div class="bg-white shadow rounded-lg">
+        <div id="material-list" class="bg-white shadow rounded-lg">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_bases.list_title') }}</h3>
             </div>
@@ -429,7 +438,7 @@
                                         <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
                                         {{ __('admin.button.view') }}
                                     </a>
-                                    <form method="POST" action="{{ route('admin.knowledge-bases.delete', ['knowledgeBaseId' => (int) $item['id']]) }}" onsubmit="return confirm(@js(__('admin.knowledge_bases.confirm_delete', ['name' => $item['name']])));" class="inline-block">
+                                    <form method="POST" action="{{ route('admin.knowledge-bases.delete', ['knowledgeBaseId' => (int) $item['id']] + request()->query()) }}" onsubmit="return confirm(@js(__('admin.knowledge_bases.confirm_delete', ['name' => $item['name']])));" class="inline-block">
                                         @csrf
                                         <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700">
                                             <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i>

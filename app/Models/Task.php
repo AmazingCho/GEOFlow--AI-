@@ -20,6 +20,7 @@ class Task extends Model
         'image_count',
         'image_tag_filter',
         'prompt_id',
+        'skill_prompt_id',
         'ai_model_id',
         'author_id',
         'need_review',
@@ -62,6 +63,7 @@ class Task extends Model
             'image_library_id' => 'integer',
             'image_count' => 'integer',
             'prompt_id' => 'integer',
+            'skill_prompt_id' => 'integer',
             'ai_model_id' => 'integer',
             'author_id' => 'integer',
             'need_review' => 'integer',
@@ -105,6 +107,11 @@ class Task extends Model
     public function prompt(): BelongsTo
     {
         return $this->belongsTo(Prompt::class, 'prompt_id');
+    }
+
+    public function skillPrompt(): BelongsTo
+    {
+        return $this->belongsTo(Prompt::class, 'skill_prompt_id');
     }
 
     public function aiModel(): BelongsTo

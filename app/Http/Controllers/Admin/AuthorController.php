@@ -150,7 +150,9 @@ class AuthorController extends Controller
             'social_links' => trim((string) ($payload['social_links'] ?? '')),
         ]);
 
-        return redirect()->route('admin.authors.index')->with('message', __('admin.authors.message.update_success'));
+        return redirect()
+            ->route('admin.authors.edit', ['authorId' => (int) $author->id])
+            ->with('message', __('admin.authors.message.update_success'));
     }
 
     /**

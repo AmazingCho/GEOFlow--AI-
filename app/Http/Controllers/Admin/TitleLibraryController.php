@@ -594,13 +594,15 @@ class TitleLibraryController extends Controller
             $this->tagService->syncExisting($library, $this->selectedTagIds($request));
         }
 
-        return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.update_success'));
+        return redirect()
+            ->route('admin.title-libraries.edit', ['libraryId' => (int) $library->id])
+            ->with('message', __('admin.title_libraries.message.update_success'));
     }
 
     /**
      * 删除标题库（存在任务引用时阻止删除）。
      */
-    public function destroy(int $libraryId): RedirectResponse
+    public function destroy(Request $request, int $libraryId): RedirectResponse
     {
         $library = TitleLibrary::query()->whereKey($libraryId)->firstOrFail();
 
@@ -612,7 +614,10 @@ class TitleLibraryController extends Controller
         Title::query()->where('library_id', $libraryId)->delete();
         $library->delete();
 
-        return redirect()->route('admin.title-libraries.index')->with('message', __('admin.title_libraries.message.delete_success'));
+        return redirect()
+            ->route('admin.title-libraries.index', $request->query())
+            ->withFragment('material-list')
+            ->with('message', __('admin.title_libraries.message.delete_success'));
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\EntityRecord;
 use App\Services\GeoFlow\MaterialFormAnalysisService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\CollectionOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -81,6 +82,7 @@ class CaseController extends Controller
             'caseForm' => $this->emptyCaseForm(),
             'entityOptions' => $this->entityOptions(),
             'collectionOptions' => CollectionOptions::all(true),
+            'caseTypeOptions' => CaseTypes::options(),
             'tagOptions' => [],
             'selectedTagIds' => [],
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
@@ -92,12 +94,14 @@ class CaseController extends Controller
         $payload = $request->validate([
             'content' => ['required', 'string', 'max:20000'],
             'ai_model_id' => ['nullable', 'integer', 'min:0'],
+            'analysis_instructions' => ['nullable', 'string', 'max:4000'],
         ]);
 
         return response()->json([
             'fields' => $this->materialFormAnalysisService->analyzeCase(
                 (string) $payload['content'],
-                (int) ($payload['ai_model_id'] ?? 0)
+                (int) ($payload['ai_model_id'] ?? 0),
+                (string) ($payload['analysis_instructions'] ?? '')
             ),
         ]);
     }
@@ -118,6 +122,7 @@ class CaseController extends Controller
     {
         $caseRecord = CaseRecord::query()->with('tags')->whereKey($caseId)->firstOrFail();
         $selectedTagIds = $this->tagService->selectedTagIdsFor($caseRecord);
+        $currentCaseType = (string) ($caseRecord->case_type ?? '');
 
         return view('admin.cases.form', [
             'pageTitle' => __('admin.cases.page_title'),
@@ -139,6 +144,7 @@ class CaseController extends Controller
             ],
             'entityOptions' => $this->entityOptions(),
             'collectionOptions' => CollectionOptions::all(),
+            'caseTypeOptions' => CaseTypes::options($currentCaseType),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
             'selectedTagIds' => $selectedTagIds,
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
@@ -148,13 +154,13 @@ class CaseController extends Controller
     public function update(Request $request, int $caseId): RedirectResponse
     {
         $caseRecord = CaseRecord::query()->whereKey($caseId)->firstOrFail();
-        $payload = $this->validateCase($request);
+        $payload = $this->validateCase($request, $caseRecord);
 
         $caseRecord->update($this->normalizeCasePayload($payload));
         $this->tagService->syncExisting($caseRecord, $this->selectedTagIds($payload));
 
         return redirect()
-            ->route('admin.cases.index')
+            ->route('admin.cases.edit', ['caseId' => (int) $caseRecord->id])
             ->with('message', __('admin.cases.message.update_success'));
     }
 
@@ -170,13 +176,19 @@ class CaseController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateCase(Request $request): array
+    private function validateCase(Request $request, ?CaseRecord $caseRecord = null): array
     {
+        $allowedCaseTypes = CaseTypes::values();
+        $historicalCaseType = trim((string) ($caseRecord?->case_type ?? ''));
+        if ($historicalCaseType !== '' && ! in_array($historicalCaseType, $allowedCaseTypes, true)) {
+            $allowedCaseTypes[] = $historicalCaseType;
+        }
+
         return $request->validate([
             'entity_id' => ['nullable', 'integer', 'min:1', Rule::exists('entities', 'id')],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'title' => ['required', 'string', 'max:200'],
-            'case_type' => ['nullable', 'string', 'max:100'],
+            'case_type' => ['required', 'string', 'max:100', Rule::in($allowedCaseTypes)],
             'summary' => ['nullable', 'string', 'max:10000'],
             'challenge' => ['nullable', 'string', 'max:10000'],
             'solution' => ['nullable', 'string', 'max:10000'],
@@ -203,7 +215,7 @@ class CaseController extends Controller
             'entity_id' => isset($payload['entity_id']) && (int) $payload['entity_id'] > 0 ? (int) $payload['entity_id'] : null,
             'collection_id' => $this->normalizeCollectionId($payload),
             'title' => trim((string) $payload['title']),
-            'case_type' => trim((string) ($payload['case_type'] ?? '')),
+            'case_type' => CaseTypes::normalize((string) ($payload['case_type'] ?? '')),
             'summary' => trim((string) ($payload['summary'] ?? '')),
             'challenge' => trim((string) ($payload['challenge'] ?? '')),
             'solution' => trim((string) ($payload['solution'] ?? '')),

@@ -514,13 +514,15 @@ class ImageLibraryController extends Controller
         ]);
         $this->entityMaterialLinkService->syncEntities($library, $this->selectedEntityIds($request));
 
-        return redirect()->route('admin.image-libraries.index')->with('message', __('admin.image_libraries.message.update_success'));
+        return redirect()
+            ->route('admin.image-libraries.edit', ['libraryId' => (int) $library->id])
+            ->with('message', __('admin.image_libraries.message.update_success'));
     }
 
     /**
      * 删除图片库，并尝试删除关联文件。
      */
-    public function destroy(int $libraryId): RedirectResponse
+    public function destroy(Request $request, int $libraryId): RedirectResponse
     {
         $library = ImageLibrary::query()->whereKey($libraryId)->firstOrFail();
 
@@ -546,7 +548,10 @@ class ImageLibraryController extends Controller
             $message .= __('admin.image_libraries.message.delete_cleanup_partial', ['count' => $cleanupFailed]);
         }
 
-        return redirect()->route('admin.image-libraries.index')->with('message', $message);
+        return redirect()
+            ->route('admin.image-libraries.index', $request->query())
+            ->withFragment('material-list')
+            ->with('message', $message);
     }
 
     /**
