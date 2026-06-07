@@ -47,7 +47,7 @@
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">基础信息</h2>
                     <dl class="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
-                        <div><dt class="text-gray-500">公司名</dt><dd class="mt-1 font-medium text-gray-900">{{ $customer->company_name ?: 未填写 }}</dd></div>
+                        <div><dt class="text-gray-500">公司名</dt><dd class="mt-1 font-medium text-gray-900">{{ $customer->company_name ?: '未填写' }}</dd></div>
                         <div><dt class="text-gray-500">业务容器</dt><dd class="mt-1 font-medium text-gray-900">{{ $customer->collection?->name ?? '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">负责人</dt><dd class="mt-1 font-medium text-gray-900">{{ $customer->owner ?: '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">客户类型</dt><dd class="mt-1 font-medium text-gray-900">{{ $customer->customer_type ? ($customerTypeLabels[$customer->customer_type] ?? $customer->customer_type) : '未填写' }}</dd></div>
