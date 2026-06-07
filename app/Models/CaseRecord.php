@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
 class CaseRecord extends Model
@@ -33,9 +34,9 @@ class CaseRecord extends Model
         ];
     }
 
-    public function entity(): BelongsTo
+    public function entities(): BelongsToMany
     {
-        return $this->belongsTo(EntityRecord::class, 'entity_id');
+        return $this->belongsToMany(EntityRecord::class, 'case_record_entity', 'case_record_id', 'entity_id')->withTimestamps();
     }
 
     public function collection(): BelongsTo

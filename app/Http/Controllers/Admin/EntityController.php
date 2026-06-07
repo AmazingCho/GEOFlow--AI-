@@ -164,6 +164,8 @@ class EntityController extends Controller
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'collectionOptions' => CollectionOptions::all(),
             'entityRelationService' => app(\App\Services\GeoFlow\EntityRelationService::class),
+            'caseOptions' => $this->caseOptions((int) ($entity->collection_id ?? 0) ?: null),
+            'selectedCaseIds' => $entity->relatedCases->pluck('id')->map(fn ($id) => (int) $id)->all(),
             'entityOptionsForRelation' => $this->entityOptionsForRelation((int) ($entity->collection_id ?? 0) ?: null, (int) $entity->id),
         ]);
     }
@@ -180,6 +182,10 @@ class EntityController extends Controller
             app(\App\Services\GeoFlow\EntityRelationService::class)->syncRelations((int) $entity->id, $relations);
         }
         $this->tagService->syncExisting($entity, $this->selectedTagIds($payload));
+
+        if (isset($payload['case_ids']) && is_array($payload['case_ids'])) {
+            $entity->relatedCases()->sync(array_map('intval', $payload['case_ids']));
+        }
         $this->entityMaterialLinkService->syncMaterialsForEntity(
             $entity,
             $this->selectedMaterialIds($payload),
@@ -223,6 +229,8 @@ class EntityController extends Controller
             'canonical_url' => ['nullable', 'string', 'max:500'],
             'link_anchor_text' => ['nullable', 'string', 'max:160'],
             'link_policy' => ['nullable', 'string', Rule::in([EntityTypes::LINK_POLICY_SUGGEST, EntityTypes::LINK_POLICY_DISABLED])],
+            'case_ids' => ['nullable', 'array'],
+            'case_ids.*' => ['integer', 'min:1', \Illuminate\Validation\Rule::exists('case_records', 'id')],
             'tag_ids' => ['nullable', 'array'],
             'tag_ids.*' => [
                 'integer',
@@ -397,7 +405,23 @@ class EntityController extends Controller
         return response()->json(app(\App\Services\GeoFlow\EntityRelationService::class)->relatedEntities((int) $entity->id));
     }
 
-    private function entityOptionsForRelation(?int $collectionId, int $excludeEntityId): array
+    private function caseOptions(?int $collectionId = null): array
+    {
+        return \App\Models\CaseRecord::query()
+            ->select(['id', 'title', 'collection_id'])
+            ->when($collectionId !== null && $collectionId > 0, fn ($q) => $q->where('collection_id', $collectionId))
+            ->orderBy('title')
+            ->limit(500)
+            ->get()
+            ->map(fn (\App\Models\CaseRecord $c): array => [
+                'id' => (int) $c->id,
+                'label' => (string) $c->title,
+                'collection_id' => (int) ($c->collection_id ?? 0),
+            ])
+            ->all();
+    }
+
+        private function entityOptionsForRelation(?int $collectionId, int $excludeEntityId): array
     {
         return EntityRecord::query()
             ->select(['id', 'name', 'entity_type'])

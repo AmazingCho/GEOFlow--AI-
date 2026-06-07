@@ -72,20 +72,18 @@
                         </div>
                     </div>
 
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">{{ __('admin.cases.field_entity') }}</label>
-                        <select name="entity_id" class="block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-                            <option value="">{{ __('admin.cases.option_no_entity') }}</option>
-                            @foreach ($entityOptions as $entity)
-                                <option value="{{ $entity['id'] }}" @selected((string) old('entity_id', (string) ($caseForm['entity_id'] ?? '')) === (string) $entity['id'])>{{ $entity['name'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
                     @include('admin.partials.collection-select', [
                         'selectedId' => (string) ($caseForm['collection_id'] ?? ''),
                         'collectionOptions' => $collectionOptions ?? [],
                         'class' => 'block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500',
+                    ])
+
+                    @include('admin.partials.entity-selector', [
+                        'name' => 'entity_ids',
+                        'entityOptions' => $entityOptions,
+                        'selectedEntityIds' => old('entity_ids', $selectedEntityIds ?? []),
+                        'tone' => 'emerald',
+                        'placeholder' => __('admin.entities.selector_placeholder'),
                     ])
 
                     <div>
@@ -139,6 +137,71 @@
             </div>
         </div>
     </div>
+@push('scripts')
+<script>
+(() => {
+    const form = document.querySelector('form[data-ai-analysis-form]');
+    if (!form) return;
+    const collectionSelect = form.querySelector('select[name="collection_id"]');
+    const entitySelect = form.querySelector('select[name="entity_id"]');
+
+    function syncEntityByCollection() {
+        if (!entitySelect) return;
+        const collectionId = String(collectionSelect?.value || '');
+        Array.from(entitySelect.querySelectorAll('option[value]')).forEach(opt => {
+            if (opt.value === '') { opt.hidden = false; return; }
+            const optCollection = String(opt.getAttribute('data-collection-id') || '');
+            opt.hidden = collectionId !== '' && optCollection !== collectionId;
+        });
+        if (entitySelect.selectedOptions[0]?.hidden) entitySelect.value = '';
+    }
+
+    collectionSelect?.addEventListener('change', syncEntityByCollection);
+    syncEntityByCollection();
+})();
+</script>
+@endpush
+
+@push('scripts')
+<script>
+(() => {
+    const form = document.querySelector('form[data-ai-analysis-form]');
+    if (!form) return;
+    const collectionSelect = form.querySelector('select[name="collection_id"]');
+
+    function selectedCollectionId() {
+        return String(collectionSelect?.value || '');
+    }
+
+    function optionMatchesCollection(option) {
+        const collectionId = selectedCollectionId();
+        if (collectionId === '') return true;
+        const optCollection = String(option.getAttribute('data-collection-id') || option.getAttribute('data-option-collection-id') || '');
+        return optCollection === collectionId;
+    }
+
+    function syncOptionSelector(fieldName) {
+        const selector = form.querySelector('[data-option-multi-selector][data-field-name="' + fieldName + '"]');
+        if (!selector) return;
+        selector.querySelectorAll('[data-option-item]').forEach((item) => {
+            const hidden = !optionMatchesCollection(item);
+            item.hidden = hidden;
+            item.dataset.optionFilterHidden = hidden ? '1' : '0';
+            item.classList.toggle('hidden', hidden);
+        });
+        selector.dispatchEvent(new CustomEvent('option-selector:changed', {bubbles: true}));
+    }
+
+    function syncByCollection() {
+        syncOptionSelector('entity_ids');
+    }
+
+    collectionSelect?.addEventListener('change', syncByCollection);
+    syncByCollection();
+})();
+</script>
+@endpush
+
 @endsection
 
 @include('admin.partials.material-ai-analysis-script')

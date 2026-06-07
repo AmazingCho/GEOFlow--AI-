@@ -88,8 +88,8 @@
                                             {{ $caseRecord->collection?->name ?? __('admin.collections.badge_unassigned') }}
                                         </span>
                                     </div>
-                                    @if ($caseRecord->entity)
-                                        <p class="mt-1 text-sm text-gray-500">{{ __('admin.cases.entity_prefix') }}{{ $caseRecord->entity->name }}</p>
+                                    @if ($caseRecord->entities->first())
+                                        <p class="mt-1 text-sm text-gray-500">{{ __('admin.cases.entity_prefix') }}{{ $caseRecord->entities->first()->name }}</p>
                                     @endif
                                     @if ((string) ($caseRecord->summary ?? '') !== '')
                                         <p class="mt-2 text-sm leading-6 text-gray-600">{{ \Illuminate\Support\Str::limit((string) $caseRecord->summary, 180, '...') }}</p>

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use App\Models\EntityRelation;
@@ -43,6 +44,11 @@ class EntityRecord extends Model
     public function cases(): HasMany
     {
         return $this->hasMany(CaseRecord::class, 'entity_id');
+    }
+
+    public function relatedCases(): BelongsToMany
+    {
+        return $this->belongsToMany(CaseRecord::class, 'case_record_entity', 'entity_id', 'case_record_id')->withTimestamps();
     }
 
     public function tags(): MorphToMany

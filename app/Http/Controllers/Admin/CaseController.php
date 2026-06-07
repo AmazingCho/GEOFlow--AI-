@@ -32,7 +32,7 @@ class CaseController extends Controller
         $collectionId = $this->selectedCollectionId($request);
 
         $query = CaseRecord::query()
-            ->with(['collection', 'entity', 'tags'])
+            ->with(['collection', 'entities', 'tags'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id');
 
@@ -45,7 +45,7 @@ class CaseController extends Controller
                     ->orWhere('challenge', 'like', '%'.$search.'%')
                     ->orWhere('solution', 'like', '%'.$search.'%')
                     ->orWhere('result', 'like', '%'.$search.'%')
-                    ->orWhereHas('entity', static fn ($entityQuery) => $entityQuery->where('name', 'like', '%'.$search.'%'));
+                    ->orWhereHas('entities', static fn ($entityQuery) => $entityQuery->where('name', 'like', '%'.$search.'%'));
             });
         }
 
@@ -81,6 +81,7 @@ class CaseController extends Controller
             'caseId' => 0,
             'caseForm' => $this->emptyCaseForm(),
             'entityOptions' => $this->entityOptions(),
+            'selectedEntityIds' => [],
             'collectionOptions' => CollectionOptions::all(true),
             'caseTypeOptions' => CaseTypes::options(),
             'tagOptions' => [],
@@ -111,6 +112,7 @@ class CaseController extends Controller
         $payload = $this->validateCase($request);
 
         $caseRecord = CaseRecord::query()->create($this->normalizeCasePayload($payload));
+        $caseRecord->entities()->sync(array_map('intval', $payload['entity_ids'] ?? []));
         $this->tagService->syncExisting($caseRecord, $this->selectedTagIds($payload));
 
         return redirect()
@@ -131,7 +133,7 @@ class CaseController extends Controller
             'isEdit' => true,
             'caseId' => (int) $caseRecord->id,
             'caseForm' => [
-                'entity_id' => (string) ((int) ($caseRecord->entity_id ?? 0) ?: ''),
+                'entity_ids' => $caseRecord->entities->pluck('id')->map(fn ($id) => (int) $id)->all(),
                 'collection_id' => (string) ((int) ($caseRecord->collection_id ?? 0) ?: ''),
                 'title' => (string) $caseRecord->title,
                 'case_type' => (string) ($caseRecord->case_type ?? ''),
@@ -142,7 +144,8 @@ class CaseController extends Controller
                 'metrics' => (string) ($caseRecord->metrics ?? ''),
                 'source_url' => (string) ($caseRecord->source_url ?? ''),
             ],
-            'entityOptions' => $this->entityOptions(),
+            'entityOptions' => $this->entityOptions((int) ($caseRecord->collection_id ?? 0) ?: null),
+            'selectedEntityIds' => $caseRecord->entities->pluck('id')->map(fn ($id) => (int) $id)->all(),
             'collectionOptions' => CollectionOptions::all(),
             'caseTypeOptions' => CaseTypes::options($currentCaseType),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
@@ -157,6 +160,7 @@ class CaseController extends Controller
         $payload = $this->validateCase($request, $caseRecord);
 
         $caseRecord->update($this->normalizeCasePayload($payload));
+        $caseRecord->entities()->sync(array_map('intval', $payload['entity_ids'] ?? []));
         $this->tagService->syncExisting($caseRecord, $this->selectedTagIds($payload));
 
         return redirect()
@@ -185,7 +189,8 @@ class CaseController extends Controller
         }
 
         return $request->validate([
-            'entity_id' => ['nullable', 'integer', 'min:1', Rule::exists('entities', 'id')],
+            'entity_ids' => ['nullable', 'array'],
+            'entity_ids.*' => ['integer', 'min:1', Rule::exists('entities', 'id')],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'title' => ['required', 'string', 'max:200'],
             'case_type' => ['required', 'string', 'max:100', Rule::in($allowedCaseTypes)],
@@ -212,7 +217,6 @@ class CaseController extends Controller
     private function normalizeCasePayload(array $payload): array
     {
         return [
-            'entity_id' => isset($payload['entity_id']) && (int) $payload['entity_id'] > 0 ? (int) $payload['entity_id'] : null,
             'collection_id' => $this->normalizeCollectionId($payload),
             'title' => trim((string) $payload['title']),
             'case_type' => CaseTypes::normalize((string) ($payload['case_type'] ?? '')),
@@ -242,14 +246,16 @@ class CaseController extends Controller
     /**
      * @return list<array{id:int,name:string}>
      */
-    private function entityOptions(): array
+    private function entityOptions(?int $collectionId = null): array
     {
         return EntityRecord::query()
             ->orderBy('name')
-            ->get(['id', 'name'])
+            ->limit(500)
+            ->get(['id', 'name', 'collection_id'])
             ->map(static fn (EntityRecord $entity): array => [
                 'id' => (int) $entity->id,
                 'name' => (string) $entity->name,
+                'collection_id' => (int) ($entity->collection_id ?? 0),
             ])
             ->all();
     }
@@ -260,7 +266,7 @@ class CaseController extends Controller
     private function emptyCaseForm(): array
     {
         return [
-            'entity_id' => '',
+            'entity_ids' => [],
             'collection_id' => '',
             'title' => '',
             'case_type' => '',

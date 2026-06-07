@@ -130,13 +130,13 @@ class CollectionController extends Controller
     {
         $collection = CollectionRecord::query()->whereKey($collectionId)->firstOrFail();
         
-        $current = AppSupportAdminWeb::defaultCollectionId();
+        $current = \App\Support\AdminWeb::defaultCollectionId();
         if ($current === (int) $collection->id) {
-            AppSupportAdminWeb::setDefaultCollectionId(null);
+            \App\Support\AdminWeb::setDefaultCollectionId(null);
             return back()->with("message", "默认业务容器已取消。");
         }
         
-        AppSupportAdminWeb::setDefaultCollectionId((int) $collection->id);
+        \App\Support\AdminWeb::setDefaultCollectionId((int) $collection->id);
         return back()->with("message", "已将 &quot;" . e($collection->name) . "&quot; 设为默认业务容器。");
     }
     public function toggle(int $collectionId): RedirectResponse
