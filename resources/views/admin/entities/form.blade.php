@@ -151,21 +151,7 @@
                     </div>
 
 
-                                        <div class="rounded-lg border border-green-200 bg-green-50/50 p-4">
-                        <div class="mb-4">
-                            <h3 class="text-base font-semibold text-green-950">关联 Case</h3>
-                            <p class="mt-1 text-sm text-green-800">选择与当前 Entity 关联的案例。</p>
-                        </div>
-                        @include('admin.partials.option-multi-selector', [
-                            'name' => 'case_ids',
-                            'options' => $caseOptions ?? [],
-                            'selectedIds' => old('case_ids', $selectedCaseIds ?? []),
-                            'tone' => 'green',
-                            'placeholder' => '搜索 Case...',
-                        ])
-                    </div>
-
-<div class="flex justify-end gap-3">
+                    <div class="flex justify-end gap-3">
                         <a href="{{ route('admin.entities.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             {{ __('admin.button.cancel') }}
                         </a>

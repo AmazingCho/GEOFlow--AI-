@@ -533,7 +533,7 @@ class TaskController extends Controller
             ->get()
             ->map(static fn (CaseRecord $row): array => [
                 'id' => (int) $row->id,
-                'label' => trim((string) $row->title.($row->entity ? ' / '.$row->entity->name : '').($row->case_type ? ' / '.$row->case_type : '')),
+                'label' => trim((string) $row->title.(($e = $row->entities->first()) ? ' / '.$e->name : '').($row->case_type ? ' / '.$row->case_type : '')),
                 'collection_id' => (int) ($row->collection_id ?? 0),
             ])
             ->filter(static fn (array $row): bool => $row['label'] !== '')

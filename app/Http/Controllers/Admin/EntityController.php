@@ -156,8 +156,14 @@ class EntityController extends Controller
             'linkableEntityTypes' => EntityTypes::linkableValues(),
             'tagOptions' => $this->tagService->tagOptionsForIds($selectedTagIds),
             'selectedTagIds' => $selectedTagIds,
-            'materialOptions' => $this->entityMaterialLinkService->materialOptions((int) ($entity->collection_id ?? 0) ?: null),
-            'selectedMaterialIds' => $this->entityMaterialLinkService->selectedMaterialIdsForEntity($entity),
+            'materialOptions' => array_merge(
+                $this->entityMaterialLinkService->materialOptions((int) ($entity->collection_id ?? 0) ?: null),
+                ['case_ids' => $this->caseOptions((int) ($entity->collection_id ?? 0) ?: null)]
+            ),
+            'selectedMaterialIds' => array_merge(
+                $this->entityMaterialLinkService->selectedMaterialIdsForEntity($entity),
+                ['case_ids' => $entity->relatedCases->pluck('id')->map(fn ($id) => (int) $id)->all()]
+            ),
             'knowledgeRelationType' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypeForEntity($entity),
             'knowledgeRelationTypesById' => $this->entityMaterialLinkService->selectedKnowledgeRelationTypesForEntity($entity),
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),

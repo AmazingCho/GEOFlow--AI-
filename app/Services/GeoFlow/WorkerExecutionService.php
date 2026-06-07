@@ -1102,7 +1102,7 @@ class WorkerExecutionService
                     'type' => (string) ($caseRecord->case_type ?? ''),
                     'role' => CaseTypes::referenceRule((string) ($caseRecord->case_type ?? '')),
                     'entity_id' => $caseRecord->entity_id !== null ? (int) $caseRecord->entity_id : null,
-                    'entity_name' => (string) ($caseRecord->entity?->name ?? ''),
+                    'entity_name' => (string) (($e = $caseRecord->entities->first()) ? $e->name : ''),
                 ])
                 ->values()
                 ->all(),
@@ -1137,8 +1137,8 @@ class WorkerExecutionService
                 if ((string) ($caseRecord->case_type ?? '') !== '') {
                     $line .= '（类型：'.(string) $caseRecord->case_type.'）';
                 }
-                if ($caseRecord->entity) {
-                    $line .= '，关联实体：'.(string) $caseRecord->entity->name;
+                if (($e = $caseRecord->entities->first())) {
+                    $line .= '，关联实体：'.(string) $e->name;
                 }
                 $lines[] = $line;
                 $lines[] = '  引用规则：'.CaseTypes::referenceRule((string) ($caseRecord->case_type ?? ''));

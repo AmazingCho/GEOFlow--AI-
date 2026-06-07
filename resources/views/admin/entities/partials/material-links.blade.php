@@ -1,5 +1,10 @@
 @php
     $materialGroups = [
+        'case_ids' => [
+            'label' => '关联 Case',
+            'tone' => 'green',
+            'placeholder' => '搜索 Case...',
+        ],
         'knowledge_base_ids' => [
             'label' => __('admin.entities.link_group_knowledge'),
             'tone' => 'orange',

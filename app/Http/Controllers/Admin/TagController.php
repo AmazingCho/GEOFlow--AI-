@@ -261,7 +261,7 @@ class TagController extends Controller
                     ->get()
                     ->map(fn ($caseRecord): array => [
                         'label' => (string) $caseRecord->title,
-                        'meta' => (string) ($caseRecord->entity?->name ?? ''),
+                        'meta' => (string) (($e = $caseRecord->entities->first()) ? $e->name : ''),
                         'href' => route('admin.cases.index', ['tag' => $tagLabel]),
                     ])
                     ->values()
