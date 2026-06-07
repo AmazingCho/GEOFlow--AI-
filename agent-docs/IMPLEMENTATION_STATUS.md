@@ -562,3 +562,40 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 ```
 
 **测试：** 7/7 通过。
+
+### 2026-06-07（第7轮）：Entity-to-Entity 关联功能（基础层）
+
+**数据库：**
+- `relation_types` 表：10 种预设关系类型（uses / requires / compatible_with / competes_with / suitable_for / belongs_to / manufactured_by / sold_to / causes / solves），含 forward_label / reverse_label / bidirectional 标记
+- `entity_relations` 表：source_entity_id → relation_type_id → target_entity_id + strength(0-100) + source_type(manual/ai)，UNIQUE 约束防重复，DELETE CASCADE
+
+**Model：**
+- 新增 `RelationType` Model
+- 新增 `EntityRelation` Model（含 sourceEntity / targetEntity / relationType 关系方法）
+- `EntityRecord` 追加 `sourceRelations()` / `targetRelations()` 两个 HasMany 方法
+
+**服务层：**
+- 新增 `EntityRelationService`：relationTypes() / relatedEntities() / addRelation() / removeRelation() / syncRelations()
+
+**Controller：**
+- `EntityController.edit()` 传参加入 `entityRelationService` + `entityOptionsForRelation`
+- `EntityController.update()` 保存时调用 `syncRelations()` 处理关系提交
+- 新增 `searchJson()` — Entity 远程搜索 API（支持 name/aliases 模糊搜索 + Collection 约束）
+- 新增 `relations()` — 查询指定 Entity 的关系列表 API
+- 新增 `entityOptionsForRelation()` — 获取可关联的候选 Entity 列表
+
+**前端：**
+- 新增 `entities/partials/entity-relations.blade.php` — Entity 编辑页底部"关联 Entity"区域，含目标 Entity 选择器 + 关系类型下拉 + 强度滑块 + 行内删除
+- 支持 datalist 搜索、重复检测、已保存关系自动回显
+
+**路由：**
+- `GET /admin/entities/search` — Entity 搜索 API
+- `GET /admin/entities/{entityId}/relations` — 关系查询 API
+
+**首期不包含（第二期）：**
+- AI 自动推荐 Entity Relation
+- Entity 状态字段（core/normal/deprecated）
+- Entity 列表页实体类型筛选
+- AI 找实体（自然语言搜索）
+
+**验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 6 个新/改文件 PHP 语法检查通过。

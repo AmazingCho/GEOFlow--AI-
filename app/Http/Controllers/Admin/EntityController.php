@@ -163,6 +163,8 @@ class EntityController extends Controller
             'knowledgeRelationTypeOptions' => $this->entityMaterialLinkService->knowledgeRelationTypeOptions(),
             'aiModelOptions' => $this->materialFormAnalysisService->modelOptions(),
             'collectionOptions' => CollectionOptions::all(),
+            'entityRelationService' => app(\App\Services\GeoFlow\EntityRelationService::class),
+            'entityOptionsForRelation' => $this->entityOptionsForRelation((int) ($entity->collection_id ?? 0) ?: null, (int) $entity->id),
         ]);
     }
 

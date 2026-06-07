@@ -57,4 +57,14 @@ class EntityRecord extends Model
             DB::table('entity_material_links')->where('entity_id', (int) $entity->id)->delete();
         });
     }
+
+    public function sourceRelations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(EntityRelation::class, 'source_entity_id')->with('relationType');
+    }
+
+    public function targetRelations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(EntityRelation::class, 'target_entity_id')->with('relationType');
+    }
 }

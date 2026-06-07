@@ -311,6 +311,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('{entityId}/edit', [EntityController::class, 'edit'])->name('edit')->whereNumber('entityId');
             Route::put('{entityId}', [EntityController::class, 'update'])->name('update')->whereNumber('entityId');
             Route::post('{entityId}/delete', [EntityController::class, 'destroy'])->name('delete')->whereNumber('entityId');
+            Route::get('search', [EntityController::class, 'searchJson'])->name('search');
+            Route::get('{entityId}/relations', [EntityController::class, 'relations'])->name('relations')->whereNumber('entityId');
         });
 
         // 素材管理：Case DB

@@ -142,6 +142,13 @@
                         'knowledgeRelationTypeOptions' => $knowledgeRelationTypeOptions ?? [],
                     ])
 
+                    @include('admin.entities.partials.entity-relations', [
+                        'entityRelationService' => $entityRelationService ?? null,
+                        'entityOptionsForRelation' => $entityOptionsForRelation ?? [],
+                        'isEdit' => $isEdit,
+                        'entityId' => $entityId ?? 0,
+                    ])
+
                     <div class="flex justify-end gap-3">
                         <a href="{{ route('admin.entities.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             {{ __('admin.button.cancel') }}
