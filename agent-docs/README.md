@@ -2,18 +2,23 @@
 
 这个目录用于解决 GEOFlow 项目在长对话、上下文压缩、换 agent 接手时的信息丢失问题。
 
-新 agent 不应该依赖聊天历史，而应该先读取这里的交接文档，再按需跳转到 `功能说明文档`。
+新 agent 不应该依赖聊天历史，而应该先读取这里的极简交接文档，再按需跳转到 `功能说明文档`。
 
 读取文档前请先遵守 [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)：默认不要全量读取，只按当前任务读取最少必要文档。
 
 ## 最短接手路径
 
-如果只想用最少 token 了解项目，请按顺序读取：
+如果只想用最少 token 了解项目，请先读取：
 
-1. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
-2. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-3. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
-4. [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
+1. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
+2. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+
+只有需要阶段细节、风险细节或架构判断时，再读取：
+
+- [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+- [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
+- [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+- [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
 
 ## 详细功能说明
 
@@ -34,24 +39,24 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [AGENT_HANDOFF.md](./AGENT_HANDOFF.md) | 新 agent 第一入口，压缩项目定位、当前状态、下一步 |
+| [AGENT_BRIEF.md](./AGENT_BRIEF.md) | 新 agent 或新会话的最低 token 启动文件 |
+| [AGENT_HANDOFF.md](./AGENT_HANDOFF.md) | 详细交接摘要，适合需要阶段细节时读取 |
 | [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md) | Collection、Entity、Tag、Knowledge Base、Case 的规则边界 |
-| [OPTIMIZATION_ROADMAP.md](./OPTIMIZATION_ROADMAP.md) | 阶段规划和后续开发顺序 |
 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | 已完成、部分完成、未完成事项 |
 | [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) | 已知缺陷、风险和容易误判的问题 |
 | [DOC_READ_POLICY.md](./DOC_READ_POLICY.md) | 文档读取策略，避免每次任务全量读取造成 token 浪费 |
 | [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) | 每个 agent 开发前后必须遵守的交接规则 |
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
-| [NEXT_AGENT_PROMPT.md](./NEXT_AGENT_PROMPT.md) | 可以直接复制给新 agent 的启动提示词 |
 
-## 每次开发后必须更新
+## 每次开发后按需更新
 
-每完成一个阶段或修复一个重要问题，至少更新：
+完成开发后不要机械更新所有文档。按影响范围更新：
 
-1. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-2. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
-3. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+- 进度变化：[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
+- 新风险或缺陷：[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+- 架构边界变化：[ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
+- 接手摘要明显过期：[AGENT_BRIEF.md](./AGENT_BRIEF.md) 和 [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
 
 如果新增或改变了用户操作方式，还要同步更新 `功能说明文档` 中对应说明。
 
@@ -61,3 +66,4 @@
 - Knowledge / Entity / Case 的 AI 自动分析共用 `MaterialAnalysisPromptRules`。
 - AI 自动分析的自定义输入是“补充分析要求”，不是完整替换系统提示词。
 - 复杂表格、参数表和规格表虽然已有保真规则，仍建议人工复核。
+- 不同素材的自动 tag 推荐已移除；不要在未确认需求前恢复。

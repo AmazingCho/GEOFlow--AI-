@@ -7,6 +7,9 @@ use App\Models\AiModel;
 use App\Models\Author;
 use App\Models\CaseRecord;
 use App\Models\Category;
+use App\Models\CrmAfterSalesTicket;
+use App\Models\CrmCustomer;
+use App\Models\CrmInquiry;
 use App\Models\DistributionChannel;
 use App\Models\EntityRecord;
 use App\Models\ImageLibrary;
@@ -221,6 +224,8 @@ class TaskController extends Controller
                 'knowledge_tag_filter' => (string) ($task['knowledge_tag_filter'] ?? ''),
                 'entity_ids' => $this->parseEntityFilter((string) ($task['entity_filter'] ?? '')),
                 'case_ids' => $this->parseCaseFilter((string) ($task['case_filter'] ?? '')),
+                'crm_source_type' => (string) ($task['crm_source_type'] ?? ''),
+                'crm_source_id' => (string) (($task['crm_source_id'] ?? '') ?: ''),
                 'fixed_category_id' => (string) (($task['fixed_category_id'] ?? '') ?: ''),
                 'status' => (string) ($task['status'] ?? 'active'),
                 'article_limit' => (string) ($task['article_limit'] ?? 10),
@@ -577,6 +582,7 @@ class TaskController extends Controller
             'imageTags' => $imageTags,
             'knowledgeBases' => $knowledgeBases,
             'caseOptions' => $caseOptions,
+            'crmSourceOptions' => $this->crmSourceOptions(),
             'knowledgeTags' => $knowledgeTags,
             'authors' => $authors,
             'categories' => $categories,
@@ -616,6 +622,8 @@ class TaskController extends Controller
             'entity_ids.*' => ['integer', 'min:1', Rule::exists('entities', 'id')],
             'case_ids' => ['nullable', 'array'],
             'case_ids.*' => ['integer', 'min:1', Rule::exists('case_records', 'id')],
+            'crm_source_type' => ['nullable', 'string', Rule::in(['', 'customer', 'inquiry', 'ticket'])],
+            'crm_source_id' => ['nullable', 'integer', 'min:1'],
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'content')],
             'skill_prompt_id' => ['nullable', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'skill')],
@@ -648,7 +656,10 @@ class TaskController extends Controller
             $rules[$fieldName.'.*'] = ['string', 'max:220'];
         }
 
-        return $request->validate($rules);
+        $payload = $request->validate($rules);
+        $this->assertCrmSourceExists($payload);
+
+        return $payload;
     }
 
     /**
@@ -678,6 +689,8 @@ class TaskController extends Controller
             'knowledge_tag_filter' => $this->normalizeKnowledgeTagFilters($request),
             'entity_filter' => implode(',', $this->selectedEntityIds($request)),
             'case_filter' => implode(',', $this->selectedCaseIds($request)),
+            'crm_source_type' => $this->normalizeCrmSourceType($payload),
+            'crm_source_id' => $this->normalizeCrmSourceId($payload),
             'fixed_category_id' => isset($payload['fixed_category_id']) ? (int) $payload['fixed_category_id'] : null,
             'status' => (string) $payload['status'],
             'publish_scope' => (string) ($payload['publish_scope'] ?? 'local_and_distribution'),
@@ -807,6 +820,17 @@ class TaskController extends Controller
                 ]);
             }
         }
+
+        $crmSourceType = $this->normalizeCrmSourceType($payload);
+        $crmSourceId = $this->normalizeCrmSourceId($payload);
+        if ($crmSourceType !== '' && $crmSourceId !== null) {
+            $sourceCollectionId = $this->crmSourceCollectionId($crmSourceType, $crmSourceId);
+            if ($sourceCollectionId !== null && $sourceCollectionId !== $collectionId) {
+                throw ValidationException::withMessages([
+                    'crm_source_id' => '选择的 CRM 来源不属于当前 Collection。',
+                ]);
+            }
+        }
     }
 
     /**
@@ -911,6 +935,116 @@ class TaskController extends Controller
             ->implode(', ');
 
         return $this->tagService->normalizeTagText($tagText);
+    }
+
+    /**
+     * @return list<array{id:int,type:string,label:string,meta:string,collection_id:int}>
+     */
+    private function crmSourceOptions(): array
+    {
+        $customers = CrmCustomer::query()
+            ->with('collection')
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get(['id', 'collection_id', 'company_name', 'country', 'status'])
+            ->map(static fn (CrmCustomer $customer): array => [
+                'id' => (int) $customer->id,
+                'type' => 'customer',
+                'label' => (string) $customer->company_name,
+                'meta' => trim('客户 '.(string) ($customer->country ?? '').' '.(string) ($customer->status ?? '').' '.(string) ($customer->collection?->name ?? '')),
+                'collection_id' => (int) ($customer->collection_id ?? 0),
+            ]);
+
+        $inquiries = CrmInquiry::query()
+            ->with('collection')
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get(['id', 'collection_id', 'subject', 'priority', 'status'])
+            ->map(static fn (CrmInquiry $inquiry): array => [
+                'id' => (int) $inquiry->id,
+                'type' => 'inquiry',
+                'label' => (string) $inquiry->subject,
+                'meta' => trim('询盘 '.(string) ($inquiry->priority ?? '').' '.(string) ($inquiry->status ?? '').' '.(string) ($inquiry->collection?->name ?? '')),
+                'collection_id' => (int) ($inquiry->collection_id ?? 0),
+            ]);
+
+        $tickets = CrmAfterSalesTicket::query()
+            ->with('collection')
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get(['id', 'collection_id', 'title', 'priority', 'status'])
+            ->map(static fn (CrmAfterSalesTicket $ticket): array => [
+                'id' => (int) $ticket->id,
+                'type' => 'ticket',
+                'label' => (string) $ticket->title,
+                'meta' => trim('售后 '.(string) ($ticket->priority ?? '').' '.(string) ($ticket->status ?? '').' '.(string) ($ticket->collection?->name ?? '')),
+                'collection_id' => (int) ($ticket->collection_id ?? 0),
+            ]);
+
+        return $customers->concat($inquiries)->concat($tickets)->values()->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function assertCrmSourceExists(array $payload): void
+    {
+        $sourceType = $this->normalizeCrmSourceType($payload);
+        $sourceId = $this->normalizeCrmSourceId($payload);
+        if ($sourceType === '') {
+            return;
+        }
+        if ($sourceId === null) {
+            throw ValidationException::withMessages([
+                'crm_source_id' => '请选择 CRM 来源记录。',
+            ]);
+        }
+        if ($this->crmSourceCollectionId($sourceType, $sourceId) === null) {
+            throw ValidationException::withMessages([
+                'crm_source_id' => '选择的 CRM 来源不存在。',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function normalizeCrmSourceType(array $payload): string
+    {
+        $sourceType = trim((string) ($payload['crm_source_type'] ?? ''));
+
+        return in_array($sourceType, ['customer', 'inquiry', 'ticket'], true) ? $sourceType : '';
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function normalizeCrmSourceId(array $payload): ?int
+    {
+        $sourceType = $this->normalizeCrmSourceType($payload);
+        $sourceId = (int) ($payload['crm_source_id'] ?? 0);
+
+        return $sourceType !== '' && $sourceId > 0 ? $sourceId : null;
+    }
+
+    private function crmSourceCollectionId(string $sourceType, int $sourceId): ?int
+    {
+        $modelClass = match ($sourceType) {
+            'customer' => CrmCustomer::class,
+            'inquiry' => CrmInquiry::class,
+            'ticket' => CrmAfterSalesTicket::class,
+            default => null,
+        };
+        if ($modelClass === null || $sourceId <= 0) {
+            return null;
+        }
+
+        $record = $modelClass::query()->whereKey($sourceId)->first(['id', 'collection_id']);
+        if (! $record) {
+            return null;
+        }
+
+        return (int) ($record->collection_id ?? 0) ?: null;
     }
 
     /**

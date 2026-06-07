@@ -54,6 +54,31 @@ class CollectionRecord extends Model
         return $this->hasMany(ImageLibrary::class, 'collection_id');
     }
 
+    public function crmCustomers(): HasMany
+    {
+        return $this->hasMany(CrmCustomer::class, 'collection_id');
+    }
+
+    public function crmInquiries(): HasMany
+    {
+        return $this->hasMany(CrmInquiry::class, 'collection_id');
+    }
+
+    public function crmQuotes(): HasMany
+    {
+        return $this->hasMany(CrmQuote::class, 'collection_id');
+    }
+
+    public function crmSalesOrders(): HasMany
+    {
+        return $this->hasMany(CrmSalesOrder::class, 'collection_id');
+    }
+
+    public function crmAfterSalesTickets(): HasMany
+    {
+        return $this->hasMany(CrmAfterSalesTicket::class, 'collection_id');
+    }
+
     public function isActive(): bool
     {
         return (string) $this->status === 'active';

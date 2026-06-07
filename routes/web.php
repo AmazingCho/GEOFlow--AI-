@@ -18,6 +18,12 @@ use App\Http\Controllers\Admin\AuthorController;
 use App\Http\Controllers\Admin\CaseController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CollectionController;
+use App\Http\Controllers\Admin\CrmCustomerController;
+use App\Http\Controllers\Admin\CrmAfterSalesTicketController;
+use App\Http\Controllers\Admin\CrmContentProposalController;
+use App\Http\Controllers\Admin\CrmInquiryController;
+use App\Http\Controllers\Admin\CrmQuoteController;
+use App\Http\Controllers\Admin\CrmSalesOrderController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DistributionController;
 use App\Http\Controllers\Admin\EntityController;
@@ -149,6 +155,70 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::put('{collectionId}', [CollectionController::class, 'update'])->name('update')->whereNumber('collectionId');
             Route::post('{collectionId}/toggle', [CollectionController::class, 'toggle'])->name('toggle')->whereNumber('collectionId');
             Route::post('{collectionId}/delete', [CollectionController::class, 'destroy'])->name('delete')->whereNumber('collectionId');
+        });
+
+        // 轻量 CRM：客户、询盘与报价辅助
+        Route::prefix('crm')->name('crm.')->group(function () {
+            Route::prefix('customers')->name('customers.')->group(function () {
+                Route::get('/', [CrmCustomerController::class, 'index'])->name('index');
+                Route::get('create', [CrmCustomerController::class, 'create'])->name('create');
+                Route::post('create', [CrmCustomerController::class, 'store'])->name('store');
+                Route::get('{customerId}', [CrmCustomerController::class, 'show'])->name('show')->whereNumber('customerId');
+                Route::get('{customerId}/edit', [CrmCustomerController::class, 'edit'])->name('edit')->whereNumber('customerId');
+                Route::put('{customerId}', [CrmCustomerController::class, 'update'])->name('update')->whereNumber('customerId');
+                Route::post('{customerId}/delete', [CrmCustomerController::class, 'destroy'])->name('delete')->whereNumber('customerId');
+                Route::post('{customerId}/follow-ups', [CrmCustomerController::class, 'storeFollowUp'])->name('follow-ups.store')->whereNumber('customerId');
+            });
+
+            Route::prefix('inquiries')->name('inquiries.')->group(function () {
+                Route::get('/', [CrmInquiryController::class, 'index'])->name('index');
+                Route::get('create', [CrmInquiryController::class, 'create'])->name('create');
+                Route::post('create', [CrmInquiryController::class, 'store'])->name('store');
+                Route::post('analyze', [CrmInquiryController::class, 'analyze'])->name('analyze');
+                Route::get('{inquiryId}', [CrmInquiryController::class, 'show'])->name('show')->whereNumber('inquiryId');
+                Route::get('{inquiryId}/edit', [CrmInquiryController::class, 'edit'])->name('edit')->whereNumber('inquiryId');
+                Route::put('{inquiryId}', [CrmInquiryController::class, 'update'])->name('update')->whereNumber('inquiryId');
+                Route::post('{inquiryId}/delete', [CrmInquiryController::class, 'destroy'])->name('delete')->whereNumber('inquiryId');
+            });
+
+            Route::prefix('quotes')->name('quotes.')->group(function () {
+                Route::get('/', [CrmQuoteController::class, 'index'])->name('index');
+                Route::get('create', [CrmQuoteController::class, 'create'])->name('create');
+                Route::post('create', [CrmQuoteController::class, 'store'])->name('store');
+                Route::get('{quoteId}', [CrmQuoteController::class, 'show'])->name('show')->whereNumber('quoteId');
+                Route::get('{quoteId}/edit', [CrmQuoteController::class, 'edit'])->name('edit')->whereNumber('quoteId');
+                Route::put('{quoteId}', [CrmQuoteController::class, 'update'])->name('update')->whereNumber('quoteId');
+                Route::get('{quoteId}/print', [CrmQuoteController::class, 'print'])->name('print')->whereNumber('quoteId');
+                Route::post('{quoteId}/delete', [CrmQuoteController::class, 'destroy'])->name('delete')->whereNumber('quoteId');
+            });
+
+            Route::prefix('orders')->name('orders.')->group(function () {
+                Route::get('/', [CrmSalesOrderController::class, 'index'])->name('index');
+                Route::post('from-quote/{quoteId}', [CrmSalesOrderController::class, 'fromQuote'])->name('from-quote')->whereNumber('quoteId');
+                Route::get('{orderId}', [CrmSalesOrderController::class, 'show'])->name('show')->whereNumber('orderId');
+                Route::get('{orderId}/edit', [CrmSalesOrderController::class, 'edit'])->name('edit')->whereNumber('orderId');
+                Route::put('{orderId}', [CrmSalesOrderController::class, 'update'])->name('update')->whereNumber('orderId');
+                Route::post('{orderId}/delete', [CrmSalesOrderController::class, 'destroy'])->name('delete')->whereNumber('orderId');
+            });
+
+            Route::prefix('tickets')->name('tickets.')->group(function () {
+                Route::get('/', [CrmAfterSalesTicketController::class, 'index'])->name('index');
+                Route::get('create', [CrmAfterSalesTicketController::class, 'create'])->name('create');
+                Route::post('create', [CrmAfterSalesTicketController::class, 'store'])->name('store');
+                Route::post('analyze', [CrmAfterSalesTicketController::class, 'analyze'])->name('analyze');
+                Route::get('{ticketId}', [CrmAfterSalesTicketController::class, 'show'])->name('show')->whereNumber('ticketId');
+                Route::get('{ticketId}/edit', [CrmAfterSalesTicketController::class, 'edit'])->name('edit')->whereNumber('ticketId');
+                Route::put('{ticketId}', [CrmAfterSalesTicketController::class, 'update'])->name('update')->whereNumber('ticketId');
+                Route::post('{ticketId}/delete', [CrmAfterSalesTicketController::class, 'destroy'])->name('delete')->whereNumber('ticketId');
+            });
+
+            Route::prefix('content-proposals')->name('proposals.')->group(function () {
+                Route::get('/', [CrmContentProposalController::class, 'index'])->name('index');
+                Route::post('from-inquiry/{inquiryId}', [CrmContentProposalController::class, 'createFromInquiry'])->name('from-inquiry')->whereNumber('inquiryId');
+                Route::post('from-ticket/{ticketId}', [CrmContentProposalController::class, 'createFromTicket'])->name('from-ticket')->whereNumber('ticketId');
+                Route::post('{proposalId}/apply', [CrmContentProposalController::class, 'apply'])->name('apply')->whereNumber('proposalId');
+                Route::post('{proposalId}/reject', [CrmContentProposalController::class, 'reject'])->name('reject')->whereNumber('proposalId');
+            });
         });
 
         // 素材管理：作者管理

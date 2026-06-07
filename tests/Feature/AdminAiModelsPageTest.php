@@ -51,6 +51,55 @@ class AdminAiModelsPageTest extends TestCase
             ->assertSee(__('admin.ai_models.test'));
     }
 
+    public function test_admin_models_page_shows_chat_model_max_tokens_setting(): void
+    {
+        $this->createAiModel('chat', ['max_tokens' => 12000]);
+
+        $response = $this->actingAs($this->createAdmin(), 'admin')
+            ->get(route('admin.ai-models.index'));
+
+        $response->assertOk()
+            ->assertSee(__('admin.ai_models.field_max_tokens'))
+            ->assertSee(__('admin.ai_models.max_tokens_configured', ['tokens' => 12000]));
+    }
+
+    public function test_admin_saves_max_tokens_only_for_chat_models(): void
+    {
+        $admin = $this->createAdmin();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'Long Chat',
+                'version' => 'test',
+                'api_key' => 'test-api-key',
+                'model_id' => 'long-chat',
+                'model_type' => 'chat',
+                'api_url' => 'https://ai.test',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+                'max_tokens' => 12000,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'));
+
+        $this->assertSame(12000, (int) AiModel::query()->where('model_id', 'long-chat')->value('max_tokens'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-models.store'), [
+                'name' => 'Embedding',
+                'version' => 'test',
+                'api_key' => 'test-api-key',
+                'model_id' => 'embedding-model',
+                'model_type' => 'embedding',
+                'api_url' => 'https://ai.test',
+                'failover_priority' => 100,
+                'daily_limit' => 0,
+                'max_tokens' => 12000,
+            ])
+            ->assertRedirect(route('admin.ai-models.index'));
+
+        $this->assertNull(AiModel::query()->where('model_id', 'embedding-model')->value('max_tokens'));
+    }
+
     public function test_admin_can_test_embedding_model_connection(): void
     {
         Http::fake([
@@ -301,6 +350,7 @@ class AdminAiModelsPageTest extends TestCase
             'api_url' => 'https://ai.test',
             'failover_priority' => 100,
             'daily_limit' => 0,
+            'max_tokens' => null,
             'used_today' => 0,
             'total_used' => 0,
             'status' => 'active',

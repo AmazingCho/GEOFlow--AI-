@@ -22,6 +22,7 @@ class AiModel extends Model
         'api_url',
         'failover_priority',
         'daily_limit',
+        'max_tokens',
         'used_today',
         'total_used',
         'status',
@@ -32,6 +33,7 @@ class AiModel extends Model
         return [
             'failover_priority' => 'integer',
             'daily_limit' => 'integer',
+            'max_tokens' => 'integer',
             'used_today' => 'integer',
             'total_used' => 'integer',
         ];

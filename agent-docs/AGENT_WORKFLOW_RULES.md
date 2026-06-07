@@ -4,12 +4,19 @@
 
 ## 开始任何开发前
 
-先读取：
+默认不要全量读取文档。
 
-1. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
-2. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-3. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
-4. [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
+低 token 启动时先读取：
+
+1. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
+2. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+
+只有当前任务需要阶段细节、风险细节或架构判断时，再读取：
+
+- [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+- [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
+- [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+- [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
 
 如果涉及具体功能，再读取 [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) 中对应的功能说明。
 
@@ -24,11 +31,12 @@
 
 ## 每完成一个阶段后
 
-必须更新：
+不要机械更新所有文档。按影响范围更新：
 
-1. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-2. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
-3. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+- 进度变化：[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
+- 新缺陷或风险：[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+- 架构规则变化：[ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
+- 接手摘要变化：[AGENT_BRIEF.md](./AGENT_BRIEF.md) 和 [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
 
 如果改变了用户操作流程，还必须更新 `功能说明文档/` 中对应文档。
 
@@ -56,7 +64,7 @@
 - 不要只把阶段计划写在聊天里。
 - 不要新增无限标签分组。
 - 不要让标签承担 Collection 职责。
+- 不要恢复不同素材自动 tag 推荐，除非用户重新确认。
 - 不要把 Case 内容混入 Knowledge Base type。
 - 不要为每个 Entity 类型创建独立表。
 - 不要在未确认旧数据兼容前改变删除语义。
-

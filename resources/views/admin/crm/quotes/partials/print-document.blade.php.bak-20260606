@@ -1,0 +1,261 @@
+@php
+    $documentKind = $documentKind ?? (string) ($quote->document_type ?? 'quotation');
+    $isZh = (string) ($quote->document_language ?? 'en') === 'zh_CN';
+    $titles = $isZh
+        ? [
+            'quotation' => '报价单',
+            'proforma_invoice' => '形式发票',
+            'invoice' => '正式发票',
+            'packing_list' => '装箱单',
+            'contract' => '合同',
+        ]
+        : [
+            'quotation' => 'Quotation',
+            'proforma_invoice' => 'Proforma Invoice',
+            'invoice' => 'Commercial Invoice',
+            'packing_list' => 'Packing List',
+            'contract' => 'Contract',
+        ];
+    $title = $titles[$documentKind] ?? $titles['quotation'];
+    $labels = $documentLabels ?? [];
+    $label = static fn (string $key, string $fallback): string => (string) ($labels[$key] ?? $fallback);
+    $seller = $seller ?? ['name' => config('geoflow.site_name', 'GEOFlow'), 'logo' => '', 'address' => '', 'phone' => '', 'email' => '', 'website' => ''];
+    $money = static fn (mixed $value): string => number_format((float) $value, 2);
+    $weight = static fn (mixed $value): string => ((float) $value > 0) ? number_format((float) $value, 3) : '-';
+    $showPrices = $documentKind !== 'packing_list';
+    $showBank = $documentKind === 'proforma_invoice';
+    $showContract = $documentKind === 'contract';
+    $bank = is_array($quote->bank_account_json) ? $quote->bank_account_json : [];
+@endphp
+
+<!doctype html>
+<html lang="{{ $isZh ? 'zh-CN' : 'en' }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ $quote->quote_no }} - {{ $title }}</title>
+    <style>
+        body { margin: 0; background: #f3f4f6; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+        .page { max-width: 1040px; margin: 32px auto; background: #fff; padding: 46px; box-shadow: 0 16px 36px rgba(15, 23, 42, .08); }
+        .topbar { margin-bottom: 24px; text-align: right; }
+        .print-button { border: 1px solid #d1d5db; border-radius: 6px; background: #fff; padding: 8px 14px; cursor: pointer; }
+        .header { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 32px; border-bottom: 1px solid #e5e7eb; padding-bottom: 24px; }
+        .seller { display: flex; gap: 16px; align-items: flex-start; }
+        .logo { max-width: 96px; max-height: 48px; object-fit: contain; }
+        h1 { margin: 0; font-size: 30px; letter-spacing: 0; }
+        h2 { margin: 30px 0 12px; font-size: 16px; }
+        .muted { color: #6b7280; font-size: 13px; line-height: 1.6; }
+        .strong { font-weight: 700; color: #111827; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+        .panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+        .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 14px; font-size: 13px; line-height: 1.6; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.5px; }
+        th, td { border-bottom: 1px solid #e5e7eb; padding: 10px; text-align: left; vertical-align: top; }
+        th { background: #f9fafb; color: #4b5563; font-weight: 700; }
+        .right { text-align: right; }
+        .nowrap { white-space: nowrap; }
+        .thumb { width: 56px; height: 56px; border: 1px solid #e5e7eb; border-radius: 6px; object-fit: cover; }
+        .section { white-space: pre-wrap; color: #374151; font-size: 13px; line-height: 1.75; }
+        .summary { margin-left: auto; width: 360px; }
+        .summary td { padding: 8px 10px; }
+        .summary tr:last-child td { border-top: 2px solid #111827; font-size: 15px; font-weight: 800; }
+        .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 42px; }
+        .sigline { border-top: 1px solid #111827; padding-top: 8px; font-size: 13px; }
+        @media print {
+            body { background: #fff; }
+            .page { margin: 0; max-width: none; box-shadow: none; padding: 24px; }
+            .topbar { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="topbar" style="display:flex;align-items:center;gap:12px;justify-content:flex-end;flex-wrap:wrap;">
+            <select onchange="if(this.value) window.location.href=this.value" style="border:1px solid #d1d5db;border-radius:6px;background:#fff;padding:8px 14px;font-size:13px;cursor:pointer;">
+                @foreach (['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同'] as $typeVal => $typeLabel)
+                    <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $typeVal, 'language' => $quote->document_language ?? 'en']) }}" @selected($documentKind === $typeVal)>{{ $isZh ? $typeLabel : ($typeLabel === '报价单' ? 'Quotation' : ($typeLabel === '形式发票' ? 'Proforma Invoice' : ($typeLabel === '正式发票' ? 'Commercial Invoice' : ($typeLabel === '装箱单' ? 'Packing List' : 'Contract')))) }}</option>
+                @endforeach
+            </select>
+            <button class="print-button" onclick="window.print()" style="border:1px solid #d1d5db;border-radius:6px;background:#2563eb;color:#fff;padding:8px 14px;cursor:pointer;font-weight:600;">
+                {{ $isZh ? '打印 / PDF' : 'Print / PDF' }}
+            </button>
+        </div>
+
+        <div class="header">
+            <div class="seller">
+                @if ((string) ($seller['logo'] ?? '') !== '')
+                    <img src="{{ $seller['logo'] }}" alt="" class="logo">
+                @endif
+                <div>
+                    <div class="muted">{{ $label('seller', 'Seller') }}</div>
+                    <div class="strong" style="margin-top: 4px;">{{ $seller['name'] ?: '-' }}</div>
+                    @foreach (['address', 'phone', 'email', 'website'] as $sellerField)
+                        @if ((string) ($seller[$sellerField] ?? '') !== '')
+                            <div class="muted">{{ $seller[$sellerField] }}</div>
+                        @endif
+                    @endforeach
+                </div>
+            </div>
+            <div>
+                <h1>{{ $title }}</h1>
+                <div class="muted" style="margin-top: 8px;">{{ $quote->title }}</div>
+                <div class="kv" style="margin-top: 14px;">
+                    <div class="muted">{{ $label('document_no', 'Document No.') }}</div><div class="strong">{{ $quote->quote_no }}</div>
+                    <div class="muted">{{ $label('date', 'Date') }}</div><div>{{ $quote->created_at?->format('Y-m-d') }}</div>
+                    @if ($documentKind !== 'packing_list')
+                        <div class="muted">{{ $label('valid_until', 'Valid Until') }}</div><div>{{ $quote->valid_until?->format('Y-m-d') ?? '-' }}</div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 28px;">
+            <div class="panel">
+                <div class="muted">{{ $label('buyer', 'Buyer') }}</div>
+                <div class="strong" style="margin-top: 6px;">{{ $quote->buyer_name ?: ($quote->customer?->company_name ?? '-') }}</div>
+                @if ((string) ($quote->buyer_address ?? '') !== '')<div class="muted">{{ $quote->buyer_address }}</div>@endif
+                <div class="muted">{{ trim((string) ($quote->buyer_country ?? '')) ?: ($quote->customer?->country ?? '') }}</div>
+                @if ((string) ($quote->buyer_phone ?? '') !== '')<div class="muted">{{ $quote->buyer_phone }}</div>@endif
+                @if ((string) ($quote->buyer_email ?? '') !== '')<div class="muted">{{ $quote->buyer_email }}</div>@endif
+            </div>
+            <div class="panel">
+                <div class="kv">
+                    <div class="muted">{{ $label('currency', 'Currency') }}</div><div>{{ $quote->currency }}</div>
+                    <div class="muted">{{ $label('trade_term', 'Trade Term') }}</div><div>{{ $quote->trade_term ?: '-' }}</div>
+                    <div class="muted">{{ $label('lead_time', 'Lead Time') }}</div><div>{{ $quote->lead_time ?: '-' }}</div>
+                    <div class="muted">{{ $label('origin', 'Origin') }}</div><div>{{ $quote->origin_country ?: '-' }}</div>
+                </div>
+            </div>
+        </div>
+
+        <h2>{{ $label('items', 'Items') }}</h2>
+        <table>
+            <thead>
+                @if ($documentKind === 'packing_list')
+                    <tr>
+                        <th>{{ $label('item', 'Item') }}</th>
+                        <th>{{ $label('sku_model', 'SKU / Model') }}</th>
+                        <th class="right">{{ $label('qty', 'Qty') }}</th>
+                        <th class="right">{{ $label('package_count', 'Packages') }}</th>
+                        <th class="right">{{ $label('net_weight', 'Net Weight') }}</th>
+                        <th class="right">{{ $label('gross_weight', 'Gross Weight') }}</th>
+                        <th class="right">{{ $label('volume_cbm', 'Volume CBM') }}</th>
+                    </tr>
+                @else
+                    <tr>
+                        <th>{{ $label('item', 'Item') }}</th>
+                        <th>{{ $label('sku_model', 'SKU / Model') }}</th>
+                        @if ($documentKind === 'invoice')<th>{{ $label('hs_code', 'HS Code') }}</th>@endif
+                        <th class="right">{{ $label('qty', 'Qty') }}</th>
+                        <th class="right">{{ $label('unit_price', 'Unit Price') }}</th>
+                        <th class="right">{{ $label('amount', 'Amount') }}</th>
+                    </tr>
+                @endif
+            </thead>
+            <tbody>
+                @foreach ($quote->items as $item)
+                    @php
+                        $itemImageUrl = $item->image
+                            ? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) $item->image->file_path)
+                            : \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl((string) ($item->image_path ?? ''));
+                    @endphp
+                    @if ($documentKind === 'packing_list')
+                        <tr>
+                            <td>
+                                <strong>{{ $item->item_name }}</strong>
+                                @if ((string) ($item->description ?? '') !== '')<div class="muted">{{ $item->description }}</div>@endif
+                            </td>
+                            <td>{{ trim((string) ($item->sku ?? '').' / '.(string) ($item->model ?? ''), ' /') ?: '-' }}</td>
+                            <td class="right nowrap">{{ $money($item->quantity) }} {{ $item->unit }}</td>
+                            <td class="right">{{ (int) ($item->package_count ?? 0) ?: '-' }}</td>
+                            <td class="right">{{ $weight($item->net_weight) }}</td>
+                            <td class="right">{{ $weight($item->gross_weight) }}</td>
+                            <td class="right">{{ $weight($item->volume_cbm) }}</td>
+                        </tr>
+                    @else
+                        <tr>
+                            <td>
+                                <div style="display: flex; gap: 10px;">
+                                    @if ($itemImageUrl !== '')
+                                        <img src="{{ $itemImageUrl }}" alt="" class="thumb">
+                                    @endif
+                                    <div>
+                                        <strong>{{ $item->item_name }}</strong>
+                                        @if ((string) ($item->description ?? '') !== '')<div class="muted">{{ $item->description }}</div>@endif
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ trim((string) ($item->sku ?? '').' / '.(string) ($item->model ?? ''), ' /') ?: '-' }}</td>
+                            @if ($documentKind === 'invoice')<td>{{ $item->hs_code ?: '-' }}</td>@endif
+                            <td class="right nowrap">{{ $money($item->quantity) }} {{ $item->unit }}</td>
+                            <td class="right">{{ $money($item->unit_price) }}</td>
+                            <td class="right">{{ $money($item->amount) }}</td>
+                        </tr>
+                    @endif
+                @endforeach
+            </tbody>
+        </table>
+
+        @if ($showPrices)
+            <h2>{{ $label('summary', 'Summary') }}</h2>
+            <table class="summary">
+                <tr><td>{{ $label('subtotal', 'Items Subtotal') }}</td><td class="right">{{ $quote->currency }} {{ $money($quote->total_amount) }}</td></tr>
+                <tr><td>{{ $label('shipping', 'Shipping Fee') }}</td><td class="right">{{ $quote->currency }} {{ $money($quote->shipping_fee) }}</td></tr>
+                <tr><td>{{ $label('discount', 'Discount') }}</td><td class="right">- {{ $quote->currency }} {{ $money($quote->discount_amount) }}</td></tr>
+                <tr><td>{{ $label('tax', 'Tax') }}</td><td class="right">{{ $quote->currency }} {{ $money($quote->tax_amount) }}</td></tr>
+                <tr><td>{{ $label('grand_total', 'Grand Total') }}</td><td class="right">{{ $quote->currency }} {{ $money($quote->grand_total ?: $quote->total_amount) }}</td></tr>
+            </table>
+        @endif
+
+        @if ($showBank)
+            <h2>{{ $label('bank_account', 'Bank Account') }}</h2>
+            <div class="section">
+@forelse ($bank as $bankKey => $bankValue)
+{{ ucwords(str_replace('_', ' ', (string) $bankKey)) }}: {{ is_array($bankValue) ? json_encode($bankValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $bankValue }}
+@empty
+-
+@endforelse
+            </div>
+        @endif
+
+        @foreach ([
+            'payment_terms' => $label('payment_terms', 'Payment Terms'),
+            'delivery_terms' => $label('delivery_terms', 'Delivery Terms'),
+            'warranty_terms' => $label('warranty_terms', 'Warranty Terms'),
+            'installation_terms' => $label('installation_terms', 'Installation Terms'),
+        ] as $field => $heading)
+            @if ((string) ($quote->{$field} ?? '') !== '')
+                <h2>{{ $heading }}</h2>
+                <div class="section">{{ $quote->{$field} }}</div>
+            @endif
+        @endforeach
+
+        @if ($showContract)
+            <h2>{{ $label('contract_terms', 'Contract Terms') }}</h2>
+            <div class="section">{{ $quote->contract_terms ?: '-' }}</div>
+            @if ((string) ($quote->governing_law ?? '') !== '')
+                <h2>{{ $label('governing_law', 'Governing Law') }}</h2>
+                <div class="section">{{ $quote->governing_law }}</div>
+            @endif
+            @if ((string) ($quote->dispute_resolution ?? '') !== '')
+                <h2>{{ $label('dispute_resolution', 'Dispute Resolution') }}</h2>
+                <div class="section">{{ $quote->dispute_resolution }}</div>
+            @endif
+            <div class="muted" style="margin-top: 20px;">{{ $isZh ? '本合同模板仅作为商业草稿，发送前请人工审核。' : 'This contract template is a commercial draft and should be reviewed before sending.' }}</div>
+        @endif
+
+        @if ((string) ($quote->notes ?? '') !== '')
+            <h2>{{ $label('notes', 'Notes') }}</h2>
+            <div class="section">{{ $quote->notes }}</div>
+        @endif
+
+        <div class="signature">
+            <div class="sigline">{{ $label('seller', 'Seller') }} {{ $label('signature', 'Signature') }}</div>
+            <div class="sigline">{{ $label('buyer', 'Buyer') }} {{ $label('signature', 'Signature') }}</div>
+        </div>
+        @if ((string) ($quote->signature_notes ?? '') !== '')
+            <div class="section muted">{{ $quote->signature_notes }}</div>
+        @endif
+    </div>
+</body>
+</html>

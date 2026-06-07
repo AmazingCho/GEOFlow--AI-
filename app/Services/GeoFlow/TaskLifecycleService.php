@@ -106,6 +106,8 @@ class TaskLifecycleService
                 'knowledge_tag_filter' => $normalized['knowledge_tag_filter'],
                 'entity_filter' => $normalized['entity_filter'],
                 'case_filter' => $normalized['case_filter'],
+                'crm_source_type' => $normalized['crm_source_type'],
+                'crm_source_id' => $normalized['crm_source_id'],
                 'category_mode' => $normalized['category_mode'],
                 'fixed_category_id' => $normalized['fixed_category_id'],
             ]);
@@ -645,6 +647,25 @@ class TaskLifecycleService
             $output['case_filter'] = implode(',', $caseIds);
         } elseif (! $isUpdate) {
             $output['case_filter'] = '';
+        }
+
+        if (array_key_exists('crm_source_type', $data) || array_key_exists('crm_source_id', $data)) {
+            $sourceType = trim((string) ($data['crm_source_type'] ?? ''));
+            $sourceId = (int) ($data['crm_source_id'] ?? 0);
+            if ($sourceType === '') {
+                $output['crm_source_type'] = '';
+                $output['crm_source_id'] = null;
+            } elseif (! in_array($sourceType, ['customer', 'inquiry', 'ticket'], true)) {
+                $fieldErrors['crm_source_type'] = 'CRM 来源类型无效';
+            } elseif ($sourceId <= 0) {
+                $fieldErrors['crm_source_id'] = '请选择 CRM 来源记录';
+            } else {
+                $output['crm_source_type'] = $sourceType;
+                $output['crm_source_id'] = $sourceId;
+            }
+        } elseif (! $isUpdate) {
+            $output['crm_source_type'] = '';
+            $output['crm_source_id'] = null;
         }
 
         if (array_key_exists('image_tag_filter', $data)) {

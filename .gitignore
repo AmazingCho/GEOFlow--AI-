@@ -34,3 +34,5 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+GEOFlow_backup_*.zip
+storage/templates/

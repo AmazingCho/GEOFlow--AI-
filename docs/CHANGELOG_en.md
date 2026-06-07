@@ -2,7 +2,116 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-06
+
+### CRM Document System Phases 2-10
+
+- Completed the CRM document form rebuild:
+  - Create/edit pages are now organized into Basic Info, Buyer Info, Commercial Info, Line Items, Totals, Terms & Notes, and Custom Contract Terms sections.
+  - Line items support line type, Entity, SKU, model, HS code, item image, package count, net weight, gross weight, and volume CBM.
+  - Item images can be selected from the image library or uploaded locally, with uploaded image files limited to 200KB.
+  - The frontend previews item subtotal and grand total in real time, while backend calculation remains authoritative on save.
+- Split document print rendering by document type:
+  - Quotation, Proforma Invoice, Invoice, Packing List, and Contract now route to type-specific print wrappers using a shared base layout.
+  - Proforma Invoice displays bank account details; Packing List hides price / amount columns; Contract displays custom customer terms, governing law, dispute resolution, and signature blocks.
+  - Print pages read seller basics from site settings and allow document-level `seller_company_json` overrides.
+  - Print templates support basic English and Simplified Chinese labels, with legacy documents falling back to the default language.
+- Updated quote detail rendering:
+  - Detail pages now show buyer information, commercial terms, image thumbnails, packaging / weight fields, and grand total.
+  - Creating orders from quotes remains compatible with legacy quote amount fields.
+- Documentation:
+  - Updated the lightweight CRM guide with the new document form, image fields, type-specific print templates, and current boundaries.
+  - Updated `agent-docs/IMPLEMENTATION_STATUS.md` for future agent handoff.
+- Verification:
+  - `AdminCrmPagesTest` passed, covering quote creation, image upload fields, Proforma Invoice, Packing List, Contract print pages, and quote-to-order flow.
+  - Completed headless Chrome screenshot checks for the new document form and multiple print pages.
+
+### CRM Document System Phase 1
+
+- Expanded the CRM quote / invoice / packing list / contract data model:
+  - Added buyer fields, document language, trade term, origin country, warranty / installation terms, shipping fee, discount, tax, grand total, bank account, seller company, signature notes, custom contract terms, governing law, and dispute resolution to `crm_quotes`.
+  - Added line type, SKU, model, HS code, image reference / uploaded image path, package count, net weight, gross weight, and volume CBM to `crm_quote_items`.
+  - Added `invoice` as a supported `document_type`.
+- Updated backend save behavior:
+  - Item subtotal remains backend-calculated as `quantity × unit price`.
+  - Grand total is now calculated as `items subtotal + shipping fee + tax - discount`.
+  - When old quotes have `grand_total=0`, order creation still falls back to the legacy `total_amount`.
+- Documentation:
+  - Updated `CRM_DOCUMENT_SYSTEM_PROMPT.md` to include line item image fields and custom contract terms.
+  - Updated the lightweight CRM usage guide to remove old external-contact wording and keep the internal-owner model consistent.
+- Verification:
+  - Applied migration `2026_06_06_030000_enhance_crm_quote_documents`.
+  - Related PHP / Blade syntax checks passed.
+  - `AdminCrmPagesTest` passed, covering invoice creation, grand total calculation, and print title rendering.
+  - Completed a headless Chrome render screenshot check for the quote creation page.
+
 ## 2026-06-05
+
+### Lightweight CRM Phases 4-7
+
+- Phase 4: added order management:
+  - Quote detail pages can create sales orders directly.
+  - Orders preserve customer, inquiry, quote, Collection, and Entity context.
+  - Order items support product text, quantity, unit price, amount, and status maintenance.
+- Phase 5: added after-sales tickets:
+  - Tickets can link to customers, orders, Collections, a core Entity, Knowledge Bases, and Cases.
+  - Ticket AI analysis can extract issue summaries, suggested replies, missing questions, and related material suggestions.
+  - AI only recommends existing materials and does not write directly to Knowledge Bases or Case DB.
+- Phase 6: added CRM content proposals and task source linkage:
+  - Inquiry detail pages can create title and FAQ proposals.
+  - Ticket detail pages can create FAQ and Case proposals.
+  - Content proposals must be approved by an administrator before writing into title libraries, Knowledge Bases, or Case DB.
+  - Task creation supports customer, inquiry, or ticket as a CRM source, with Collection-aware filtering.
+- Phase 7: improved CRM filters and admin entry points:
+  - CRM list pages now include Collection, status, and type filters where relevant.
+  - CRM navigation covers customers, inquiries, quotes, orders, after-sales tickets, and content proposals.
+  - Task CRM source selection is limited to the current Collection by default; cross-Collection use requires explicit opt-in.
+- Verification:
+  - Applied migration `2026_06_05_040000_create_crm_order_ticket_and_content_tables`.
+  - PHP / Blade syntax checks passed.
+  - `AdminCrmPagesTest` and `AdminTasksPageTest` passed.
+  - Visual screenshot checks were completed for orders, tickets, ticket detail, proposals, task creation, and ticket creation pages.
+
+### Lightweight CRM Phases 1-3
+
+- Added a new admin `CRM` menu entry, positioned as lightweight customer / inquiry / quotation support rather than a full ERP module.
+- Phase 1: added basic customer management:
+  - Customers can be assigned to Collections.
+  - Customer detail pages support internal owners and follow-up records.
+  - Customer lists support search, status filtering, and Collection filtering.
+- Phase 2: added inquiry management and AI need recognition:
+  - Inquiries can link to customers, internal owners, Collections, Entities, Knowledge Bases, Cases, and tags.
+  - AI analysis can fill language, need summary, product interest, reply points, missing questions, and urgency.
+  - AI only recommends existing Entities, Knowledge Bases, and Cases; it does not create new materials.
+  - When no model is configured or the AI call fails, a local keyword-matching fallback provides recommendations.
+  - Inquiry-linked materials are Collection-limited to avoid cross-business-context mistakes.
+- Phase 3: added quotation management:
+  - Quotes can be created from customers or inquiries.
+  - Creating a quote from an inquiry can prefill the customer, Collection, and linked Entities.
+  - Quote items support Entity links, quantity, unit, unit price, and backend amount calculation.
+  - Added quote detail and printable quote pages.
+- Documentation:
+  - Added `功能说明文档/10-轻量CRM与报价使用说明.md`.
+  - Updated `agent-docs` handoff, implementation status, known issues, and feature-doc index.
+- Verification:
+  - `AdminCrmPagesTest` passed, covering customers, inquiries, AI fallback recommendations, quotes, and printable pages.
+  - `AdminCollectionsPageTest` passed, confirming existing Collection/material entry points remain intact.
+
+### Article Generation Max Output Token Setting
+
+- Added an "Article Max Output Tokens" field to the AI model configuration page:
+  - Only chat models show and save this field; embedding models ignore it.
+  - Empty values fall back to `GEOFLOW_CONTENT_MAX_TOKENS`, defaulting to `8192`.
+  - The model list shows whether each chat model uses a model-level value or the system default.
+- The article-generation Worker now passes the max output token setting into model requests:
+  - OpenAI uses `max_output_tokens`.
+  - Gemini uses `maxOutputTokens`.
+  - OpenAI-compatible / DeepSeek / OpenRouter-style providers use `max_tokens`.
+- Added truncation-risk logging:
+  - Warnings are written when the provider returns `finish_reason=length`, Markdown code fences are unclosed, or long content appears unfinished.
+- Verification:
+  - Applied migration `2026_06_05_020000_add_max_tokens_to_ai_models`.
+  - Focused `AdminAiModelsPageTest` and `WorkerExecutionServiceMaxTokensTest` tests passed.
 
 ### Article Skill Prompt v1
 

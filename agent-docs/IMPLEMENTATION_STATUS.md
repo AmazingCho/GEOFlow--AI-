@@ -18,17 +18,28 @@
 | 文章质量评分 | 已完成核心功能 | 列表和编辑页显示评分与审核建议 |
 | 标签管理页增强 | 已完成核心功能 | 标签列表、引用统计、引用明细、删除、重命名、分页 |
 | 受控标签分组白名单 | 已完成核心功能 | 支持新增、编辑、删除可用分组 |
+| 不同素材自动 tag 推荐 | 已移除 | 按用户要求删除自动推荐入口，避免误标签和无效标签扩散 |
 | 创建任务页重整 | 已完成核心功能 | Collection 必选，Entity / Case 多选，标签筛选折叠 |
 | 创建任务页 Collection 联动 | 已完成 | 选择 Collection 后，Entity / Case 仅允许选择同 Collection 内容；跨 Collection 需显式开启 |
 | 图片配置优化 | 已完成核心功能 | 区分不指定图库和不配图，支持 Entity 关联图库思路 |
 | URL 采集标题关键词关联 | 已完成 | 标题库关联关键词库，单条标题可编辑关联关键词 |
 | URL 采集 Case 类型归一 | 已完成 | URL 采集生成 Case 时归一到受控 Case 类型 |
 | URL 采集 AI 模型选择 | 已完成 | 创建采集任务时可指定 AI 分析模型；默认仍自动选择并保留 failover |
+| AI 模型正文输出上限 | 已完成 | 聊天模型可配置 `max_tokens`，Worker 正文生成按 provider 传入最大输出 token |
 | AI 素材分析公共规则 | 已完成 | Knowledge / Entity / Case 分析统一复用语言一致、事实约束、表格保真规则 |
 | AI 分析补充要求 | 已完成 | Knowledge、Entity、Case 表单支持折叠式“补充分析要求”与快捷模板 |
 | URL 采集 Entity 语言修复 | 已完成 | 英文等非中文页面不再套中文 Entity 描述模板 |
 | 文章生成语言强制 | 已完成 | 生成语言优先由标题和关键词判断，最终提示词强制目标语言 |
 | Prompt Skill System v1 | 已完成 | 任务支持可选 `skill_prompt_id`，提示词页可管理 Master Prompt 与 Skill Prompt |
+| 轻量 CRM 阶段 1 | 已完成 | 新增客户、内部负责人、跟进记录，客户可关联 Collection |
+| 轻量 CRM 阶段 2 | 已完成 | 新增询盘管理，支持 AI 需求识别并关联 Entity、知识库、Case、Tag |
+| 轻量 CRM 阶段 3 | 已完成 | 新增报价单、报价明细和打印页，可从询盘生成报价 |
+| 轻量 CRM 阶段 4 | 已完成 | 新增订单管理，支持从报价生成订单并维护订单明细 |
+| 轻量 CRM 阶段 5 | 已完成 | 新增售后工单，支持 AI 分析、关联订单、Entity、知识库和 Case |
+| 轻量 CRM 阶段 6 | 已完成 | 新增 CRM 内容候选与任务 CRM 来源关联，支持从询盘/工单沉淀标题、FAQ、Case |
+| 轻量 CRM 阶段 7 | 已完成核心功能 | CRM 列表筛选、Collection 约束、任务页 CRM 来源筛选和主要 UI 入口已补齐 |
+| CRM 单据系统阶段 1 | 已完成 | 报价/发票/装箱/合同基础字段结构、正式发票类型、最终合计和明细扩展字段已补齐 |
+| CRM 单据系统阶段 2-10 | 已完成核心功能 | 单据表单 UI、项目图片、报价/PI/发票/装箱单/合同分模板打印、卖方信息读取、基础中英文标签、测试与文档已补齐 |
 | 关键词和图片库级标签移除 | 已完成 | 只保留标题库库级标签 |
 | 素材库删除后保留筛选位置 | 已完成 | 关键词库、标题库、图片库、知识库删除后保留 query 并回到列表区域 |
 | 功能说明文档 | 已完成 | 已创建 `功能说明文档/` |
@@ -72,6 +83,92 @@
 - `MaterialAnalysisPromptRulesTest`
 - URL 采集指定 AI 模型聚焦测试
 - 知识库 AI 分析聚焦测试
+- `AdminAiModelsPageTest` max token 配置聚焦测试
+- `WorkerExecutionServiceMaxTokensTest`
+- `AdminCrmPagesTest`
+- `AdminCollectionsPageTest` CRM 后回归验证
+- `AdminCrmPagesTest` CRM 阶段 4-7 扩展验证
+- `AdminTasksPageTest` CRM 来源关联回归验证
+- `AdminCrmPagesTest` CRM 单据系统阶段 2-10 扩展验证，覆盖图片字段、PI、装箱单、合同打印页
+- Headless Chrome 新建单据页和多类型打印页截图检查
+
+## 2026-06-05 轻量 CRM 阶段 1-3
+
+已完成：
+
+- 新增 CRM 菜单入口。
+- 新增 `crm_customers`、`crm_follow_ups`、`crm_inquiries`、`crm_quotes`、`crm_quote_items` 及询盘关联中间表；旧 `crm_contacts/contact_id` 逻辑已删除。
+- 客户管理支持列表、创建、编辑、详情、内部负责人和跟进记录。
+- 询盘管理支持 Collection、客户、内部负责人、Entity、知识库、Case、Tag 关联。
+- 询盘 AI 需求识别支持选择模型；无模型或调用失败时会使用本地关键词匹配降级。
+- 报价管理支持从询盘创建报价、维护报价明细、自动计算金额和打开打印页。
+
+边界：
+
+- 该阶段不实现订单、售后工单、PDF 导出、报价审批和邮件发送。
+- CRM 只做销售辅助，不承担完整 ERP 的财务、库存、采购或生产管理职责。
+
+验证：
+
+- PHP lint 通过。
+- `AdminCrmPagesTest` 通过。
+- `AdminCollectionsPageTest` 通过，确认现有 Collection/素材入口未被破坏。
+
+## 2026-06-05 轻量 CRM 阶段 4-7
+
+已完成：
+
+- 新增订单管理：
+  - 报价详情页可生成订单。
+  - 订单保留客户、询盘、报价、Collection 和 Entity 线索。
+  - 订单明细可维护产品、数量、单价和金额。
+- 新增售后工单：
+  - 工单可关联客户、订单、Collection、核心 Entity、知识库和 Case。
+  - 支持工单内容 AI 分析，提取问题摘要、建议回复、缺失问题和关联资料建议。
+  - AI 只推荐已有资料，不直接写入知识库或案例库。
+- 新增 CRM 内容候选：
+  - 询盘详情页可生成标题候选和 FAQ 候选。
+  - 工单详情页可生成 FAQ 候选和 Case 候选。
+  - 候选进入独立审核列表，管理员确认后才写入标题库、知识库或 Case DB。
+- 新增任务 CRM 来源关联：
+  - 创建任务页可选择客户、询盘或工单作为 CRM 来源。
+  - 选择 Collection 后，CRM 来源列表默认限制为同 Collection；跨 Collection 需显式开启。
+
+边界：
+
+- CRM 仍定位为轻量销售/内容辅助系统，不实现完整 ERP 的库存、采购、生产排程、财务结算。
+- 报价审批、PDF 导出、邮件发送、客户活动时间线整合仍建议作为后续独立优化。
+
+验证：
+
+- 本地 Docker 已执行迁移 `2026_06_05_040000_create_crm_order_ticket_and_content_tables`。
+- PHP / Blade 语法检查通过。
+- `AdminCrmPagesTest` 通过，覆盖订单、售后工单、内容候选审核和 CRM 来源入库。
+- `AdminCrmPagesTest` + `AdminTasksPageTest` 联合回归通过。
+- 已完成后台订单、工单、工单详情、内容候选、创建任务和新增工单页面截图检查；未发现横向溢出或明显 UI 冲突。
+
+## 2026-06-05 AI 模型正文输出上限配置
+
+已完成：
+
+- 新增 `ai_models.max_tokens` 迁移并在本地 Docker 数据库执行。
+- AI 模型配置页新增“正文最大输出 Token”，仅聊天模型显示和保存。
+- 模型列表展示模型级输出上限或系统默认 `GEOFLOW_CONTENT_MAX_TOKENS`。
+- Worker 正文生成使用 `MarkdownContentWriterAgent(maxTokens: ...)`，按 provider 输出对应字段：
+  - OpenAI: `max_output_tokens`
+  - Gemini: `maxOutputTokens`
+  - DeepSeek / OpenRouter / OpenAI-compatible: `max_tokens`
+- 正文疑似截断时写 warning 日志，帮助排查生成中断。
+
+边界：
+
+- 该配置只影响文章正文生成。
+- URL 智能采集、知识库语义切片和素材 AI 分析继续使用原分析链路，不自动套用正文 token 上限。
+
+验证：
+
+- PHP lint 通过。
+- `AdminAiModelsPageTest` 与 `WorkerExecutionServiceMaxTokensTest` 通过。
 
 ## 2026-06-05 Prompt Skill System v1
 
@@ -132,3 +229,336 @@
 
 - 自定义提示词不要设计成“完全替换系统提示词”，应继续保持“补充分析要求”模式。
 - 如果新增新的素材 AI 分析入口，应复用 `MaterialAnalysisPromptRules`。
+
+## 2026-06-06 CRM 单据与客户优化
+
+已完成（6 项用户需求）：
+
+- **1. "报价" 导航重命名 → "单据制作"**  
+  导航 tab、列表页标题、统计卡片、表格表头、控制器 pageTitle、flash message 全部更新。
+
+- **2. 单据类型联动隐藏/显示物流字段**  
+  item-row 的件数、净重、毛重、体积 CBM、HS Code 5 个字段增加了 `data-logistics-field` 属性；表单页 JS 监听 `document_type` 下拉框，当选择「报价单」或「形式发票」时自动隐藏物流字段，选择「正式发票」「装箱单」「合同」时恢复显示，明细区有蓝色提示文字说明当前状态。
+
+- **3. CRM 全模块删除功能**  
+  客户、询盘、单据、订单、售后工单的列表页和详情页均新增删除按钮，使用 POST form 提交到已有的 delete 路由，带 JavaScript confirm 确认弹窗。客户删除有强提示（会级联删除关联的询盘/报价/订单/工单）。
+
+- **4. 客户邮箱字段**  
+  新建 migration `2026_06_06_040000_add_email_to_crm_customers` 给 `crm_customers` 表增加了 `email` 列；控制器 validation / normalization / formData 全部添加 email；客户创建/编辑表单增加邮箱输入框；客户列表和详情页显示邮箱；单据表单中「从客户资料带入」按钮同时填充 buyer_email。
+
+- **5. 卖方信息手动修改入口**  
+  已确认现有实现正确：`seller_company_json` 文本域创建时为空、编辑时读取已存值，打印时存储值优先于站点设置自动抓取，手动编辑入口完整。
+
+- **6. 打印单据类型选择优化**  
+  `print` 方法支持 `?type=quotation|proforma_invoice|invoice|packing_list|contract` 查询参数；单据详情页「打印」按钮替换为下拉选择器（5 种单据类型）；打印页面顶部增加单据类型切换下拉框，无需进入编辑页即可切换打印模板。
+
+涉及文件：
+
+- `resources/views/admin/crm/partials/nav.blade.php`
+- `resources/views/admin/crm/quotes/index.blade.php`
+- `resources/views/admin/crm/quotes/form.blade.php`
+- `resources/views/admin/crm/quotes/show.blade.php`
+- `resources/views/admin/crm/quotes/print.blade.php`
+- `resources/views/admin/crm/quotes/partials/item-row.blade.php`
+- `resources/views/admin/crm/quotes/partials/print-document.blade.php`
+- `resources/views/admin/crm/customers/form.blade.php`
+- `resources/views/admin/crm/customers/show.blade.php`
+- `resources/views/admin/crm/customers/index.blade.php`
+- `resources/views/admin/crm/inquiries/index.blade.php`
+- `resources/views/admin/crm/inquiries/show.blade.php`
+- `resources/views/admin/crm/orders/index.blade.php`
+- `resources/views/admin/crm/orders/show.blade.php`
+- `resources/views/admin/crm/tickets/index.blade.php`
+- `resources/views/admin/crm/tickets/show.blade.php`
+- `app/Http/Controllers/Admin/CrmQuoteController.php`
+- `app/Http/Controllers/Admin/CrmCustomerController.php`
+- `database/migrations/2026_06_06_040000_add_email_to_crm_customers.php`
+
+验证：
+
+- 全部 25 个修改过的 Blade/PHP 文件通过语法检查
+- `AdminCrmPagesTest` 7 个测试全部通过（87 assertions）
+- 站点 HTTP 200 正常响应
+
+风险/注意：
+
+- 执行 `php artisan key:generate --force` 前须确认 `.env` 当前 `APP_KEY` 行格式正常，避免双 key 拼接导致 Server Error；Docker 容器测试需带 `APP_KEY` 环境变量运行（见 [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) #12）。
+
+### 同日后续修正与优化
+
+**Bug 修复：**
+
+- **OPcache `validate_timestamps=0` 导致代码修改不生效**  
+  容器 `/usr/local/etc/php/conf.d/99-opcache.ini` 中 `opcache.validate_timestamps=0` 导致 PHP 不检查文件修改时间，多次改代码、清缓存、重启容器均无效。修改为 `1` 并重启后 PHP 才会检测源文件变化自动重新编译。此配置适用于本地开发（代码通过 Docker volume 挂载），生产环境应保持 `0` 并通过重建镜像更新代码。
+
+- **`CrmCustomer::$fillable` 缺少 `email`**  
+  控制器 validation / normalization 均已正确添加 email，但 Laravel mass assignment 保护会静默丢弃 `$fillable` 中未声明的字段，导致客户编辑/新建时邮箱无法保存。已在 `app/Models/CrmCustomer.php` 的 `$fillable` 数组中添加 `'email'`。
+
+- **APP_KEY 双 key 拼接导致 Server Error**  
+  `php artisan key:generate --force` 将新旧 key 拼接为 `base64:OLD_KEY=base64:NEW_KEY=`（88 字符 / 66 字节），远超 AES-256-CBC 所需 32 字节，Laravel 加密器崩溃。修复方式：`sed -i "s|^APP_KEY=.*|APP_KEY=base64:<32字节有效key>|" .env` 后重启容器。详细排查步骤已录入 [KNOWN_ISSUES.md #12](./KNOWN_ISSUES.md#12-app_key-损坏风险与-docker-环境覆盖)。
+
+- **「从客户资料带入」邮箱同步逻辑增强**  
+  通用 `forEach` 循环中 `value !== ''` 守卫导致客户邮箱为空时不更新 `buyer_email` 字段。增加专用 email 同步逻辑（`emailInput.value = profile.email || ''`），绕过空值守卫，确保客户有邮箱时填充、无邮箱时清空。
+
+**功能优化：**
+
+- **单据类型联动字段拆分为两组**  
+  原实现将所有 5 个字段作为一组（`data-logistics-field`），quotation/PI 时全部隐藏。优化后拆为两组：
+  - **物流字段组 `data-logistics-field`**（件数/净重/毛重/体积 CBM）：quotation、PI、contract → 隐藏；invoice、packing_list → 显示
+  - **HS Code 组 `data-hscode-field`**：**仅** invoice → 显示；其余四种单据类型均隐藏
+  此规则对齐了 `单据模板/提示词.txt` 中的外贸业务逻辑。提示文字也改为按单据类型展示对应说明。
+
+- **`单据模板/` 目录可行性审核**  
+  审核了三份 HTML 模板（quotation-and-proforma-demo / commercial_invoice / packing_list）和提示词，确认「一套基础模板 + document_type 动态显隐」方向正确。当前 `print-document.blade.php` 已具备雏形，下一步可在该文件上统一视觉标准并对齐提示词的分区规则。审核发现的字段缺口（`port_of_loading`、`transport_mode` 等）已记录，属于第二阶段工作。
+
+**技能文档同步：**
+
+- `geoflow-testing/SKILL.md` 新增 OPcache Gotcha、APP_KEY Corruption Risk、Docker ENV APP_KEY Override 三个章节。
+- `geoflow-ui-guidelines/SKILL.md` 新增 Post-Edit Verification、Changes Not Visible? Check OPcache 两个章节。
+
+**新增涉及文件：**
+
+- `app/Models/CrmCustomer.php` — `$fillable` 添加 `'email'`
+- `resources/views/admin/crm/quotes/partials/item-row.blade.php` — HS Code 改用 `data-hscode-field`
+- `resources/views/admin/crm/quotes/form.blade.php` — JS 拆为两组 toggle + 每类型专属提示 + 邮箱同步
+- `/usr/local/etc/php/conf.d/99-opcache.ini` — `validate_timestamps=0→1`
+- `~/.codex/skills/geoflow-testing/SKILL.md`
+- `~/.codex/skills/geoflow-ui-guidelines/SKILL.md`
+
+ `.env` 当前 `APP_KEY` 行格式正常，避免双 key 拼接导致 Server Error；Docker 容器测试需带 `APP_KEY` 环境变量运行（见 [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) #12）
+
+### 2026-06-06：单据打印模板视觉统一 & 物流字段补齐
+
+**子阶段 A — 打印模板视觉统一：**
+
+- 重构 `print-document.blade.php`：CSS 从 `box-shadow` 卡片风格统一为 A4 打印观感（CSS 变量 `--text`/`--muted`/`--border`/`--light`/`--accent`，`font-family: Arial`，`width: 210mm`）
+- 拆分 10 个 Blade partial（`print-header`、`print-buyer-commercial`、`print-items`、`print-summary`、`print-terms`、`print-invoice-logistics`、`print-packing-summary`、`print-signature`、`print-contract-terms`），主模板按 document_type 条件 include
+- PI 银行信息移至独立第 2 页（`page-break-before: always`），第 1 页添加「Bank details on next page →」提示条
+- Invoice 和 Packing List 去掉产品图片（`$showImages` = quotation/PI only）
+- Invoice Summary 显示为 `Items Subtotal | Freight/Shipping | Total Invoice Value`；含 Declaration 区
+- Packing List 表格无价格列，显示件数/N.W./G.W./CBM；底部黑底 Packing Summary 卡片
+- Bank Account 渲染改为 flexible key-value grid（`@foreach $bank as $bankKey => $bankValue`），兼容任意 JSON key
+- Terms 改为双栏 grid 布局（Payment/Delivery/Warranty/Installation）
+- Signature 改用 `.sig-box` 面板样式
+
+**子阶段 B — 物流字段补齐：**
+
+- Migration `2026_06_06_100000`：`crm_quotes` 新增 `port_of_loading`、`port_of_destination`、`transport_mode`、`shipping_mark`
+- `CrmQuote::$fillable` 新增 4 个字段
+- `CrmQuoteController` 新增 validation rules、normalization、form defaults
+- 表单 `origin_country` 后方新增 4 个输入框
+- Invoice 物流汇总面板、Packing List 运输/唛头/港口面板渲染新字段
+
+**新增/修改文件：**
+
+- `resources/views/admin/crm/quotes/partials/print-document.blade.php` — 重构
+- `resources/views/admin/crm/quotes/partials/print-header.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-buyer-commercial.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-items.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-summary.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-terms.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-invoice-logistics.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-packing-summary.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-signature.blade.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-contract-terms.blade.php` — 新增
+- `database/migrations/2026_06_06_100000_add_logistics_fields_to_crm_quotes.php` — 新增
+- `app/Models/CrmQuote.php` — `$fillable` 新增 4 字段
+- `app/Http/Controllers/Admin/CrmQuoteController.php` — validation/normalize/form defaults 新增 4 字段
+- `resources/views/admin/crm/quotes/form.blade.php` — 新增 4 输入框
+- `agent-docs/CRM_DOC_PRINT_OPTIMIZATION.md` — 新增（详细执行指令，防上下文压缩）
+
+**参考模板：** `/tmp/geoflow-doc-review/01-04_*.html`
+
+**验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 10 个 Blade partial PHP 语法检查通过。
+
+### 2026-06-07：单据模板细节修正 & 字段补齐
+
+**问题修复：**
+
+1. **Quotation/PI notes 重复渲染** — Summary 左侧已展示 notes 后，fallback 区不再重复输出。修复条件：`!$isInvoice && !$showContract && !$showPrices`。
+2. **Packing 条款字段缺失** — 新增 `packing_terms`（string, max:500），DB→Model→Controller→Form→print-terms 全链路。
+3. **PI 预付款比例** — 新增 `deposit_percent`（默认 60, 0-100），PI 第 2 页 Payment Summary 动态计算 Deposit Required / Balance Before Shipment。
+4. **PI Bank Currency** — 从 `$bank['currency']`（bank_account_json 可能不填）改为 `$quote->currency`（单据币种）。
+5. **CI Exporter/Seller 面板** — `print-buyer-commercial` 按 document_type 三路分支：CI 左 Seller 右 Buyer，PL 左 Shipper 右 Consignee，其余 Buyer + Commercial Info。
+6. **CI notes 排版** — notes 从 Declaration 区移到 Summary 左侧 `.notes-box`，与 Quotation 一致。Declaration 保留纯文本。
+7. **PL Notes 写死** — PL 不再读 `$quote->notes`，固定为 "Package type: Export-grade wooden case. All dimensions and weights are for customs clearance and logistics reference."
+8. **Pkg Size 字段** — `crm_quote_items` 新增 `package_length/width/height`（decimal 8,1），item-row 表单新增紧凑 L×W×H 输入（属 `data-logistics-field` 组），PL 打印表格新增 Pkg Size (cm) 列。
+
+**新增/修改文件：**
+
+- `database/migrations/2026_06_07_010000_add_packing_terms_and_deposit_to_crm_quotes.php` — 新增
+- `database/migrations/2026_06_07_020000_add_package_dimensions_to_crm_quote_items.php` — 新增
+- `app/Models/CrmQuote.php` — fillable + casts 新增 packing_terms / deposit_percent
+- `app/Models/CrmQuoteItem.php` — fillable + casts 新增 package_length/width/height
+- `app/Http/Controllers/Admin/CrmQuoteController.php` — 所有字段的 validation/normalize/form defaults/labels
+- `resources/views/admin/crm/quotes/form.blade.php` — 新增 packing_terms / deposit_percent 输入
+- `resources/views/admin/crm/quotes/partials/item-row.blade.php` — 新增 Pkg Size L×W×H 紧凑输入
+- `resources/views/admin/crm/quotes/partials/print-document.blade.php` — notes 去重 / PI Payment Summary / Bank Currency / PL Notes 写死 / CI Declaration 简化
+- `resources/views/admin/crm/quotes/partials/print-buyer-commercial.blade.php` — CI/PL 三路分支
+- `resources/views/admin/crm/quotes/partials/print-items.blade.php` — PL Pkg Size 列
+- `resources/views/admin/crm/quotes/partials/print-summary.blade.php` — notes 条件简化
+- `resources/views/admin/crm/quotes/partials/print-terms.blade.php` — packing_terms 渲染
+- `agent-docs/CRM_DOC_PRINT_OPTIMIZATION.md` — 删除（已完成，内容已融入本文档）
+
+**验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 10 个修改文件 PHP 语法检查通过。
+
+### 2026-06-07（第2轮）：签名统一 + Bank 字段标准化 + SKU 删除 + Form 排版优化
+
+**签名模块统一：**
+- `print-signature.blade.php` 所有单据签名标题统一为「Seller / 卖方」+「Buyer / 买方」（CI 为「Authorized Signature / 授权签章」）
+- Seller Name 从 `$quote->owner`（内部员工）改为 `$seller['name']`（公司名）
+- PI 第1页签名删除，仅保留第2页签名（避免产品多时签名溢出）
+- CI 底部签名整块移除
+
+**Bank Account 标准化：**
+- 固定字段：`beneficiary` / `bank_name` / `account_no` / `swift` / `bank_address`
+- Currency 统一使用 `$quote->currency`
+- PI page 2 和单页 bank 块统一为标准字段渲染
+- 表单 `bank_account_json` placeholder 预填标准模板 `{"beneficiary":"","bank_name":"","account_no":"","swift":"","bank_address":""}`
+- `seller_company_json` placeholder 同样预填 `{"name":"","address":"","phone":"","email":"","website":""}`
+
+**其他打印页修复：**
+- CI header 去掉 Ref 行（之前引用了 `$quote->notes` 不合理）
+- CI Exporter 面板补充 Contact 字段
+- PL grid-3（Shipment / Shipping Mark / Port Info）从 `print-packing-summary` 拆分为独立 partial `print-pl-shipment`，移到 Items 表上方
+- `.info-grid` 比例从 `1.1fr 0.9fr` 改为 `1fr 1fr`
+
+**SKU 字段全链路删除：**
+- Migration `2026_06_07_030000` dropColumn `sku` from `crm_quote_items`
+- Model `CrmQuoteItem::$fillable` 移除 `'sku'`
+- Controller validation/normalize/formDefaults 清理所有 SKU 相关
+- `item-row.blade.php` 移除 SKU 输入，label 从「SKU / 型号」改为「型号」
+- `print-items.blade.php` SKU/Model 组合列改为 Model only
+- 测试数据中 SKU 断言移除
+
+**Form 排版优化：**
+- Section 间距加大（`mt-6`），section 标题区改为 `bg-gray-50` 顶栏（`-mx-5 -mt-5 rounded-t-lg border-b`）
+- Pkg Size L×W×H 输入宽度加大（`min-w-[80px]`），间距 `gap-2`
+
+**Entity 关联说明：**
+Item 关联 Entity 用于：1) 新建时自动预填 item_name + description；2) 打印时通过 Entity 查询型号规格；3) AI 需求识别时推荐关联 Entity。
+
+**新增/修改文件：**
+- `database/migrations/2026_06_07_030000_drop_sku_from_crm_quote_items.php` — 新增
+- `resources/views/admin/crm/quotes/partials/print-signature.blade.php` — 重写
+- `resources/views/admin/crm/quotes/partials/print-buyer-commercial.blade.php` — CI Contact + 比例
+- `resources/views/admin/crm/quotes/partials/print-header.blade.php` — CI 去 Ref
+- `resources/views/admin/crm/quotes/partials/print-document.blade.php` — PI 去签名/统一 bank/grid-3 前置
+- `resources/views/admin/crm/quotes/partials/print-pl-shipment.blade.php` — 新增（从 packing-summary 拆出）
+- `resources/views/admin/crm/quotes/partials/print-packing-summary.blade.php` — 精简
+- `resources/views/admin/crm/quotes/partials/print-items.blade.php` — SKU 移除
+- `resources/views/admin/crm/quotes/partials/item-row.blade.php` — SKU 移除 + Pkg Size 加宽
+- `resources/views/admin/crm/quotes/form.blade.php` — JSON 模板 + 排版优化
+- `app/Models/CrmQuoteItem.php` — SKU 移除
+- `app/Http/Controllers/Admin/CrmQuoteController.php` — SKU 全链路移除
+- `tests/Feature/AdminCrmPagesTest.php` — SKU 断言移除 + bank 标准字段
+
+**验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 13 个修改文件 PHP 语法检查通过。
+
+### 2026-06-07（第3轮）：字段规范化 & Buyer/Contact 拆分
+
+**crm_customers.region → address：**
+- Migration rename `region` → `address`
+- CrmCustomer Model fillable / Controller / 全部 Blade 标签同步更新
+- customerProfiles 返回 `address`，联动 `buyer_address`
+
+**Seller Contact 映射修正：**
+- CI/PL Exporter Contact：`$seller['name']`（公司名）→ `$quote->owner`（管理人）
+- 签名 Seller Name：同改 `$quote->owner`
+
+**JSON 模板预填：**
+- `bank_account_json` 和 `seller_company_json` textarea 首次空时预填模板 JSON 作为 value（非 placeholder），等宽字体
+
+**Buyer/Contact 拆分：**
+- `crm_customers` 新增 `contact_person` 字段
+- `crm_quotes` 新增 `buyer_contact` 字段
+- 全链路：migration→Model fillable→Controller validation/normalize/defaults/customerProfiles/customerBuyerDefaults→Form输入→「从客户资料带入」JS联动→打印页渲染
+- Buyer 面板：Company=`$quote->buyer_name`，Contact=`$quote->buyer_contact`（分开渲染，不再共用同一字段）
+- 所有 Buyer/Customer 面板标题统一为 "Buyer / 买方"
+
+**Packing 条款默认值：**
+- `print-terms` 中 packing_terms 始终渲染；后台未填时 fallback "Standard export wooden case"
+
+**新增/修改文件：**
+- `database/migrations/2026_06_07_040000_rename_region_to_address_in_crm_customers.php` — 新增
+- `database/migrations/2026_06_07_050000_add_contact_person_to_crm_customers.php` — 新增
+- `database/migrations/2026_06_07_060000_add_buyer_contact_to_crm_quotes.php` — 新增
+- `app/Models/CrmCustomer.php` — address + contact_person
+- `app/Models/CrmQuote.php` — buyer_contact
+- `app/Http/Controllers/Admin/CrmCustomerController.php` — region→address + contact_person
+- `app/Http/Controllers/Admin/CrmQuoteController.php` — buyer_contact + customerProfiles/customerBuyerDefaults 扩展
+- `resources/views/admin/crm/customers/form.blade.php` — address label + contact_person 输入
+- `resources/views/admin/crm/customers/show.blade.php` — address label
+- `resources/views/admin/crm/customers/index.blade.php` — address label
+- `resources/views/admin/crm/quotes/form.blade.php` — buyer_contact 输入 + JSON 预填 + 联动 JS
+- `resources/views/admin/crm/quotes/partials/print-buyer-commercial.blade.php` — Contact 拆分 + 标题统一
+- `resources/views/admin/crm/quotes/partials/print-signature.blade.php` — Seller Name→owner
+- `resources/views/admin/crm/quotes/partials/print-terms.blade.php` — packing fallback
+
+**验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 9 个文件 PHP 语法检查通过。
+
+### 2026-06-07（第4轮）：客户表单 company_name 标签修正 + contact_person 表单输入
+
+**客户表单字段语义修正：**
+- `company_name` 标签：`客户名称` → `公司名`，placeholder 同步改为 `客户公司名称`
+- 新增 `contact_person` 输入框，标签 `客户名称（联系人）`，placeholder `联系人姓名`
+
+**保存链路修复：**
+- `normalizeCustomerPayload()` 补上 `contact_person` 保存（此前该字段在 validation 和 emptyCustomerForm 中存在，但 normalize 中遗漏，导致 save 时被 Laravel mass assignment 静默丢弃）
+
+**修改文件：**
+- `resources/views/admin/crm/customers/form.blade.php` — 标签修改 + 新输入框
+- `app/Http/Controllers/Admin/CrmCustomerController.php` — normalizeCustomerPayload 补 contact_person
+
+**验证：** AdminCrmPagesTest 7/7 通过。
+
+**说明：** 此轮只改了客户编辑表单，单据制作侧和打印页的 Buyer Name/Contact 字段联动暂未改动，留待下一轮统一处理。
+
+### 2026-06-07（第5轮）：contact_person 提升为核心字段，列表/详情页显示调整
+
+**contact_person 提升为必填：**
+- 表单 input 加 `required` + 红色星号
+- Controller validation `'nullable'` → `'required'`
+- `company_name` 保持 required（公司名和联系人都是必填）
+
+**列表页（index）：**
+- 主标题 `$customer->company_name` → `$customer->contact_person ?: $customer->company_name`（联系人优先，无联系人时 fallback 公司名）
+- 搜索 placeholder 同步更新
+
+**详情页（show）：**
+- 页面标题同列表页逻辑
+- "客户名称" 标签改为 "公司名"
+- 新增 "客户名称（联系人）" 行显示 contact_person
+
+**测试：** AdminCrmPagesTest 所有客户创建数据补上 contact_person，7/7 通过。
+
+### 2026-06-07（第6轮）：buyer_name → buyer_company 全链路重命名 + 表单标签中文化
+
+**DB 重命名：**
+- Migration `2026_06_07_070000` 将 `crm_quotes.buyer_name` 重命名为 `buyer_company`
+
+**全链路替换：**
+- Model `CrmQuote::$fillable`：`buyer_name` → `buyer_company`
+- Controller：validation/normalize/formDefaults/customerBuyerDefaults/customerProfiles 全部替换
+- 所有打印 partials `$quote->buyer_name` → `$quote->buyer_company`
+- 详情页 show.blade.php 同步
+- 测试文件 test data 同步
+
+**Controller 补充修复：**
+- `buyer_contact` 补入 validation rules（之前遗漏）
+- `buyer_contact` 补入 `normalizeQuotePayload`（之前遗漏）
+- `buyer_contact` 补入 edit formData builder
+
+**表单 Blade 更新：**
+- Buyer Name → 联系人（input name: buyer_contact），放在第一位
+- Contact → 公司名（input name: buyer_company），放在第二位
+- Phone → 电话，Email → 邮箱，Country → 国家，Address → 地址
+- JS `data-fill-buyer-from-customer` 同步 key 重命名
+
+**字段语义最终关系：**
+```
+crm_customers.contact_person → crm_quotes.buyer_contact → 打印页 Contact
+crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
+```
+
+**测试：** 7/7 通过。

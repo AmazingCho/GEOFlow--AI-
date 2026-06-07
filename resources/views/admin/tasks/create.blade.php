@@ -41,6 +41,8 @@
         ->filter(static fn (int $id): bool => $id > 0)
         ->values()
         ->all();
+    $selectedCrmSourceType = (string) old('crm_source_type', (string) ($taskForm['crm_source_type'] ?? ''));
+    $selectedCrmSourceId = (string) old('crm_source_id', (string) ($taskForm['crm_source_id'] ?? ''));
     $controlledTagGroups = collect($formOptions['controlledTagGroups'] ?? ['Topic', 'Audience', 'Intent'])
         ->map(static fn ($group): string => (string) $group)
         ->filter(static fn (string $group): bool => $group !== '')
@@ -198,6 +200,41 @@
                                     <option value="active" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'active')>{{ $t('task_create.option.status_active') }}</option>
                                     <option value="paused" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'paused')>{{ $t('task_create.option.status_paused') }}</option>
                                 </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white shadow rounded-lg xl:col-span-12">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">CRM 来源</h3>
+                        <p class="mt-1 text-sm text-gray-600">可选。用于记录这批文章来自哪个客户、询盘或售后工单，便于后续回溯业务来源。</p>
+                    </div>
+                    <div class="px-6 py-4">
+                        <div class="grid grid-cols-1 gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+                            <div>
+                                <label for="crm_source_type" class="block text-sm font-medium text-gray-700">来源类型</label>
+                                <select name="crm_source_type" id="crm_source_type" class="{{ $fieldClass }}">
+                                    <option value="" @selected($selectedCrmSourceType === '')>不关联 CRM 来源</option>
+                                    <option value="customer" @selected($selectedCrmSourceType === 'customer')>客户</option>
+                                    <option value="inquiry" @selected($selectedCrmSourceType === 'inquiry')>询盘</option>
+                                    <option value="ticket" @selected($selectedCrmSourceType === 'ticket')>售后工单</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="crm_source_id" class="block text-sm font-medium text-gray-700">来源记录</label>
+                                <select name="crm_source_id" id="crm_source_id" class="{{ $fieldClass }}">
+                                    <option value="">请选择来源记录</option>
+                                    @foreach (($formOptions['crmSourceOptions'] ?? []) as $source)
+                                        <option value="{{ (int) $source['id'] }}"
+                                                data-source-type="{{ $source['type'] }}"
+                                                data-collection-id="{{ (int) ($source['collection_id'] ?? 0) }}"
+                                                @selected($selectedCrmSourceType === (string) $source['type'] && $selectedCrmSourceId === (string) $source['id'])>
+                                            {{ $source['label'] }} @if((string) ($source['meta'] ?? '') !== '') · {{ $source['meta'] }} @endif
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">选择 Collection 后，来源记录会同步限制到同一业务容器；开启跨 Collection 时不限制。</p>
                             </div>
                         </div>
                     </div>
@@ -601,6 +638,8 @@
             const titleLibrarySelect = document.getElementById('title_library_id');
             const knowledgeBaseSelect = document.getElementById('knowledge_base_id');
             const imageLibrarySelect = document.getElementById('image_library_id');
+            const crmSourceTypeSelect = document.getElementById('crm_source_type');
+            const crmSourceSelect = document.getElementById('crm_source_id');
             const collectionSelect = document.querySelector('select[name="collection_id"]');
             const crossCollectionCheckbox = document.querySelector('input[name="cross_collection_mode"]');
             const imageCountSelect = document.getElementById('image_count');
@@ -666,6 +705,30 @@
                 }
             }
 
+            function syncCrmSourceOptions() {
+                if (!crmSourceTypeSelect || !crmSourceSelect) {
+                    return;
+                }
+
+                const sourceType = String(crmSourceTypeSelect.value || '').trim();
+                Array.from(crmSourceSelect.querySelectorAll('option[value]')).forEach((option) => {
+                    if (option.value === '') {
+                        option.hidden = false;
+                        return;
+                    }
+
+                    const matchesType = sourceType !== '' && String(option.getAttribute('data-source-type') || '') === sourceType;
+                    option.hidden = !matchesType || !optionMatchesCollection(option, false);
+                });
+
+                const selectedOption = crmSourceSelect.selectedOptions[0];
+                if (sourceType === '' || (selectedOption && selectedOption.hidden)) {
+                    crmSourceSelect.value = '';
+                }
+                crmSourceSelect.disabled = sourceType === '';
+                crmSourceSelect.parentElement.classList.toggle('opacity-60', sourceType === '');
+            }
+
             function syncOptionSelectorByCollection(fieldName) {
                 const selector = document.querySelector('[data-option-multi-selector][data-field-name="' + fieldName + '"]');
                 if (!selector || !collectionSelect) {
@@ -708,6 +771,7 @@
                 syncOptionSelectorByCollection('case_ids');
                 syncNativeSelectByCollection(titleLibrarySelect, true);
                 syncNativeSelectByCollection(knowledgeBaseSelect, true);
+                syncCrmSourceOptions();
                 window.setTimeout(syncImageLibrariesByEntities, 0);
             }
 
@@ -814,6 +878,7 @@
             });
             collectionSelect?.addEventListener('change', syncContextOptionsByCollection);
             crossCollectionCheckbox?.addEventListener('change', syncContextOptionsByCollection);
+            crmSourceTypeSelect?.addEventListener('change', syncCrmSourceOptions);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));

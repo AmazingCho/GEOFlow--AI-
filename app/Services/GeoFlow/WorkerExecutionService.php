@@ -22,7 +22,10 @@ use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
 use App\Support\GeoFlow\ImageUrlNormalizer;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Laravel\Ai\Responses\Data\FinishReason;
 use RuntimeException;
 use Throwable;
 
@@ -1385,7 +1388,7 @@ class WorkerExecutionService
 
         $driver = OpenAiRuntimeProvider::resolveChatDriver($providerUrl, (string) ($aiModel->model_id ?? ''));
         $providerName = OpenAiRuntimeProvider::registerProvider('worker', $driver, $providerUrl, $apiKey);
-        $agent = new MarkdownContentWriterAgent;
+        $agent = new MarkdownContentWriterAgent(maxTokens: $this->resolveMaxTokens($aiModel));
 
         try {
             $response = $agent->prompt($contentPrompt, [], $providerName, (string) ($aiModel->model_id ?? ''));
@@ -1403,6 +1406,8 @@ class WorkerExecutionService
             throw new RuntimeException('AI返回空正文');
         }
 
+        $this->warnIfContentLooksTruncated($content, $aiModel, $response);
+
         AiModel::query()->whereKey((int) $aiModel->id)->update([
             'used_today' => DB::raw('COALESCE(used_today,0)+1'),
             'total_used' => DB::raw('COALESCE(total_used,0)+1'),
@@ -1410,6 +1415,74 @@ class WorkerExecutionService
         ]);
 
         return $content;
+    }
+
+    private function resolveMaxTokens(AiModel $aiModel): int
+    {
+        $configured = (int) ($aiModel->max_tokens ?? 0);
+        if ($configured > 0) {
+            return $configured;
+        }
+
+        return max(256, (int) config('geoflow.content_max_tokens', 8192));
+    }
+
+    private function warnIfContentLooksTruncated(string $content, AiModel $aiModel, mixed $response): void
+    {
+        $finishReason = $this->responseFinishReason($response);
+        $signals = [];
+
+        if ($finishReason === FinishReason::Length) {
+            $signals[] = 'finish_reason_length';
+        }
+
+        $trimmed = rtrim($content);
+        if ($trimmed !== '' && substr_count($trimmed, '```') % 2 === 1) {
+            $signals[] = 'unclosed_code_fence';
+        }
+
+        if (
+            mb_strlen($trimmed, 'UTF-8') > 500
+            && preg_match('/[。！？.!?）\]\)"\'`》]$/u', $trimmed) !== 1
+        ) {
+            $signals[] = 'unfinished_sentence';
+        }
+
+        if ($signals === []) {
+            return;
+        }
+
+        Log::warning('GEOFlow article generation may be truncated.', [
+            'ai_model_id' => (int) $aiModel->id,
+            'model_id' => (string) ($aiModel->model_id ?? ''),
+            'max_tokens' => $this->resolveMaxTokens($aiModel),
+            'finish_reason' => $finishReason instanceof FinishReason ? $finishReason->value : null,
+            'content_length' => mb_strlen($trimmed, 'UTF-8'),
+            'signals' => $signals,
+        ]);
+    }
+
+    private function responseFinishReason(mixed $response): ?FinishReason
+    {
+        $steps = $response->steps ?? null;
+        $lastStep = null;
+
+        if ($steps instanceof Collection) {
+            $lastStep = $steps->last();
+        } elseif (is_array($steps) && $steps !== []) {
+            $lastStep = end($steps);
+        }
+
+        $finishReason = $lastStep->finishReason ?? null;
+        if ($finishReason instanceof FinishReason) {
+            return $finishReason;
+        }
+
+        if (is_string($finishReason)) {
+            return FinishReason::tryFrom($finishReason);
+        }
+
+        return null;
     }
 
     /**

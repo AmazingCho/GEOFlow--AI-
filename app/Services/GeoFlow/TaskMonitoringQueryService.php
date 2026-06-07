@@ -241,6 +241,8 @@ class TaskMonitoringQueryService
                 'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),
                 'entity_filter' => (string) ($task->entity_filter ?? ''),
                 'case_filter' => (string) ($task->case_filter ?? ''),
+                'crm_source_type' => (string) ($task->crm_source_type ?? ''),
+                'crm_source_id' => $this->nullableInt($task->crm_source_id),
                 'author_id' => $this->nullableInt($task->author_id),
                 'image_library_id' => $this->nullableInt($task->image_library_id),
                 'image_count' => (int) ($task->image_count ?? 0),
