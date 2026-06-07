@@ -174,6 +174,11 @@ class EntityController extends Controller
         $payload = $this->validateEntity($request, $entity);
 
         $entity->update($this->normalizeEntityPayload($payload));
+
+        $relations = json_decode((string) $request->input('entity_relations', '[]'), true);
+        if (is_array($relations) && $relations !== []) {
+            app(\App\Services\GeoFlow\EntityRelationService::class)->syncRelations((int) $entity->id, $relations);
+        }
         $this->tagService->syncExisting($entity, $this->selectedTagIds($payload));
         $this->entityMaterialLinkService->syncMaterialsForEntity(
             $entity,
@@ -352,6 +357,10 @@ class EntityController extends Controller
     private function selectedCollectionId(Request $request): ?int
     {
         $collectionId = (int) $request->query('collection_id', 0);
+
+        if ($collectionId <= 0) {
+            $collectionId = (int) \App\Support\AdminWeb::defaultCollectionId();
+        }
 
         return $collectionId > 0 ? $collectionId : null;
     }

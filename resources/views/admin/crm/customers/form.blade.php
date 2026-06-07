@@ -39,11 +39,11 @@
                     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">客户名称（联系人） <span class="text-red-500">*</span></label>
-                            <input type="text" name="contact_person" required maxlength="200" value="{{ old('contact_person', (string) ($customerForm['contact_person'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="联系人姓名">
+                            <input type="text" name="contact_person" required maxlength="200" value="{{ old('contact_person', (string) ($customerForm['contact_person'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="联系人姓名">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">公司名</label>
-                            <input type="text" name="company_name" maxlength="200" value="{{ old('company_name', (string) ($customerForm['company_name'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="客户公司名称（选填）">
+                            <input type="text" name="company_name" maxlength="200" value="{{ old('company_name', (string) ($customerForm['company_name'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="客户公司名称（选填）">
                         </div>
                         @include('admin.partials.collection-select', [
                             'selectedId' => (string) ($customerForm['collection_id'] ?? ''),
@@ -57,7 +57,7 @@
                     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">客户类型</label>
-                            <select name="customer_type" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                            <select name="customer_type" class="{{ $fieldClass }}">
                                 <option value="">未指定</option>
                                 @if ($currentCustomerType !== '' && !array_key_exists($currentCustomerType, $customerTypeOptions ?? []))
                                     <option value="{{ $currentCustomerType }}" selected>{{ $currentCustomerType }}（历史值）</option>
@@ -69,11 +69,11 @@
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">行业</label>
-                            <input type="text" name="industry" maxlength="160" value="{{ old('industry', (string) ($customerForm['industry'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="行业或应用领域">
+                            <input type="text" name="industry" maxlength="160" value="{{ old('industry', (string) ($customerForm['industry'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="行业或应用领域">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">状态</label>
-                            <select name="status" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                            <select name="status" class="{{ $fieldClass }}">
                                 @foreach (['active' => '活跃', 'lead' => '潜在', 'inactive' => '不活跃', 'blocked' => '暂停合作'] as $value => $label)
                                     <option value="{{ $value }}" @selected(old('status', (string) ($customerForm['status'] ?? 'active')) === $value)>{{ $label }}</option>
                                 @endforeach
@@ -84,20 +84,20 @@
                     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">国家 / 地区</label>
-                            <input type="text" name="country" maxlength="100" list="crm-country-options" value="{{ old('country', (string) ($customerForm['country'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="输入国家名称搜索...">
-                            <datalist id="crm-country-options">
+                            <select name="country" class="{{ $fieldClass }}">
+                                <option value="">选择国家 / 地区</option>
                                 @foreach (($countryOptions ?? []) as $country)
-                                    <option value="{{ $country }}"></option>
+                                    <option value="{{ $country }}" @selected(old('country', (string) ($customerForm['country'] ?? '')) === $country)>{{ $country }}</option>
                                 @endforeach
-                            </datalist>
+                            </select>
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">地址</label>
-                            <input type="text" name="address" maxlength="120" value="{{ old('address', (string) ($customerForm['address'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                            <input type="text" name="address" maxlength="120" value="{{ old('address', (string) ($customerForm['address'] ?? '')) }}" class="{{ $fieldClass }}">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">来源渠道</label>
-                            <select name="source_channel" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                            <select name="source_channel" class="{{ $fieldClass }}">
                                 <option value="">未指定</option>
                                 @if ($currentSourceChannel !== '' && !array_key_exists($currentSourceChannel, $sourceChannelOptions ?? []))
                                     <option value="{{ $currentSourceChannel }}" selected>{{ $currentSourceChannel }}（历史值）</option>
@@ -112,19 +112,19 @@
                     <div class="grid grid-cols-1 gap-6 lg:grid-cols-4">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">联系电话</label>
-                            <input type="text" name="phone" maxlength="120" value="{{ old('phone', (string) ($customerForm['phone'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="客户电话 / 公司总机">
+                            <input type="text" name="phone" maxlength="120" value="{{ old('phone', (string) ($customerForm['phone'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="客户电话 / 公司总机">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">邮箱</label>
-                            <input type="email" name="email" maxlength="200" value="{{ old('email', (string) ($customerForm['email'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="客户邮箱 / 联系邮箱">
+                            <input type="email" name="email" maxlength="200" value="{{ old('email', (string) ($customerForm['email'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="客户邮箱 / 联系邮箱">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">职位</label>
-                            <input type="text" name="contact_title" maxlength="160" value="{{ old('contact_title', (string) ($customerForm['contact_title'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="采购经理 / 工程负责人">
+                            <input type="text" name="contact_title" maxlength="160" value="{{ old('contact_title', (string) ($customerForm['contact_title'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="采购经理 / 工程负责人">
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">负责人</label>
-                            <select name="owner" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                            <select name="owner" class="{{ $fieldClass }}">
                                 <option value="">未指定</option>
                                 @if ($currentOwner !== '' && !array_key_exists($currentOwner, $employeeOptions ?? []))
                                     <option value="{{ $currentOwner }}" selected>{{ $currentOwner }}（历史值）</option>
@@ -136,13 +136,13 @@
                         </div>
                         <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">官网</label>
-                            <input type="text" name="website" maxlength="500" value="{{ old('website', (string) ($customerForm['website'] ?? '')) }}" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="https://example.com">
+                            <input type="text" name="website" maxlength="500" value="{{ old('website', (string) ($customerForm['website'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="https://example.com">
                         </div>
                     </div>
 
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">备注</label>
-                        <textarea name="notes" rows="5" class="{{ $fieldClass }} focus:border-blue-400 focus:ring-2 focus:ring-blue-100">{{ old('notes', (string) ($customerForm['notes'] ?? '')) }}</textarea>
+                        <textarea name="notes" rows="5" class="{{ $fieldClass }}">{{ old('notes', (string) ($customerForm['notes'] ?? '')) }}</textarea>
                     </div>
 
                     <div class="flex justify-end gap-3">

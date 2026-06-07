@@ -118,6 +118,12 @@
                                     </td>
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex flex-wrap justify-end gap-2">
+                                            <form method="POST" action="{{ route('admin.collections.default', ['collectionId' => (int) $collection->id]) }}" class="inline-flex">
+                                                @csrf
+                                                <button type="submit" class="inline-flex items-center rounded border px-3 py-1.5 text-xs font-medium {{ (int) \App\Support\AdminWeb::defaultCollectionId() === (int) $collection->id ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50' }}" title="{{ (int) \App\Support\AdminWeb::defaultCollectionId() === (int) $collection->id ? '取消默认' : '设为默认业务容器' }}">
+                                                    <i data-lucide="{{ (int) \App\Support\AdminWeb::defaultCollectionId() === (int) $collection->id ? 'star' : 'star-off' }}" class="h-4 w-4"></i>
+                                                </button>
+                                            </form>
                                             <a href="{{ route('admin.collections.edit', ['collectionId' => (int) $collection->id]) }}" class="inline-flex items-center rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                                 <i data-lucide="pencil" class="mr-1 h-4 w-4"></i>
                                                 {{ __('admin.button.edit') }}

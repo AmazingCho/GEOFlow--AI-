@@ -334,7 +334,11 @@ class CrmInquiryController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        return $this->normalizeNullableId($request->query('collection_id', 0));
+        $value = $this->normalizeNullableId($request->query('collection_id', 0));
+        if ($value === null) {
+            $value = \App\Support\AdminWeb::defaultCollectionId();
+        }
+        return $value;
     }
 
     /**
@@ -375,7 +379,7 @@ class CrmInquiryController extends Controller
             ->get()
             ->map(static fn (CrmCustomer $customer): array => [
                 'id' => (int) $customer->id,
-                'label' => (string) $customer->company_name,
+                'label' => trim((string) ($customer->contact_person ?? '')) !== '' ? (string) $customer->contact_person : (string) $customer->company_name,
                 'meta' => (string) ($customer->collection?->name ?? ''),
                 'collection_id' => (int) ($customer->collection_id ?? 0),
             ])

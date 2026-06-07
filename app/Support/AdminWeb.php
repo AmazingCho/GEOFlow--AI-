@@ -55,4 +55,20 @@ final class AdminWeb
     {
         return array_key_exists($locale, self::supportedLocales());
     }
+
+    public static function defaultCollectionId(): ?int
+    {
+        $id = (int) session()->get('default_collection_id', 0);
+
+        return $id > 0 ? $id : null;
+    }
+
+    public static function setDefaultCollectionId(?int $collectionId): void
+    {
+        if ($collectionId !== null && $collectionId > 0) {
+            session()->put('default_collection_id', $collectionId);
+        } else {
+            session()->forget('default_collection_id');
+        }
+    }
 }

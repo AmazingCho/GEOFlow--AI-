@@ -734,7 +734,11 @@ class CrmQuoteController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        return $this->normalizeNullableId($request->query('collection_id', 0));
+        $value = $this->normalizeNullableId($request->query('collection_id', 0));
+        if ($value === null) {
+            $value = \App\Support\AdminWeb::defaultCollectionId();
+        }
+        return $value;
     }
 
     /**

@@ -282,7 +282,9 @@ class CrmCustomerController extends Controller
     private function selectedCollectionId(Request $request): ?int
     {
         $value = (int) $request->query('collection_id', 0);
-
+        if ($value <= 0) {
+            $value = (int) \App\Support\AdminWeb::defaultCollectionId();
+        }
         return $value > 0 ? $value : null;
     }
 

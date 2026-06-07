@@ -13,7 +13,10 @@
         <div>
             <label class="mb-1 block text-xs font-medium text-gray-600">目标 Entity</label>
             <select data-entity-relation-target class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500">
-                <option value="">搜索 Entity...</option>
+                <option value="">选择 Entity...</option>
+                @foreach ($entityOptionsForRelation as $eo)
+                    <option value="{{ (int) $eo['id'] }}">{{ $eo['name'] }} ({{ $eo['entity_type'] }})</option>
+                @endforeach
             </select>
         </div>
         <div>
@@ -52,7 +55,12 @@
                     $otherName = $rel['entity']['name'] ?? 'Unknown';
                     $otherType = $rel['entity']['entity_type'] ?? '';
                 @endphp
-                <div class="flex items-center justify-between rounded-md border border-purple-100 bg-white px-3 py-2 text-sm" data-relation-row data-relation-id="{{ (int) ($rel['id'] ?? 0) }}">
+                <div class="flex items-center justify-between rounded-md border border-purple-100 bg-white px-3 py-2 text-sm"
+                    data-relation-row
+                    data-relation-id="{{ (int) ($rel['id'] ?? 0) }}"
+                    data-relation-target="{{ $rel['entity']['id'] ?? 0 }}"
+                    data-relation-type="{{ $rel['relation_type']['id'] ?? 0 }}"
+                    data-relation-strength="{{ $rel['strength'] ?? 80 }}">
                     <div>
                         <span class="font-medium text-purple-900">{{ $otherName }}</span>
                         <span class="mx-2 text-purple-400">&mdash;</span>
@@ -90,27 +98,11 @@
 
     // Simple entity search via datalist
     const entityOptions = @json($entityOptionsForRelation ?? []);
-    let datalistId = 'entity-relation-datalist-' + Date.now();
+    
 
-    // Build datalist for simple typeahead
-    (() => {
-        const dl = document.createElement('datalist');
-        dl.id = datalistId;
-        entityOptions.forEach(e => {
-            const opt = document.createElement('option');
-            opt.value = e.name + ' (' + e.entity_type + ')';
-            opt.setAttribute('data-id', e.id);
-            dl.appendChild(opt);
-        });
-        section.appendChild(dl);
-        targetEl.setAttribute('list', datalistId);
-    })();
 
     function getSelectedEntityId() {
-        const val = targetEl.value.trim();
-        const opt = Array.from(document.getElementById(datalistId)?.options || [])
-            .find(o => o.value === val);
-        return opt ? parseInt(opt.getAttribute('data-id')) : 0;
+        return parseInt(targetEl.value) || 0;
     }
 
     function buildRelationsJson() {
@@ -139,7 +131,7 @@
 
         const strength = parseInt(strengthEl.value) || 80;
         const typeLabel = typeEl.options[typeEl.selectedIndex]?.text || '';
-        const targetName = targetEl.value.trim();
+        const targetName = targetEl.options[targetEl.selectedIndex]?.text?.trim() || '';
 
         // Check duplicate
         const existing = listEl.querySelector(`[data-relation-target="${targetId}"][data-relation-type="${typeId}"]`);
@@ -160,7 +152,7 @@
                 <span class="font-medium text-purple-900">${targetName}</span>
                 <span class="mx-2 text-purple-400">&mdash;</span>
                 <span class="text-purple-700">${typeLabel}</span>
-                <span class="ml-2 text-xs text-gray-400">${strength >= 90 ? "\u2B50\u2B50\u2B50" : strength >= 70 ? "\u2B50\u2B50" : "\u2B50"}</span>
+                <span class="ml-2 text-xs text-gray-400">${strength >= 90 ? "\u2B50\u2B50\u2B50 Very Strong" : strength >= 70 ? "\u2B50\u2B50 Strong" : "\u2B50 Moderate"}</span>
             </div>
             <button type="button" class="text-gray-400 hover:text-red-500">
                 <i data-lucide="x" class="h-4 w-4"></i>

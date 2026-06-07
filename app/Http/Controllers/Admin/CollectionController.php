@@ -125,6 +125,20 @@ class CollectionController extends Controller
             ->with('message', __('admin.collections.message.update_success'));
     }
 
+
+    public function setDefault(int $collectionId): RedirectResponse
+    {
+        $collection = CollectionRecord::query()->whereKey($collectionId)->firstOrFail();
+        
+        $current = AppSupportAdminWeb::defaultCollectionId();
+        if ($current === (int) $collection->id) {
+            AppSupportAdminWeb::setDefaultCollectionId(null);
+            return back()->with("message", "默认业务容器已取消。");
+        }
+        
+        AppSupportAdminWeb::setDefaultCollectionId((int) $collection->id);
+        return back()->with("message", "已将 &quot;" . e($collection->name) . "&quot; 设为默认业务容器。");
+    }
     public function toggle(int $collectionId): RedirectResponse
     {
         $collection = CollectionRecord::query()->whereKey($collectionId)->firstOrFail();

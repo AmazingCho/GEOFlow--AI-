@@ -1075,6 +1075,10 @@ class KnowledgeBaseController extends Controller
     {
         $collectionId = (int) $request->query('collection_id', 0);
 
+        if ($collectionId <= 0) {
+            $collectionId = (int) \App\Support\AdminWeb::defaultCollectionId();
+        }
+
         return $collectionId > 0 ? $collectionId : null;
     }
 

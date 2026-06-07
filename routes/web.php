@@ -153,6 +153,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('create', [CollectionController::class, 'store'])->name('store');
             Route::get('{collectionId}/edit', [CollectionController::class, 'edit'])->name('edit')->whereNumber('collectionId');
             Route::put('{collectionId}', [CollectionController::class, 'update'])->name('update')->whereNumber('collectionId');
+            Route::post('{collectionId}/default', [CollectionController::class, 'setDefault'])->name('default')->whereNumber('collectionId');
             Route::post('{collectionId}/toggle', [CollectionController::class, 'toggle'])->name('toggle')->whereNumber('collectionId');
             Route::post('{collectionId}/delete', [CollectionController::class, 'destroy'])->name('delete')->whereNumber('collectionId');
         });
