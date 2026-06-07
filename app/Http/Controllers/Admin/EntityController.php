@@ -365,4 +365,44 @@ class EntityController extends Controller
 
         return $collectionId > 0 ? $collectionId : null;
     }
+
+    // ---------- Entity-to-Entity Relations ----------
+
+    public function searchJson(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $q = trim((string) $request->query('q', ''));
+        $collectionId = $this->selectedCollectionId($request);
+        $query = EntityRecord::query()->select(['id', 'name', 'entity_type'])->orderBy('name');
+        if ($q !== '') {
+            $query->where(function ($builder) use ($q): void {
+                $builder->where('name', 'like', '%'.$q.'%')->orWhere('aliases', 'like', '%'.$q.'%');
+            });
+        }
+        if ($collectionId !== null) { $query->where('collection_id', $collectionId); }
+        return response()->json($query->limit(30)->get());
+    }
+
+    public function relations(int $entityId): \Illuminate\Http\JsonResponse
+    {
+        $entity = EntityRecord::query()->whereKey($entityId)->firstOrFail();
+        return response()->json(app(\App\Services\GeoFlow\EntityRelationService::class)->relatedEntities((int) $entity->id));
+    }
+
+    private function entityOptionsForRelation(?int $collectionId, int $excludeEntityId): array
+    {
+        return EntityRecord::query()
+            ->select(['id', 'name', 'entity_type'])
+            ->whereKeyNot($excludeEntityId)
+            ->when($collectionId !== null && $collectionId > 0, fn ($q) => $q->where('collection_id', $collectionId))
+            ->orderBy('name')->limit(500)->get()
+            ->map(fn (EntityRecord $e): array => ['id' => (int) $e->id, 'name' => (string) $e->name, 'entity_type' => (string) $e->entity_type])
+            ->all();
+    }
+
+    private function adminName(): string
+    {
+        $admin = auth('admin')->user();
+
+        return trim((string) ($admin?->display_name ?: $admin?->username ?: ''));
+    }
 }

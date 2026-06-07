@@ -26,7 +26,12 @@
         </div>
         <div>
             <label class="mb-1 block text-xs font-medium text-gray-600">强度</label>
-            <input type="number" data-entity-relation-strength value="80" min="0" max="100" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500">
+            <select data-entity-relation-strength class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                <option value="95">非常强 (Very Strong)</option>
+                <option value="80" selected>强 (Strong)</option>
+                <option value="60">一般 (Moderate)</option>
+                <option value="40">弱 (Weak)</option>
+            </select>
         </div>
         <div>
             <button type="button" data-add-entity-relation class="inline-flex items-center rounded-md border border-transparent bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700">
@@ -132,7 +137,7 @@
         const typeId = parseInt(typeEl.value) || 0;
         if (typeId <= 0) return;
 
-        const strength = Math.max(0, Math.min(100, parseInt(strengthEl.value) || 80));
+        const strength = parseInt(strengthEl.value) || 80;
         const typeLabel = typeEl.options[typeEl.selectedIndex]?.text || '';
         const targetName = targetEl.value.trim();
 
@@ -155,7 +160,7 @@
                 <span class="font-medium text-purple-900">${targetName}</span>
                 <span class="mx-2 text-purple-400">&mdash;</span>
                 <span class="text-purple-700">${typeLabel}</span>
-                <span class="ml-2 text-xs text-gray-400">(${strength})</span>
+                <span class="ml-2 text-xs text-gray-400">${strength >= 90 ? "\u2B50\u2B50\u2B50" : strength >= 70 ? "\u2B50\u2B50" : "\u2B50"}</span>
             </div>
             <button type="button" class="text-gray-400 hover:text-red-500">
                 <i data-lucide="x" class="h-4 w-4"></i>
