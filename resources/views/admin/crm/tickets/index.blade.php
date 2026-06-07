@@ -16,7 +16,7 @@
         @include('admin.crm.partials.nav', ['currentCrmTab' => 'tickets'])
 
         <form method="GET" action="{{ route('admin.crm.tickets.index') }}" class="mb-6 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
-            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_220px_160px_160px_auto] lg:items-end">
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[30%_160px_160px_auto] lg:items-end">
                 <div>
                     <label class="mb-2 block text-sm font-medium text-gray-700">搜索</label>
                     <input type="text" name="search" value="{{ $search }}" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="工单标题、问题描述、客户">

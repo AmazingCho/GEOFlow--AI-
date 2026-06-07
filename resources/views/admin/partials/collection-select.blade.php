@@ -21,5 +21,7 @@
             </option>
         @endforeach
     </select>
+    @if((string) $collectionSelectHelp !== '')
     <p class="mt-1 text-xs text-gray-500">{{ $collectionSelectHelp }}</p>
+    @endif
 </div>

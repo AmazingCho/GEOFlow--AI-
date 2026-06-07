@@ -22,7 +22,7 @@
         </div>
 
         <form method="GET" action="{{ route('admin.crm.inquiries.index') }}" class="mb-6 rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm">
-            <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_220px_170px_170px_auto] xl:items-end">
+            <div class="grid grid-cols-1 gap-3 xl:grid-cols-[30%_170px_170px_auto] xl:items-end">
                 <div>
                     <label class="mb-2 block text-sm font-medium text-gray-700">搜索</label>
                     <input type="text" name="search" value="{{ $search }}" placeholder="标题、客户、需求摘要" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">

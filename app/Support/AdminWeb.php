@@ -46,6 +46,7 @@ final class AdminWeb
     public static function supportedLocales(): array
     {
         return [
+            'zh_CN' => '简体中文',
             'en' => 'English',
         ];
     }
