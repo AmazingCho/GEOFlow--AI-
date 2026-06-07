@@ -46,12 +46,7 @@ final class AdminWeb
     public static function supportedLocales(): array
     {
         return [
-            'zh_CN' => '简体中文',
             'en' => 'English',
-            'ja' => '日本語',
-            'es' => 'Español',
-            'ru' => 'Русский',
-            'pt_BR' => 'Português (BR)',
         ];
     }
 

@@ -251,6 +251,7 @@
                         </div>
                     </div>
                 </div>
+                @if (count(\App\Support\AdminWeb::supportedLocales()) > 1)
                 <div class="hidden md:flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 shadow-sm">
                     <i data-lucide="languages" class="w-4 h-4 text-gray-400 mr-1.5"></i>
                     <select
@@ -265,6 +266,7 @@
                         @endforeach
                     </select>
                 </div>
+                @endif
                 <div class="relative">
                     <button onclick="toggleUserMenu()" class="flex items-center space-x-1 text-sm text-gray-600 hover:text-gray-900 transition-colors duration-200" type="button">
                         <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">

@@ -329,6 +329,8 @@ return [
         'days' => '天',
         'articles_unit' => '篇',
         'close' => '关闭',
+        'filter' => '筛选',
+        'all' => '全部',
         'created_at' => '创建时间',
         'updated_at' => '最后更新',
         'total' => '总数',

@@ -19,7 +19,7 @@ class AdminWebLocale
     {
         $locale = (string) $request->session()->get('locale', '');
         if (! AdminWeb::isSupportedLocale($locale)) {
-            $locale = 'zh_CN';
+            $locale = 'en';
             $request->session()->put('locale', $locale);
         }
         app()->setLocale($locale);

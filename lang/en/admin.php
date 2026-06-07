@@ -329,6 +329,8 @@ return [
         'days' => 'd',
         'articles_unit' => '',
         'close' => 'Close',
+        'filter' => 'Filter',
+        'all' => 'All',
         'created_at' => 'Created At',
         'updated_at' => 'Last Updated',
         'total' => 'Total',
