@@ -81,18 +81,7 @@
                     __('admin.materials.case_total_count') => __('admin.materials.unit_items', ['count' => (int) $stats['cases']]),
                 ],
             ],
-            [
-                'title' => __('admin.materials.author_manage_title'),
-                'summary' => __('admin.materials.authors_summary'),
-                'icon' => 'users',
-                'tone' => 'bg-indigo-50 text-indigo-600',
-                'href' => route('admin.authors.index'),
-                'action' => __('admin.materials.manage_authors'),
-                'metrics' => [
-                    __('admin.materials.author_total_count') => __('admin.materials.author_count', ['count' => (int) $stats['authors']]),
-                    __('admin.materials.author_usage_label') => __('admin.materials.author_usage_desc'),
-                ],
-            ],
+
         ];
         $governanceAudit = $governanceAudit ?? ['summary' => ['issues' => 0, 'warnings' => 0], 'issues' => []];
         $governanceSeverityStyles = [
@@ -103,9 +92,21 @@
     @endphp
 
     <div class="px-4 sm:px-0">
-        <div class="mb-8">
-            <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.materials.heading') }}</h1>
-            <p class="mt-1 text-sm text-gray-600">{{ __('admin.materials.subtitle') }}</p>
+        <div class="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.materials.heading') }}</h1>
+                <p class="mt-1 text-sm text-gray-600">{{ __('admin.materials.subtitle') }}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ route('admin.material-tags.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <i data-lucide="tags" class="mr-2 h-4 w-4"></i>
+                    {{ __('admin.nav.material_tags') }}
+                </a>
+                <a href="{{ route('admin.authors.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <i data-lucide="users" class="mr-2 h-4 w-4"></i>
+                    {{ __('admin.materials.manage_authors') }}
+                </a>
+            </div>
         </div>
 
         <section class="mb-8 overflow-hidden rounded-lg border border-orange-100 bg-white shadow">

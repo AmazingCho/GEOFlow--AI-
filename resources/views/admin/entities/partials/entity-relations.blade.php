@@ -9,7 +9,7 @@
     </div>
 
     {{-- Add new relation form --}}
-    <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_100px_auto] md:items-end">
+    <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_160px_150px_auto] md:items-end">
         <div>
             <label class="mb-1 block text-xs font-medium text-gray-600">目标 Entity</label>
             <select data-entity-relation-target class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-purple-500">

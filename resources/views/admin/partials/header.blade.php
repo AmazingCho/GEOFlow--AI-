@@ -25,7 +25,6 @@
         'collections' => ['route' => 'admin.collections.index', 'name' => __('admin.nav.collections')],
         'crm' => ['route' => 'admin.crm.customers.index', 'name' => __('admin.nav.crm')],
         'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials')],
-        'material_tags' => ['route' => 'admin.material-tags.index', 'name' => __('admin.nav.material_tags')],
         'ai_config' => ['route' => 'admin.ai.configurator', 'name' => __('admin.nav.ai_config')],
         'site_settings' => ['route' => 'admin.site-settings.index', 'name' => __('admin.nav.site_settings')],
     ];
