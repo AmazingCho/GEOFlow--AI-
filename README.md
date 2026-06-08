@@ -110,7 +110,7 @@ GEOFlow 2.0 重点变化包括：
 - **AI 模型快捷预设增强**：新增 Doubao Embedding、MiniMax M3、MiniMax M2.7 等快速填充。
 - **后台表单 URL 兼容**：文章批量操作、回收站清空和发布弹窗使用相对 URL，适配 Docker、反向代理和自定义后台入口。
 
-详细变更记录见 [`docs/custom-update-log-2026-06-03.md`](docs/custom-update-log-2026-06-03.md)。后续 agent 交接说明见 [`agent-docs/README.md`](agent-docs/README.md)。
+后续 agent 交接说明见 [`agent-docs/README.md`](agent-docs/README.md)。
 
 ---
 

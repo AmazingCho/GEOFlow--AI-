@@ -1,0 +1,86 @@
+    public function downloadExcel(int $quoteId, Request $request)
+    {
+        $quote = CrmQuote::query()
+            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->whereKey($quoteId)
+            ->firstOrFail();
+
+        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
+        $isZh = (string) ($quote->document_language ?? 'en') === 'zh_CN';
+        $seller = $this->sellerProfile($quote);
+        $labels = $this->documentLabels((string) ($quote->document_language ?? 'en'));
+        $label = static fn (string $key, string $fallback): string => (string) ($labels[$key] ?? $fallback);
+        $money = static fn (mixed $value): string => number_format((float) $value, 2);
+        $weight = static fn (mixed $value): string => ((float) $value > 0) ? number_format((float) $value, 3) : '-';
+        $bank = is_array($quote->bank_account_json) ? $quote->bank_account_json : [];
+
+        $titles = $isZh
+            ? ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同']
+            : ['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'];
+        $title = $titles[$documentType] ?? $titles['quotation'];
+        $showPrices = $documentType !== 'packing_list';
+        $showImages = $documentType === 'quotation' || $documentType === 'proforma_invoice';
+        $showBank = $documentType === 'proforma_invoice';
+        $showInvoiceLogistics = $documentType === 'invoice' || $documentType === 'packing_list';
+        $showContract = $documentType === 'contract';
+        $isInvoice = $documentType === 'invoice';
+        $isPacking = $documentType === 'packing_list';
+        $isPI = $documentType === 'proforma_invoice';
+
+        $totalPackages = 0;
+        $totalNetWeight = 0.0;
+        $totalGrossWeight = 0.0;
+        $totalVolume = 0.0;
+        foreach ($quote->items as $item) {
+            $totalPackages += (int) ($item->package_count ?? 0);
+            $totalNetWeight += (float) ($item->net_weight ?? 0);
+            $totalGrossWeight += (float) ($item->gross_weight ?? 0);
+            $totalVolume += (float) ($item->volume_cbm ?? 0);
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->getDefaultRowDimension()->setRowHeight(18);
+        $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_PORTRAIT);
+        $sheet->getPageSetup()->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4);
+        $sheet->getPageMargins()->setTop(0.5)->setBottom(0.5)->setLeft(0.6)->setRight(0.6);
+
+        // ── Styles ──
+        $titleFont = ['bold' => true, 'size' => 20, 'color' => ['rgb' => '111827']];
+        $headingFont = ['bold' => true, 'size' => 11, 'color' => ['rgb' => '1F2933']];
+        $labelFont = ['bold' => true, 'size' => 9, 'color' => ['rgb' => '6B7280']];
+        $valueFont = ['size' => 10, 'color' => ['rgb' => '1F2933']];
+        $panelTitleStyle = [
+            'font' => ['bold' => true, 'size' => 9, 'color' => ['rgb' => '374151']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F3F4F6']],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
+        ];
+        $sectionTitleStyle = [
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '111827']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E5E7EB']],
+            'borders' => ['bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '9CA3AF']]],
+        ];
+        $thStyle = [
+            'font' => ['bold' => true, 'size' => 9, 'color' => ['rgb' => '1F2933']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F3F4F6']],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+        ];
+        $tdStyle = [
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E5E7EB']]],
+        ];
+        $panelKvLabelStyle = [
+            'font' => $labelFont,
+            'borders' => ['left' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']], 'bottom' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E5E7EB']]],
+        ];
+        $panelKvValueStyle = [
+            'font' => $valueFont,
+            'borders' => ['right' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']], 'bottom' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E5E7EB']]],
+        ];
+
+        $row = 1;
+        // Column widths: A-F for left panel, G=spacer, H-M for right panel
+        // Total columns: 12 (A-L)
+        $colLeft = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $colRight = ['H', 'I', 'J', 'K', 'L', 'M'];
+        $fullWidthEnd = 'M';
