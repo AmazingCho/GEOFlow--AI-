@@ -48,7 +48,7 @@
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div class="lg:col-span-2">
+        <div class="lg:col-span-3">
             <label class="mb-1 block text-xs font-medium text-gray-600">行类型</label>
             <select name="items[line_type][]" class="{{ $compactInputClass }}">
                 @foreach (($lineTypeOptions ?? []) as $typeValue => $typeLabel)
@@ -67,7 +67,7 @@
                 @endforeach
             </select>
         </div>
-        <div class="lg:col-span-2">
+        <div class="lg:col-span-3">
             <label class="mb-1 block text-xs font-medium text-gray-600">型号</label>
             <input type="text" name="items[model][]" value="{{ $valueFor('model') }}" class="{{ $compactInputClass }}">
         </div>
@@ -106,40 +106,43 @@
         </div>
     </div>
 
-    <div class="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
-        <div>
+    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">数量</label>
             <input type="number" step="0.01" min="0" name="items[quantity][]" value="{{ $valueFor('quantity', '1') }}" class="{{ $compactInputClass }}" data-quote-quantity>
         </div>
-        <div>
+        <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">单位</label>
             <input type="text" name="items[unit][]" value="{{ $valueFor('unit') }}" class="{{ $compactInputClass }}">
         </div>
-        <div>
+        <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">单价</label>
             <input type="number" step="0.01" min="0" name="items[unit_price][]" value="{{ $valueFor('unit_price', '0') }}" class="{{ $compactInputClass }}" data-quote-unit-price>
         </div>
-        <div>
+        <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">金额</label>
             <div class="flex h-[38px] items-center rounded-md border border-gray-200 bg-gray-50 px-2 text-sm font-semibold text-gray-900" data-quote-row-amount>0.00</div>
         </div>
-        <div data-logistics-field>
+        <div class="lg:col-span-2" data-logistics-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">件数</label>
             <input type="number" min="0" name="items[package_count][]" value="{{ $valueFor('package_count', '0') }}" class="{{ $compactInputClass }}">
         </div>
-        <div data-logistics-field>
+        <div class="lg:col-span-2" data-logistics-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">净重</label>
             <input type="number" step="0.001" min="0" name="items[net_weight][]" value="{{ $valueFor('net_weight', '0') }}" class="{{ $compactInputClass }}">
         </div>
-        <div data-logistics-field>
+        <div class="lg:col-span-2" data-logistics-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">毛重</label>
             <input type="number" step="0.001" min="0" name="items[gross_weight][]" value="{{ $valueFor('gross_weight', '0') }}" class="{{ $compactInputClass }}">
         </div>
-        <div data-logistics-field>
+        <div class="lg:col-span-2" data-logistics-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">体积 CBM</label>
             <input type="number" step="0.001" min="0" name="items[volume_cbm][]" value="{{ $valueFor('volume_cbm', '0') }}" class="{{ $compactInputClass }}">
         </div>
-        <div data-logistics-field>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div class="lg:col-span-6" data-logistics-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">包装尺寸 L×W×H (cm)</label>
             <div class="grid grid-cols-3 gap-2">
                 <input type="number" step="0.1" min="0" name="items[package_length][]" value="{{ $valueFor('package_length') }}" class="{{ $compactInputClass }} min-w-[80px]" placeholder="长">
@@ -147,12 +150,10 @@
                 <input type="number" step="0.1" min="0" name="items[package_height][]" value="{{ $valueFor('package_height') }}" class="{{ $compactInputClass }} min-w-[80px]" placeholder="高">
             </div>
         </div>
-    </div>
-
-    <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div data-hscode-field>
+        <div class="lg:col-span-6" data-hscode-field>
             <label class="mb-1 block text-xs font-medium text-gray-600">HS Code</label>
             <input type="text" name="items[hs_code][]" value="{{ $valueFor('hs_code') }}" class="{{ $compactInputClass }}">
         </div>
     </div>
+
 </div>

@@ -190,6 +190,8 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('{quoteId}/edit', [CrmQuoteController::class, 'edit'])->name('edit')->whereNumber('quoteId');
                 Route::put('{quoteId}', [CrmQuoteController::class, 'update'])->name('update')->whereNumber('quoteId');
                 Route::get('{quoteId}/print', [CrmQuoteController::class, 'print'])->name('print')->whereNumber('quoteId');
+                Route::get('{quoteId}/excel', [CrmQuoteController::class, 'downloadExcel'])->name('excel')->whereNumber('quoteId');
+                Route::get('{quoteId}/pdf', [CrmQuoteController::class, 'downloadPdf'])->name('pdf')->whereNumber('quoteId');
                 Route::post('{quoteId}/delete', [CrmQuoteController::class, 'destroy'])->name('delete')->whereNumber('quoteId');
             });
 

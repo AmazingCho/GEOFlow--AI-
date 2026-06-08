@@ -68,18 +68,29 @@
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ $errors->first() }}</div>
             @endif
 
-            <section class="{{ $sectionClass }}">
-                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-gray-200 bg-gray-50 px-5 py-3">
-                    <h2 class="text-base font-semibold text-gray-900">基础信息</h2>
+                        <section class="{{ $sectionClass }}">
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="info" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>基础信息</h2>
                     <p class="mt-0.5 text-sm text-gray-500">业务容器会限制客户、询盘、Entity 和图库候选范围。</p>
                 </div>
-                <div class="grid grid-cols-1 gap-5 lg:grid-cols-12">
-                    <div class="lg:col-span-5">
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">标题 <span class="text-red-500">*</span></label>
+                        <input type="text" name="title" required maxlength="200" value="{{ old('title', (string) ($quoteForm['title'] ?? '')) }}" class="{{ $inputClass }}">
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">单据号</label>
+                        <input type="text" name="quote_no" maxlength="80" value="{{ old('quote_no', (string) ($quoteForm['quote_no'] ?? '')) }}" class="{{ $inputClass }}" placeholder="留空自动生成">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-12 mt-4">
+                    <div class="lg:col-span-4">
                         @include('admin.partials.collection-select', [
                             'selectedId' => (string) old('collection_id', (string) ($quoteForm['collection_id'] ?? '')),
                             'collectionOptions' => $collectionOptions ?? [],
                             'label' => '业务容器',
-                            'help' => '未指定 Collection 时不会限制候选素材。',
+                            'help' => '',
+                            'emptyLabel' => '未指定 Collection 时不会限制候选素材',
                             'class' => $inputClass,
                         ])
                     </div>
@@ -94,7 +105,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="lg:col-span-3">
+                    <div class="lg:col-span-4">
                         <label class="mb-2 block text-sm font-medium text-gray-700">负责人</label>
                         <select name="owner" class="{{ $inputClass }}">
                             <option value="">未指定</option>
@@ -104,8 +115,7 @@
                         </select>
                     </div>
                 </div>
-
-                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12">
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-12 mt-4">
                     <div class="lg:col-span-3">
                         <label class="mb-2 block text-sm font-medium text-gray-700">关联询盘</label>
                         <select name="inquiry_id" class="{{ $inputClass }}">
@@ -118,10 +128,6 @@
                         </select>
                     </div>
                     <div class="lg:col-span-3">
-                        <label class="mb-2 block text-sm font-medium text-gray-700">单据号</label>
-                        <input type="text" name="quote_no" maxlength="80" value="{{ old('quote_no', (string) ($quoteForm['quote_no'] ?? '')) }}" class="{{ $inputClass }}" placeholder="留空自动生成">
-                    </div>
-                    <div class="lg:col-span-2">
                         <label class="mb-2 block text-sm font-medium text-gray-700">单据类型</label>
                         <select name="document_type" class="{{ $inputClass }}">
                             @foreach (($documentTypeOptions ?? []) as $value => $label)
@@ -129,7 +135,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="lg:col-span-2">
+                    <div class="lg:col-span-3">
                         <label class="mb-2 block text-sm font-medium text-gray-700">语言</label>
                         <select name="document_language" class="{{ $inputClass }}">
                             @foreach (($languageOptions ?? []) as $value => $label)
@@ -137,7 +143,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="lg:col-span-2">
+                    <div class="lg:col-span-3">
                         <label class="mb-2 block text-sm font-medium text-gray-700">状态</label>
                         <select name="status" class="{{ $inputClass }}">
                             @foreach (['draft' => '草稿', 'sent' => '已发送', 'accepted' => '已接受', 'rejected' => '已拒绝', 'expired' => '已过期'] as $value => $label)
@@ -146,26 +152,24 @@
                         </select>
                     </div>
                 </div>
+            </section>
 
-                <div class="mt-5">
-                    <label class="mb-2 block text-sm font-medium text-gray-700">标题 <span class="text-red-500">*</span></label>
-                    <input type="text" name="title" required maxlength="200" value="{{ old('title', (string) ($quoteForm['title'] ?? '')) }}" class="{{ $inputClass }}">
                 </div>
             </section>
 
             <section class="{{ $sectionClass }}">
-                <div class="-mx-5 -mt-5 mb-4 flex flex-col gap-3 rounded-t-lg border-b border-gray-200 bg-gray-50 px-5 py-3 md:flex-row md:items-center md:justify-between">
+                <div class="-mx-5 -mt-5 mb-4 flex flex-col gap-3 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <h2 class="text-base font-semibold text-gray-900">买方信息</h2>
+                        <h2 class="text-base font-semibold text-gray-900"><i data-lucide="users" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>买方信息</h2>
                         <p class="mt-0.5 text-sm text-gray-500">买方名称、电话和国家留空时，会用客户资料作为保存兜底。</p>
                     </div>
-                    <button type="button" class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50" data-fill-buyer-from-customer>
+                    <button type="button" class="inline-flex h-9 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 hover:bg-blue-100" data-fill-buyer-from-customer>
                         <i data-lucide="user-round-check" class="mr-2 h-4 w-4"></i>
                         从客户资料带入
                     </button>
                 </div>
                 <div class="grid grid-cols-1 gap-5 lg:grid-cols-12">
-                    <div class="lg:col-span-3">
+                    <div class="lg:col-span-2">
                         <label class="mb-2 block text-sm font-medium text-gray-700">联系人</label>
                         <input type="text" name="buyer_contact" maxlength="200" value="{{ old('buyer_contact', (string) ($quoteForm['buyer_contact'] ?? '')) }}" class="{{ $inputClass }}">
                     </div>
@@ -177,7 +181,7 @@
                         <label class="mb-2 block text-sm font-medium text-gray-700">电话</label>
                         <input type="text" name="buyer_phone" maxlength="120" value="{{ old('buyer_phone', (string) ($quoteForm['buyer_phone'] ?? '')) }}" class="{{ $inputClass }}">
                     </div>
-                    <div class="lg:col-span-2">
+                    <div class="lg:col-span-3">
                         <label class="mb-2 block text-sm font-medium text-gray-700">邮箱</label>
                         <input type="email" name="buyer_email" maxlength="200" value="{{ old('buyer_email', (string) ($quoteForm['buyer_email'] ?? '')) }}" class="{{ $inputClass }}">
                     </div>
@@ -193,9 +197,26 @@
             </section>
 
             <section class="{{ $sectionClass }}">
-                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-gray-200 bg-gray-50 px-5 py-3">
-                    <h2 class="text-base font-semibold text-gray-900">商业信息</h2>
-                    <p class="mt-0.5 text-sm text-gray-500">贸易条款、原产国、包装方式和银行信息会进入对外单据模板。</p>
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="building-2" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>卖方信息</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">JSON 格式，可直接编辑花括号内的值。银行与公司信息会渲染到对外单据模板中。</p>
+                </div>
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Bank Account JSON</label>
+                        <textarea name="bank_account_json" rows="3" class="{{ $textareaClass }}" style="font-family:monospace;font-size:12px;">{{ old('bank_account_json', (string) ($quoteForm['bank_account_json'] ?? '')) ?: '{"beneficiary":"","bank_name":"","account_no":"","swift":"","bank_address":""}' }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Seller Company JSON</label>
+                        <textarea name="seller_company_json" rows="3" class="{{ $textareaClass }}" style="font-family:monospace;font-size:12px;">{{ old('seller_company_json', (string) ($quoteForm['seller_company_json'] ?? '')) ?: '{"name": "Robota Automation", "address": "Songang, Baoan, Shenzhen, China", "phone": "008615018549304", "email": "sales@robotadispensing.com", "website": "https://robotadispensing.com"}' }}</textarea>
+                    </div>
+                </div>
+            </section>
+
+            <section class="{{ $sectionClass }}">
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="ship" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>物流与贸易信息</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">运费、港口、唛头等物流与贸易基础参数，会进入对外单据模板。</p>
                 </div>
                 <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
                     <div>
@@ -204,11 +225,11 @@
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">Trade Term</label>
-                        <input type="text" name="trade_term" maxlength="80" value="{{ old('trade_term', (string) ($quoteForm['trade_term'] ?? '')) }}" class="{{ $inputClass }}" placeholder="FOB / CIF / EXW">
+                        <input type="text" name="trade_term" maxlength="80" value="{{ old('trade_term', (string) ($quoteForm['trade_term'] ?? 'EXW')) }}" class="{{ $inputClass }}">
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">Origin</label>
-                        <input type="text" name="origin_country" maxlength="100" value="{{ old('origin_country', (string) ($quoteForm['origin_country'] ?? '')) }}" class="{{ $inputClass }}">
+                        <input type="text" name="origin_country" maxlength="100" value="{{ old('origin_country', (string) ($quoteForm['origin_country'] ?? 'China')) }}" class="{{ $inputClass }}">
                     </div>
                                         <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">装运港 (Port of Loading)</label>
@@ -231,40 +252,49 @@
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">交期</label>
-                        <input type="text" name="lead_time" maxlength="120" value="{{ old('lead_time', (string) ($quoteForm['lead_time'] ?? '')) }}" class="{{ $inputClass }}">
+                        <input type="text" name="lead_time" maxlength="120" value="{{ old('lead_time', (string) ($quoteForm['lead_time'] ?? '14 days')) }}" class="{{ $inputClass }}">
                     </div>
                 </div>
-                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+            </section>
+
+            <section class="{{ $sectionClass }}">
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="file-text" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>条款和条件</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">付款、质保、安装、包装及交付条款，会进入对外单据模板。</p>
+                </div>
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
                     <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">质保条款</label>
-                        <textarea name="warranty_terms" rows="3" class="{{ $textareaClass }}">{{ old('warranty_terms', (string) ($quoteForm['warranty_terms'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">安装条款</label>
-                        <textarea name="installation_terms" rows="3" class="{{ $textareaClass }}">{{ old('installation_terms', (string) ($quoteForm['installation_terms'] ?? '')) }}</textarea>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">预付款比例 (%)</label>
+                        <input type="number" name="deposit_percent" min="0" max="100" value="{{ old('deposit_percent', (int) ($quoteForm['deposit_percent'] ?? 60)) }}" class="{{ $inputClass }}">
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">包装条款 (Packing)</label>
                         <input type="text" name="packing_terms" maxlength="500" value="{{ old('packing_terms', (string) ($quoteForm['packing_terms'] ?? '')) }}" class="{{ $inputClass }}" placeholder="Standard export wooden case">
                     </div>
                     <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">预付款比例 (%)</label>
-                        <input type="number" name="deposit_percent" min="0" max="100" value="{{ old('deposit_percent', (int) ($quoteForm['deposit_percent'] ?? 60)) }}" class="{{ $inputClass }}">
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Payment Terms</label>
+                        <textarea name="payment_terms" rows="4" class="{{ $textareaClass }}">{{ old('payment_terms', (string) ($quoteForm['payment_terms'] ?? '')) }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Delivery Terms</label>
+                        <textarea name="delivery_terms" rows="4" class="{{ $textareaClass }}">{{ old('delivery_terms', (string) ($quoteForm['delivery_terms'] ?? '')) }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">质保条款</label>
+                        <textarea name="warranty_terms" rows="3" class="{{ $textareaClass }}">{{ old('warranty_terms', (string) ($quoteForm['warranty_terms'] ?? '1 year warranty against manufacturing defects.')) }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">安装条款</label>
+                        <textarea name="installation_terms" rows="3" class="{{ $textareaClass }}">{{ old('installation_terms', (string) ($quoteForm['installation_terms'] ?? 'Remote guidance included; on-site available at extra cost')) }}</textarea>
                     </div>
                 </div>
             </section>
 
             <section class="{{ $sectionClass }}">
-                <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                        <h2 class="text-base font-semibold text-gray-900">明细区域</h2>
-                        <p class="mt-1 text-sm text-gray-500">支持动态增删行。图片可选择图库，也可上传 200KB 以内的本地图片。</p>
-                    <p class="mt-1 text-xs text-blue-600" data-logistics-hint>报价单和形式发票阶段无需填写物流字段（HS Code、尺寸、重量等），选择发票/装箱单/合同后自动显示。</p>
-                    </div>
-                    <button type="button" class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50" data-add-quote-item>
-                        <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
-                        添加明细
-                    </button>
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="list" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>明细区域</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">支持动态增删行。图片可选择图库，也可上传 200KB 以内的本地图片。</p>
+                    <p class="mt-0.5 text-xs text-blue-600" data-logistics-hint>报价单和形式发票阶段无需填写物流字段（HS Code、尺寸、重量等），选择发票/装箱单/合同后自动显示。</p>
                 </div>
                 <div class="space-y-4" data-crm-quote-items>
                     @foreach ($rows as $index => $row)
@@ -279,6 +309,12 @@
                             'textareaClass' => $textareaClass,
                         ])
                     @endforeach
+                </div>
+                <div class="flex justify-end mt-5">
+                    <button type="button" class="inline-flex h-9 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 hover:bg-blue-100" data-add-quote-item>
+                        <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
+                        添加明细
+                    </button>
                 </div>
                 <template data-crm-quote-row-template>
                     @include('admin.crm.quotes.partials.item-row', [
@@ -295,9 +331,9 @@
             </section>
 
             <section class="{{ $sectionClass }}">
-                <div class="mb-5">
-                    <h2 class="text-base font-semibold text-gray-900">汇总区域</h2>
-                    <p class="mt-1 text-sm text-gray-500">前端仅做辅助预览，最终金额以后端保存计算为准。</p>
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="calculator" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>汇总区域</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">前端仅做辅助预览，最终金额以后端保存计算为准。</p>
                 </div>
                 <div class="grid grid-cols-1 gap-5 lg:grid-cols-5">
                     <div>
@@ -324,46 +360,9 @@
             </section>
 
             <section class="{{ $sectionClass }}">
-                <div class="mb-5">
-                    <h2 class="text-base font-semibold text-gray-900">条款与备注</h2>
-                    <p class="mt-1 text-sm text-gray-500">内部备注不会输出到对外打印模板。</p>
-                </div>
-                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Payment Terms</label>
-                        <textarea name="payment_terms" rows="4" class="{{ $textareaClass }}">{{ old('payment_terms', (string) ($quoteForm['payment_terms'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Delivery Terms</label>
-                        <textarea name="delivery_terms" rows="4" class="{{ $textareaClass }}">{{ old('delivery_terms', (string) ($quoteForm['delivery_terms'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Customer Notes</label>
-                        <textarea name="notes" rows="4" class="{{ $textareaClass }}">{{ old('notes', (string) ($quoteForm['notes'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Internal Notes</label>
-                        <textarea name="internal_notes" rows="4" class="{{ $textareaClass }}">{{ old('internal_notes', (string) ($quoteForm['internal_notes'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Signature Notes</label>
-                        <textarea name="signature_notes" rows="3" class="{{ $textareaClass }}">{{ old('signature_notes', (string) ($quoteForm['signature_notes'] ?? '')) }}</textarea>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Bank Account JSON</label>
-                        <textarea name="bank_account_json" rows="3" class="{{ $textareaClass }}" style="font-family:monospace;font-size:12px;">{{ old('bank_account_json', (string) ($quoteForm['bank_account_json'] ?? '')) ?: '{"beneficiary":"","bank_name":"","account_no":"","swift":"","bank_address":""}' }}</textarea>
-                    </div>
-                    <div class="lg:col-span-2">
-                        <label class="mb-2 block text-sm font-medium text-gray-700">Seller Company JSON</label>
-                        <textarea name="seller_company_json" rows="3" class="{{ $textareaClass }}" style="font-family:monospace;font-size:12px;">{{ old('seller_company_json', (string) ($quoteForm['seller_company_json'] ?? '')) ?: '{"name":"","address":"","phone":"","email":"","website":""}' }}</textarea>
-                    </div>
-                </div>
-            </section>
-
-            <section class="{{ $sectionClass }}">
-                <div class="mb-5">
-                    <h2 class="text-base font-semibold text-gray-900">合同自定义条款</h2>
-                    <p class="mt-1 text-sm text-gray-500">合同模板只作为商业草稿，条款应由人工审核后再对外发送。</p>
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="scroll-text" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>合同自定义条款</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">合同模板只作为商业草稿，条款应由人工审核后再对外发送。</p>
                 </div>
                 <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
                     <div class="lg:col-span-2">
@@ -380,6 +379,28 @@
                     </div>
                 </div>
             </section>
+
+            <section class="{{ $sectionClass }}">
+                <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="sticky-note" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>备注信息</h2>
+                    <p class="mt-0.5 text-sm text-gray-500">内部备注和签名备注不会输出到对外打印模板。</p>
+                </div>
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Customer Notes</label>
+                        <textarea name="notes" rows="4" class="{{ $textareaClass }}">{{ old('notes', (string) ($quoteForm['notes'] ?? '')) }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Internal Notes</label>
+                        <textarea name="internal_notes" rows="4" class="{{ $textareaClass }}">{{ old('internal_notes', (string) ($quoteForm['internal_notes'] ?? '')) }}</textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">Signature Notes</label>
+                        <textarea name="signature_notes" rows="3" class="{{ $textareaClass }}">{{ old('signature_notes', (string) ($quoteForm['signature_notes'] ?? '')) }}</textarea>
+                    </div>
+                </div>
+            </section>
+
 
             <div class="rounded-lg border border-gray-200 bg-white px-4 py-4 shadow-sm">
                 <div class="flex justify-end gap-3">

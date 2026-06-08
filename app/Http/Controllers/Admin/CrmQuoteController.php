@@ -10,9 +10,15 @@ use App\Models\CrmQuoteItem;
 use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Support\AdminWeb;
+use Spatie\LaravelPdf\Facades\Pdf;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
 use App\Support\GeoFlow\ImageUrlNormalizer;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use App\Support\Site\SiteSettingsBag;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -288,10 +294,39 @@ class CrmQuoteController extends Controller
         ]);
     }
 
-    /**
-     * @param  array<string, mixed>  $base
-     * @return array<string, mixed>
-     */
+        public function downloadPdf(int $quoteId, Request $request)
+    {
+        $quote = CrmQuote::query()
+            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->whereKey($quoteId)
+            ->firstOrFail();
+
+        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
+        if (! in_array($documentType, self::DOCUMENT_TYPES, true)) {
+            $documentType = $quote->document_type ?? 'quotation';
+        }
+
+        $view = match ($documentType) {
+            'proforma_invoice' => 'admin.crm.quotes.pdf-proforma-invoice',
+            'invoice' => 'admin.crm.quotes.pdf-invoice',
+            'packing_list' => 'admin.crm.quotes.pdf-packing-list',
+            'contract' => 'admin.crm.quotes.pdf-contract',
+            default => 'admin.crm.quotes.pdf-quotation',
+        };
+
+        $seller = $this->sellerProfile($quote);
+
+        return Pdf::view($view, [
+            'quote' => $quote,
+            'seller' => $seller,
+            'documentKind' => $documentType,
+            'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
+        ])
+            ->format('A4')
+            ->name($quote->quote_no . ' - ' . $documentType . '.pdf')
+            ->download();
+    }
+
     private function formData(array $base, ?int $collectionId, ?int $customerId): array
     {
         return $base + [
@@ -850,6 +885,205 @@ class CrmQuoteController extends Controller
     /**
      * @return array{name:string,logo:string,address:string,phone:string,email:string,website:string}
      */
+
+    public function downloadExcel(int $quoteId, Request $request)
+    {
+        $quote = CrmQuote::query()
+            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->whereKey($quoteId)
+            ->firstOrFail();
+
+        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
+        $isZh = (string) ($quote->document_language ?? 'en') === 'zh_CN';
+        $seller = $this->sellerProfile($quote);
+        $labels = $this->documentLabels((string) ($quote->document_language ?? 'en'));
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        $sheet->setCellValue('A1', $seller['name'] ?? '');
+        $sheet->mergeCells('A1:D1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $titles = $isZh
+            ? ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同']
+            : ['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'];
+        $title = $titles[$documentType] ?? $titles['quotation'];
+
+        $sheet->setCellValue('A2', $title);
+        $sheet->mergeCells('A2:D2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+
+        $row = 4;
+        $sheet->setCellValue("A{$row}", ($isZh ? '单号' : 'Ref No.') . ': ' . $quote->quote_no);
+        $sheet->setCellValue("C{$row}", ($isZh ? '日期' : 'Date') . ': ' . ($quote->created_at ? $quote->created_at->format('Y-m-d') : ''));
+        $row++;
+
+        $sheet->setCellValue("A{$row}", ($isZh ? '客户' : 'Customer') . ': ' . ($quote->buyer_company ?: $quote->customer?->company_name ?: $quote->customer?->name ?? ''));
+        $sheet->setCellValue("C{$row}", ($isZh ? '币种' : 'Currency') . ': ' . ($quote->currency ?? 'USD'));
+        $row++;
+
+        if ($quote->buyer_address) {
+            $sheet->setCellValue("A{$row}", ($isZh ? '地址' : 'Address') . ': ' . $quote->buyer_address);
+            $row++;
+        }
+
+        $row++;
+        $showPrices = $documentType !== 'packing_list';
+        $showLogistics = $documentType === 'packing_list' || $documentType === 'invoice';
+
+        $headers = ['#', $isZh ? '项目名称' : 'Item', $isZh ? '型号' : 'Model', $isZh ? '描述' : 'Description'];
+        if ($showPrices) {
+            $headers[] = $isZh ? '数量' : 'Qty';
+            $headers[] = $isZh ? '单位' : 'Unit';
+            $headers[] = $isZh ? '单价' : 'Unit Price';
+            $headers[] = $isZh ? '金额' : 'Amount';
+        }
+        if ($showLogistics) {
+            $headers[] = $isZh ? '件数' : 'Pkgs';
+            $headers[] = $isZh ? '净重(kg)' : 'Net Wt';
+            $headers[] = $isZh ? '毛重(kg)' : 'Gross Wt';
+            $headers[] = $isZh ? '体积(CBM)' : 'CBM';
+            $headers[] = $isZh ? '尺寸(cm)' : 'Dimensions';
+        }
+        if ($documentType === 'invoice') {
+            $headers[] = 'HS Code';
+        }
+
+        $headerStyle = [
+            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1F2933']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E5E7EB']],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+        ];
+
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue("{$col}{$row}", $header);
+            $col++;
+        }
+
+        $lastCol = chr(ord('A') + count($headers) - 1);
+        $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray($headerStyle);
+        $row++;
+        $dataStartRow = $row;
+
+        $idx = 1;
+        foreach ($quote->items as $item) {
+            $c = 'A';
+            $sheet->setCellValue("{$c}{$row}", $idx++);
+            $c++;
+            $sheet->setCellValue("{$c}{$row}", $item->item_name ?? '');
+            $c++;
+            $sheet->setCellValue("{$c}{$row}", $item->model ?? '');
+            $c++;
+            $sheet->setCellValue("{$c}{$row}", $item->description ?? '');
+            $c++;
+
+            if ($showPrices) {
+                $sheet->setCellValue("{$c}{$row}", (float) ($item->quantity ?? 0));
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", $item->unit ?? '');
+                $c++;
+                $qty = (float) ($item->quantity ?? 0);
+                $price = (float) ($item->unit_price ?? 0);
+                $sheet->setCellValue("{$c}{$row}", $price);
+                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", $qty * $price);
+                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $c++;
+            }
+
+            if ($showLogistics) {
+                $sheet->setCellValue("{$c}{$row}", (int) ($item->package_count ?? 0));
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", (float) ($item->net_weight ?? 0));
+                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", (float) ($item->gross_weight ?? 0));
+                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", (float) ($item->volume_cbm ?? 0));
+                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                $c++;
+                $dim = '';
+                if ($item->package_length || $item->package_width || $item->package_height) {
+                    $dim = ($item->package_length ?? '-') . 'x' . ($item->package_width ?? '-') . 'x' . ($item->package_height ?? '-') . ' cm';
+                }
+                $sheet->setCellValue("{$c}{$row}", $dim);
+                $c++;
+            }
+
+            if ($documentType === 'invoice') {
+                $sheet->setCellValue("{$c}{$row}", $item->hs_code ?? '');
+                $c++;
+            }
+
+            $row++;
+        }
+
+        $dataEndRow = $row - 1;
+        if ($dataEndRow >= $dataStartRow) {
+            $sheet->getStyle("A{$dataStartRow}:{$lastCol}{$dataEndRow}")
+                ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+            $sheet->getStyle("A{$dataStartRow}:A{$dataEndRow}")
+                ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        }
+
+        if ($showPrices) {
+            $row++;
+            $totalCol = chr(ord('A') + array_search($isZh ? '金额' : 'Amount', $headers));
+            $subtotal = $quote->items->sum(fn ($item) => (float) ($item->quantity ?? 0) * (float) ($item->unit_price ?? 0));
+
+            $sheet->setCellValue("A{$row}", $isZh ? '合计' : 'Subtotal');
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+            $sheet->setCellValue("{$totalCol}{$row}", $subtotal);
+            $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle("{$totalCol}{$row}")->getFont()->setBold(true);
+            $row++;
+
+            if ((float) ($quote->shipping_fee ?? 0) > 0) {
+                $sheet->setCellValue("A{$row}", $isZh ? '运费' : 'Shipping');
+                $sheet->setCellValue("{$totalCol}{$row}", (float) $quote->shipping_fee);
+                $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $row++;
+            }
+
+            if ((float) ($quote->discount_amount ?? 0) > 0) {
+                $sheet->setCellValue("A{$row}", $isZh ? '折扣' : 'Discount');
+                $sheet->setCellValue("{$totalCol}{$row}", (float) $quote->discount_amount);
+                $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $row++;
+            }
+
+            $sheet->setCellValue("A{$row}", $isZh ? '总计' : 'Grand Total');
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setSize(11);
+            $total = (float) ($quote->grand_total ?: $quote->total_amount ?: $subtotal);
+            $sheet->setCellValue("{$totalCol}{$row}", $total);
+            $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle("{$totalCol}{$row}")->getFont()->setBold(true)->setSize(11);
+            $sheet->getStyle("A{$row}:{$totalCol}{$row}")
+                ->getBorders()->getTop()->setBorderStyle(Border::BORDER_MEDIUM);
+        }
+
+        foreach (range('A', $lastCol) as $c) {
+            $sheet->getColumnDimension($c)->setAutoSize(true);
+        }
+
+        $filename = ($quote->quote_no ?: 'quote') . ' - ' . $documentType . '.xlsx';
+
+        $writer = new Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $excelData = ob_get_clean();
+
+        return response($excelData, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
     private function sellerProfile(CrmQuote $quote): array
     {
         $settings = SiteSettingsBag::all();
