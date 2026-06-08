@@ -526,7 +526,7 @@ class TaskController extends Controller
             ->all();
 
         $caseOptions = CaseRecord::query()
-            ->with('entity:id,name')
+            ->with('entities:id,name')
             ->select(['id', 'entity_id', 'collection_id', 'title', 'case_type'])
             ->orderByDesc('id')
             ->limit(500)

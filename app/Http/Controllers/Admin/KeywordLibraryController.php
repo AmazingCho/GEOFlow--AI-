@@ -532,12 +532,11 @@ class KeywordLibraryController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        $collectionId = (int) $request->query('collection_id', 0);
-
-        if ($collectionId <= 0) {
-            $collectionId = (int) \App\Support\AdminWeb::defaultCollectionId();
+        if (!$request->has('collection_id')) {
+            return \App\Support\AdminWeb::defaultCollectionId();
         }
 
+        $collectionId = (int) $request->query('collection_id', 0);
         return $collectionId > 0 ? $collectionId : null;
     }
 

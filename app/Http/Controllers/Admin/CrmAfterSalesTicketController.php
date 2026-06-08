@@ -206,7 +206,7 @@ class CrmAfterSalesTicketController extends Controller
             'activeMenu' => 'crm',
             'adminSiteName' => AdminWeb::siteName(),
             'collectionOptions' => CollectionOptions::all(true),
-            'customerOptions' => CrmCustomer::query()->orderBy('company_name')->get(['id', 'company_name']),
+            'customerOptions' => CrmCustomer::query()->with('collection')->orderBy('company_name')->limit(300)->get()->map(static fn (CrmCustomer $c): array => ['id' => (int) $c->id, 'label' => trim((string) ($c->contact_person ?? '')) !== '' ? (string) $c->contact_person : (string) $c->company_name, 'meta' => (string) ($c->collection?->name ?? ''), 'collection_id' => (int) ($c->collection_id ?? 0)])->all(),
             'orderOptions' => CrmSalesOrder::query()->with('customer')->orderByDesc('id')->limit(300)->get(),
             'entityOptions' => EntityRecord::query()->when($collectionId, static fn ($q) => $q->where('collection_id', $collectionId))->orderBy('name')->get(['id', 'name', 'entity_type', 'collection_id'])->map(static fn ($e): array => ['id' => (int) $e->id, 'label' => (string) $e->name, 'meta' => (string) $e->entity_type, 'collection_id' => (int) ($e->collection_id ?? 0)])->all(),
             'knowledgeBaseOptions' => KnowledgeBase::query()->when($collectionId, static fn ($q) => $q->where('collection_id', $collectionId))->orderBy('name')->get(['id', 'name', 'knowledge_type', 'collection_id'])->map(static fn ($kb): array => ['id' => (int) $kb->id, 'label' => (string) $kb->name, 'meta' => (string) $kb->knowledge_type, 'collection_id' => (int) ($kb->collection_id ?? 0)])->all(),

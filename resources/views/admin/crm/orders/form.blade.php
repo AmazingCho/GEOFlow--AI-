@@ -9,6 +9,15 @@
             <form method="POST" action="{{ route('admin.crm.orders.update', ['orderId' => (int) $order->id]) }}" class="space-y-6">@csrf @method('PUT')
                 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                     @include('admin.partials.collection-select', ['selectedId' => (string) ($order->collection_id ?? ''), 'collectionOptions' => $collectionOptions ?? [], 'label' => '业务容器', 'help' => '', 'class' => 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500'])
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">客户</label>
+                        <select name="customer_id" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">请选择客户</option>
+                            @foreach (($customerOptions ?? []) as $customer)
+                                <option value="{{ (int) $customer['id'] }}" @selected(old('customer_id', (string) ($order->customer_id ?? '')) === (string) $customer['id'])>{{ $customer['label'] }} @if (($customer['meta'] ?? '') !== '') · {{ $customer['meta'] }} @endif</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <div><label class="mb-2 block text-sm font-medium text-gray-700">标题</label><input name="title" required value="{{ old('title', (string) $order->title) }}" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">负责人</label>

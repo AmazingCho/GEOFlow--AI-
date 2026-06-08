@@ -3,7 +3,7 @@
     $collectionSidebarOptions = $collectionOptions ?? [];
     $collectionSidebarSelectedId = (string) ($selectedId ?? request('collection_id', ''));
     $collectionSidebarQuery = \Illuminate\Support\Arr::except(request()->query(), ['collection_id', 'page']);
-    $collectionSidebarAllUrl = route($collectionSidebarRoute, $collectionSidebarQuery);
+    $collectionSidebarAllUrl = route($collectionSidebarRoute, array_merge($collectionSidebarQuery, ['collection_id' => 0]));
     $collectionSidebarShowUnassigned = (bool) ($showUnassigned ?? false);
     $collectionSidebarUnassignedUrl = route($collectionSidebarRoute, array_merge($collectionSidebarQuery, ['collection_id' => 'unassigned']));
 @endphp

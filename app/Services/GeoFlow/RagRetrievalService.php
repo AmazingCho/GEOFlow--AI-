@@ -355,7 +355,7 @@ class RagRetrievalService
             ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json', 'canonical_url', 'link_policy']);
 
         $cases = CaseRecord::query()
-            ->with('entity:id,name')
+            ->with('entities:id,name')
             ->where(function ($query) use ($tagFilters, $entityFilterIds, $caseFilterIds, $collectionId): void {
                 if ($caseFilterIds !== []) {
                     $query->orWhereIn('id', $caseFilterIds);

@@ -334,11 +334,10 @@ class CrmInquiryController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        $value = $this->normalizeNullableId($request->query('collection_id', 0));
-        if ($value === null) {
-            $value = \App\Support\AdminWeb::defaultCollectionId();
+        if (!$request->has('collection_id')) {
+            return \App\Support\AdminWeb::defaultCollectionId();
         }
-        return $value;
+        return $this->normalizeNullableId($request->query('collection_id', 0));
     }
 
     /**

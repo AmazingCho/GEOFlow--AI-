@@ -129,7 +129,7 @@
                     <h2 class="text-base font-semibold text-gray-900">基础信息</h2>
                     <dl class="mt-4 space-y-3 text-sm">
                         <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->customer?->contact_person ?: $quote->customer?->company_name ?? '未关联' }}</dd></div>
-                        <div><dt class="text-gray-500">买方</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->buyer_contact ?: '未填写' }}@if((string)($quote->buyer_company ?? '') !== '') · {{ $quote->buyer_company }}@endif</dd></div>
+                        <div><dt class="text-gray-500">买方</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->buyer_company ?: '未填写' }}</dd></div>
                         <div><dt class="text-gray-500">负责人</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->owner ?: '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">业务容器</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->collection?->name ?? '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">文档类型</dt><dd class="mt-1 font-medium text-gray-900">{{ ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同'][$quote->document_type] ?? '报价单' }}</dd></div>

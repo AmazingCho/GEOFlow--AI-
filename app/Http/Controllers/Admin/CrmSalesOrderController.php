@@ -120,7 +120,18 @@ class CrmSalesOrderController extends Controller
             'adminSiteName' => AdminWeb::siteName(),
             'order' => $order,
             'collectionOptions' => CollectionOptions::all(),
-            'customerOptions' => CrmCustomer::query()->orderBy('company_name')->get(['id', 'company_name']),
+            'customerOptions' => CrmCustomer::query()
+                ->with('collection')
+                ->orderBy('company_name')
+                ->limit(300)
+                ->get()
+                ->map(static fn (CrmCustomer $customer): array => [
+                    'id' => (int) $customer->id,
+                    'label' => trim((string) ($customer->contact_person ?? '')) !== '' ? (string) $customer->contact_person : (string) $customer->company_name,
+                    'meta' => (string) ($customer->collection?->name ?? ''),
+                    'collection_id' => (int) ($customer->collection_id ?? 0),
+                ])
+                ->all(),
             'employeeOptions' => CrmOptions::employeeOptions(),
         ]);
     }
@@ -129,6 +140,7 @@ class CrmSalesOrderController extends Controller
     {
         $order = CrmSalesOrder::query()->whereKey($orderId)->firstOrFail();
         $payload = $request->validate([
+            'customer_id' => ['nullable', 'integer', 'min:1', Rule::exists('crm_customers', 'id')],
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'title' => ['required', 'string', 'max:200'],
             'owner' => ['nullable', 'string', 'max:120'],
@@ -140,6 +152,7 @@ class CrmSalesOrderController extends Controller
         ]);
 
         $order->update([
+            'customer_id' => isset($payload['customer_id']) && (int) $payload['customer_id'] > 0 ? (int) $payload['customer_id'] : null,
             'collection_id' => isset($payload['collection_id']) && (int) $payload['collection_id'] > 0 ? (int) $payload['collection_id'] : null,
             'title' => trim((string) $payload['title']),
             'owner' => trim((string) ($payload['owner'] ?? '')),

@@ -94,6 +94,7 @@ class CrmCustomerController extends Controller
                 'followUps' => fn ($query) => $query->with('inquiry')->orderByDesc('created_at')->limit(30),
                 'inquiries' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
                 'quotes' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
+                'salesOrders' => fn ($query) => $query->orderByDesc('created_at')->limit(10),
             ])
             ->whereKey($customerId)
             ->firstOrFail();
@@ -281,10 +282,10 @@ class CrmCustomerController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        $value = (int) $request->query('collection_id', 0);
-        if ($value <= 0) {
-            $value = (int) \App\Support\AdminWeb::defaultCollectionId();
+        if (!$request->has('collection_id')) {
+            return \App\Support\AdminWeb::defaultCollectionId();
         }
+        $value = (int) $request->query('collection_id', 0);
         return $value > 0 ? $value : null;
     }
 

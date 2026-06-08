@@ -109,6 +109,19 @@
                             </div>
                         </div>
                     </div>
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-700">最近订单</h3>
+                            <div class="mt-3 space-y-2">
+                                @forelse ($customer->salesOrders as $order)
+                                    <a href="{{ route('admin.crm.orders.show', ['orderId' => (int) $order->id]) }}" class="block rounded-md border border-gray-200 px-4 py-3 text-sm hover:bg-gray-50">
+                                        <span class="font-medium text-gray-900">{{ $order->order_no }}</span>
+                                        <span class="mt-1 block text-xs text-gray-500">{{ $order->currency }} {{ number_format((float) $order->total_amount, 2) }} · {{ $order->order_status }}</span>
+                                    </a>
+                                @empty
+                                    <div class="text-sm text-gray-500">暂无订单</div>
+                                @endforelse
+                            </div>
+                                            </div>
                 </section>
             </div>
 

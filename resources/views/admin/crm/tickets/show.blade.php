@@ -100,7 +100,7 @@
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">基础信息</h2>
                     <dl class="mt-4 space-y-3 text-sm">
-                        <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $ticket->customer?->company_name ?? '-' }}</dd></div>
+                        <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $ticket->customer?->contact_person ?: $ticket->customer?->company_name ?? '-' }}</dd></div>
                         <div><dt class="text-gray-500">负责人</dt><dd class="mt-1 font-medium text-gray-900">{{ $ticket->owner ?: '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">订单</dt><dd class="mt-1 font-medium text-gray-900">@if($ticket->order)<a href="{{ route('admin.crm.orders.show', ['orderId' => (int) $ticket->order->id]) }}" class="text-blue-600 hover:text-blue-700">{{ $ticket->order->order_no }}</a>@else 未关联 @endif</dd></div>
                         <div><dt class="text-gray-500">Entity</dt><dd class="mt-1 font-medium text-gray-900">{{ $ticket->entity?->name ?? '未关联' }}</dd></div>

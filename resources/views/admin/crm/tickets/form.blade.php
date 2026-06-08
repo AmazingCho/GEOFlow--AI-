@@ -76,7 +76,7 @@
                             <select name="customer_id" required class="{{ $fieldClass }}">
                                 <option value="">选择客户</option>
                                 @foreach (($customerOptions ?? []) as $customer)
-                                    <option value="{{ (int) $customer->id }}" @selected(old('customer_id', (string) ($ticketForm['customer_id'] ?? '')) === (string) $customer->id)>{{ $customer->company_name }}</option>
+                                    <option value="{{ (int) $customer['id'] }}" @selected(old('customer_id', (string) ($ticketForm['customer_id'] ?? '')) === (string) $customer['id'])>{{ $customer['label'] }} @if (($customer['meta'] ?? '') !== '') · {{ $customer['meta'] }} @endif</option>
                                 @endforeach
                             </select>
                         </div>
@@ -94,7 +94,7 @@
                             <select name="order_id" class="{{ $fieldClass }}">
                                 <option value="">不关联订单</option>
                                 @foreach (($orderOptions ?? []) as $order)
-                                    <option value="{{ (int) $order->id }}" data-collection-id="{{ (int) ($order->collection_id ?? 0) }}" @selected(old('order_id', (string) ($ticketForm['order_id'] ?? '')) === (string) $order->id)>{{ $order->order_no }} · {{ $order->title }} @if($order->customer) · {{ $order->customer->company_name }} @endif</option>
+                                    <option value="{{ (int) $order->id }}" data-collection-id="{{ (int) ($order->collection_id ?? 0) }}" @selected(old('order_id', (string) ($ticketForm['order_id'] ?? '')) === (string) $order->id)>{{ $order->order_no }} · {{ $order->title }} @if($order->customer) · {{ $order->customer->contact_person ?: $order->customer->company_name }} @endif</option>
                                 @endforeach
                             </select>
                         </div>

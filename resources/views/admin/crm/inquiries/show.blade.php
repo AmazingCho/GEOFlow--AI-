@@ -54,7 +54,7 @@
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">需求识别结果</h2>
                     <dl class="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
-                        <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $inquiry->customer?->company_name ?? '未关联' }}</dd></div>
+                        <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $inquiry->customer?->contact_person ?: $inquiry->customer?->company_name ?? '未关联' }}</dd></div>
                         <div><dt class="text-gray-500">负责人</dt><dd class="mt-1 font-medium text-gray-900">{{ $inquiry->assigned_to ?: '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">语言</dt><dd class="mt-1 font-medium text-gray-900">{{ $inquiry->detected_language ?: '未识别' }}</dd></div>
                     </dl>

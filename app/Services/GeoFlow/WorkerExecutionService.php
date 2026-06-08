@@ -1068,7 +1068,7 @@ class WorkerExecutionService
             ->get(['id', 'name', 'entity_type', 'aliases', 'description', 'attributes_json', 'canonical_url', 'link_policy']);
 
         $cases = CaseRecord::query()
-            ->with('entity:id,name')
+            ->with('entities:id,name')
             ->where(function ($query) use ($tagFilters): void {
                 $query
                     ->whereHas('tags', fn ($tagQuery) => $this->addExactTagFilterConditions($tagQuery, $tagFilters))

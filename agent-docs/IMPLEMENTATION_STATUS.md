@@ -599,3 +599,21 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 - AI 找实体（自然语言搜索）
 
 **验证：** AdminCrmPagesTest 7/7 通过（87 assertions），全部 6 个新/改文件 PHP 语法检查通过。
+
+### 2026-06-08（第7轮）：CRM客户下拉选项统一 + 详情页客户显示修复
+
+**问题：** 单据制作、订单、售后的详情页和编辑页中客户显示/下拉格式不统一。
+
+**修复内容：**
+
+1. **详情页客户显示**：`orders/show` 和 `tickets/show` 从 `company_name` 改为 `contact_person ?: company_name`，与 `quotes/show` 保持一致
+
+2. **编辑表单下拉格式**：`tickets/form` 客户下拉从裸 `$customer->company_name` 改为 `label + meta` 格式（联系人名 · 业务容器），与询盘/报价编辑页一致
+
+3. **Controller customerOptions 统一**：
+   - `CrmSalesOrderController` 和 `CrmAfterSalesTicketController` 的 `customerOptions` 从 `CrmCustomer::get(['id','company_name'])` 改为标准 `{id, label, meta, collection_id}` 格式（label = contact_person ?: company_name）
+   - 支持按 Collection 过滤、上限 300 条
+
+4. **订单编辑页新增客户选择**：`orders/form` 补上客户下拉，Controller validation 和 update payload 同步增加 `customer_id`
+
+**测试：** 7/7 通过。

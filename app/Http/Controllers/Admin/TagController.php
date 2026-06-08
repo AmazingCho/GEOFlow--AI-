@@ -255,7 +255,7 @@ class TagController extends Controller
                     ->values()
                     ->all(),
                 'cases' => $tag->caseRecords()
-                    ->with('entity:id,name')
+                    ->with('entities:id,name')
                     ->orderBy('title')
                     ->limit(50)
                     ->get()

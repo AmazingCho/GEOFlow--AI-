@@ -361,14 +361,14 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200" style="table-layout:fixed">
                         <thead class="bg-gray-50">
                         <tr>
                             <th class="batch-checkbox hidden px-6 py-3 text-left">
                                 <input type="checkbox" id="select-all" class="rounded border-gray-300 text-blue-600 shadow-sm">
                             </th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.id') }}</th>
-                            <th class="w-[22%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
+                            <th class="w-[22%] max-w-[35%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.task_author') }}</th>
                             @if(!$isTrashView)
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.workflow') }}</th>
@@ -433,7 +433,7 @@
                                     <input type="checkbox" value="{{ (int) $article->id }}" class="article-checkbox rounded border-gray-300 text-blue-600 shadow-sm">
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">#{{ (int) $article->id }}</td>
-                                <td class="w-[22%] px-6 py-4">
+                                <td class="w-[22%] max-w-[35%] px-6 py-4">
                                     <div class="text-sm font-medium text-gray-900 truncate">
                                         @if($isTrashView)
                                             <span>{{ $article->title }}</span>
