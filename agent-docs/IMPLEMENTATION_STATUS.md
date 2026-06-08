@@ -617,3 +617,21 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 4. **订单编辑页新增客户选择**：`orders/form` 补上客户下拉，Controller validation 和 update payload 同步增加 `customer_id`
 
 **测试：** 7/7 通过。
+
+### 2026-06-09（第8轮）：打印版本回滚与Git锚点
+
+**背景：** 此前尝试过 dompdf/spatie-laravel-pdf 自动生成 PDF 方案和 PhpSpreadsheet Excel 导出方案，均因样式/排版问题不可用。
+
+**最终方案确定：** 保持纯 HTML 打印预览 + 浏览器手动 Ctrl+P 打印 PDF。
+
+**回滚操作：**
+- `print-document.blade.php` 回滚到 git HEAD（commit `8a7666b`），恢复稳定 A4 打印样式
+- Controller 保留 `downloadExcel` 和 `downloadPdf` 方法（`bak-20260609-excel` 版本），路由保留 `excel` 和 `pdf`
+- 编辑页 UI 优化（`form.blade.php`、`item-row.blade.php`）保持不变
+
+**Git 锚点：**
+- Commit: `d609891` — "snapshot: stable HTML print version after Excel/PDF rollback"
+- Tag: `print-stable-20260609`
+- 用途：如需恢复打印样式，可通过此 tag 快速还原
+
+**结论：** 该版本打印预览正常、单据类型切换联动正常、编辑页 UI 优化保留。

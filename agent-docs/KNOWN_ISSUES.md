@@ -190,3 +190,55 @@ Laravel mass assignment 保护会**静默丢弃**所有未在 `$fillable` 中声
 4. 确认后运行 `AdminCrmPagesTest` 验证
 
 **高频遗漏场景：** 新增 migration 列 + 更新 Controller + 更新 View，但忘了加 Model `$fillable`。涉及 CRM 模块时尤其容易发生。
+
+### 15. PDF/Excel 导出方案与 HTML 打印预览的取舍
+
+**已尝试方案：**
+1. `spatie/laravel-pdf`（dompdf 后端）：生成的 PDF 排版严重错位，A4 打印样式无法直接转为 PDF 渲染
+2. `PhpSpreadsheet` Excel 导出：可成功导出 .xlsx，但样式与 HTML 差距大，用户期望表格化的布局
+3. 纯 HTML 打印预览 + 浏览器手动打印：唯一的稳定方案
+
+**当前状态：** 保留 `downloadExcel` 和 `downloadPdf` 方法及路由，但前端无对应按钮入口。纯 HTML 打印预览为最终方案。
+
+**关键约束：**
+- `print-document.blade.php` 是打印预览的核心共享组件，CSS 重写风险极高
+- 打印样式需兼容 A4 尺寸（210mm × 297mm），修改 CSS 变量可能导致页码断裂
+- 切换单据类型（quotation / proforma_invoice / invoice / packing_list / contract）依赖该组件的 CSS 一致性
+
+**恢复方法：**
+```bash
+cd /Users/leo/Desktop/GEOFlow
+git checkout print-stable-20260609 -- resources/views/admin/crm/quotes/partials/print-document.blade.php
+docker cp resources/views/admin/crm/quotes/partials/print-document.blade.php geoflow-app:/var/www/html/resources/views/admin/crm/quotes/partials/print-document.blade.php
+docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh -c 'cd /var/www/html && php artisan optimize:clear'
+```
+
+### 16. print-document.blade.php CSS 重构导致单据类型切换样式断裂
+
+**症状：** 修改 `print-document.blade.php` 的 CSS 后，切换单据类型（如从报价单改为发票）时页面的 A4 格式、面板布局、表格样式全部消失。
+
+**根因：** `print-document.blade.php` 被所有 5 种打印模板（print-quotation、print-proforma-invoice、print-invoice、print-packing-list、print-contract）共享引用。CSS 变量重命名（如 `var(--text)` → 硬编码颜色）和类名重构（`.summary-wrap` → 新结构）会导致不同模板因条件渲染路径不同而产生样式断裂。
+
+**教训：** 修改此文件前必须先 git commit 当前稳定版本。修改后必须逐一测试所有 5 种单据类型的打印预览。如出问题，通过 `print-stable-20260609` tag 回滚。
+
+### 17. Controller 回滚后需同步清除 Laravel 层叠缓存
+
+**症状：** 回滚 Controller 或 Blade 文件后，页面行为仍是旧代码。
+
+**完整清除步骤（必须按顺序，缺一不可）：**
+```bash
+docker cp <file> geoflow-app:/var/www/html/<path>
+docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh -c 'cd /var/www/html && php artisan optimize:clear'
+```
+
+仅 `view:clear` 不够，必须 `optimize:clear`（同时清除 config/routes/views/cache/compiled）。另外注意 OPcache 问题（见 Known Issue #13）。
+
+### 18. 不要尝试在 print-document.blade.php 中引入新的 CSS 框架或大规模样式重写
+
+**原因：**
+- 该文件服务于打印场景，A4 纸张 210mm 宽度固定
+- 打印媒体查询与屏幕媒体查询行为不同
+- Tailwind print 变体在此场景下不稳定
+- 5 种单据类型的条件渲染路径交叉复杂
+
+**安全做法：** 只做局部微调（颜色、间距、字号），不做结构性 CSS 重写。任何 CSS 改动后必须逐一验证 5 种打印模板。
