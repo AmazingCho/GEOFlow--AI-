@@ -460,8 +460,8 @@ class CrmQuoteController extends Controller
             'buyer_contact' => trim((string) ($payload['buyer_contact'] ?? '')) ?: $customerDefaults['buyer_contact'],
             'buyer_company' => trim((string) ($payload['buyer_company'] ?? '')) ?: $customerDefaults['buyer_company'],
             'buyer_phone' => trim((string) ($payload['buyer_phone'] ?? '')) ?: $customerDefaults['buyer_phone'],
-            'buyer_email' => trim((string) ($payload['buyer_email'] ?? '')),
-            'buyer_address' => trim((string) ($payload['buyer_address'] ?? '')),
+            'buyer_email' => trim((string) ($payload['buyer_email'] ?? '')) ?: $customerDefaults['buyer_email'],
+            'buyer_address' => trim((string) ($payload['buyer_address'] ?? '')) ?: $customerDefaults['buyer_address'],
             'buyer_country' => trim((string) ($payload['buyer_country'] ?? '')) ?: $customerDefaults['buyer_country'],
             'document_language' => (string) ($payload['document_language'] ?? 'en') ?: 'en',
             'currency' => strtoupper(trim((string) ($payload['currency'] ?? 'USD'))) ?: 'USD',
@@ -713,6 +713,7 @@ class CrmQuoteController extends Controller
             'buyer_country' => (string) ($customer?->country ?? ''),
             'buyer_contact' => (string) ($customer?->contact_person ?? ''),
             'buyer_address' => (string) ($customer?->address ?? ''),
+            'buyer_email' => (string) ($customer?->email ?? ''),
         ];
     }
 
