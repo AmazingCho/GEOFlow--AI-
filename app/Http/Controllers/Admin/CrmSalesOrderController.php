@@ -98,7 +98,7 @@ class CrmSalesOrderController extends Controller
     public function show(int $orderId): View
     {
         $order = CrmSalesOrder::query()
-            ->with(['collection', 'customer', 'quote', 'inquiry', 'items.entity', 'tickets'])
+            ->with(['collection', 'customer', 'quote', 'inquiry.customer.followUps.inquiry', 'items.entity', 'tickets'])
             ->whereKey($orderId)
             ->firstOrFail();
 

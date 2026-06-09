@@ -38,9 +38,8 @@ return static function (array $welcomeState): array {
                 'switch_label' => 'English',
                 'close' => '关闭',
                 'links_label' => '建议先查看更新日志，再决定是否现在升级。',
-                'author_link' => '作者 X 主页',
-                'github_link' => '项目 GitHub',
-                'changelog_link' => '更新日志',
+                'github_link' => '项目仓库',
+                'original_repo_link' => '原仓库地址',
             ],
             'letter' => [
                 'title' => 'GEOFlow 有新版本可更新',
@@ -76,9 +75,8 @@ return static function (array $welcomeState): array {
                 'switch_label' => '中文',
                 'close' => 'Close',
                 'links_label' => 'Review the changelog first, then decide when to upgrade.',
-                'author_link' => 'Author X Profile',
-                'github_link' => 'Project GitHub',
-                'changelog_link' => 'Changelog',
+                'github_link' => 'Project Repo',
+                'original_repo_link' => 'Original Repo',
             ],
             'letter' => [
                 'title' => 'A new GEOFlow version is available',

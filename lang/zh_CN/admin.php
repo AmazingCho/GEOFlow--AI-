@@ -362,10 +362,9 @@ return [
     'footer' => [
         'copyright' => '© 2026 GEOFlow',
         'version' => '版本 :version',
-        'author' => '作者：姚金刚',
-        'author_x_profile' => '作者X主页',
+        'author' => '作者：Leo',
         'project_github_link' => '项目GitHub地址',
-        'changelog_link' => '更新日志',
+        'original_repo_link' => '原仓库地址',
         'project_intro_link' => '项目说明',
     ],
     'login' => [

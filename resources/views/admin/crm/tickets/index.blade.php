@@ -76,7 +76,7 @@
                                 <tr>
                                     <td class="px-6 py-4">
                                         <div class="font-semibold text-gray-900">{{ $ticket->title }}</div>
-                                        <div class="mt-1 text-sm text-gray-600">{{ $ticket->customer?->company_name ?? '未关联客户' }} · {{ $ticket->collection?->name ?? '未指定' }} · 负责人：{{ $ticket->owner ?: '未指定' }}</div>
+                                        <div class="mt-1 text-sm text-gray-600">{{ $ticket->customer?->contact_person ?: $ticket->customer?->company_name ?? '未关联客户' }} · {{ $ticket->collection?->name ?? '未指定' }} · 负责人：{{ $ticket->owner ?: '未指定' }}</div>
                                         <div class="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{{ $ticket->issue_description ?: '暂无问题描述' }}</div>
                                     </td>
                                     <td class="px-6 py-4 text-sm text-gray-600">

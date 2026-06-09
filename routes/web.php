@@ -180,7 +180,10 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('{inquiryId}/edit', [CrmInquiryController::class, 'edit'])->name('edit')->whereNumber('inquiryId');
                 Route::put('{inquiryId}', [CrmInquiryController::class, 'update'])->name('update')->whereNumber('inquiryId');
                 Route::post('{inquiryId}/delete', [CrmInquiryController::class, 'destroy'])->name('delete')->whereNumber('inquiryId');
+                Route::post('{inquiryId}/follow-ups', [CrmInquiryController::class, 'storeFollowUp'])->name('follow-ups.store')->whereNumber('inquiryId');
             });
+
+            Route::post('follow-ups/{followUpId}/delete', [CrmInquiryController::class, 'destroyFollowUp'])->name('follow-ups.delete')->whereNumber('followUpId');
 
             Route::prefix('quotes')->name('quotes.')->group(function () {
                 Route::get('/', [CrmQuoteController::class, 'index'])->name('index');

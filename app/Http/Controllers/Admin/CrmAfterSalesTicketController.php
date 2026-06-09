@@ -115,7 +115,7 @@ class CrmAfterSalesTicketController extends Controller
     public function show(int $ticketId): View
     {
         $ticket = CrmAfterSalesTicket::query()
-            ->with(['collection', 'customer', 'order', 'entity', 'knowledgeBases', 'cases'])
+            ->with(['collection', 'customer', 'order.inquiry.customer.followUps.inquiry', 'entity', 'knowledgeBases', 'cases'])
             ->whereKey($ticketId)
             ->firstOrFail();
 

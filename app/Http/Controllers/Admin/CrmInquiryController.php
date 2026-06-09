@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CaseRecord;
 use App\Models\CrmCustomer;
+use App\Models\CrmFollowUp;
 use App\Models\CrmInquiry;
 use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
@@ -117,7 +118,7 @@ class CrmInquiryController extends Controller
     public function show(int $inquiryId): View
     {
         $inquiry = CrmInquiry::query()
-            ->with(['collection', 'customer', 'entities.collection', 'knowledgeBases.collection', 'cases.collection', 'tags', 'quotes', 'salesOrders'])
+            ->with(['collection', 'customer.followUps.inquiry', 'entities.collection', 'knowledgeBases.collection', 'cases.collection', 'tags', 'quotes', 'salesOrders'])
             ->whereKey($inquiryId)
             ->firstOrFail();
 
@@ -444,4 +445,36 @@ class CrmInquiryController extends Controller
             ])
             ->all();
     }
+
+    public function storeFollowUp(Request $request, int $inquiryId): RedirectResponse
+    {
+        $inquiry = CrmInquiry::query()->whereKey($inquiryId)->firstOrFail();
+        $payload = $request->validate([
+            'followup_type' => ['nullable', 'string', 'max:80'],
+            'content' => ['required', 'string', 'max:10000'],
+            'next_action' => ['nullable', 'string', 'max:5000'],
+            'next_followup_at' => ['nullable', 'date'],
+            'owner' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'string', Rule::in(['open', 'done', 'paused'])],
+        ]);
+        CrmFollowUp::query()->create([
+            'customer_id' => (int) $inquiry->customer_id,
+            'inquiry_id' => (int) $inquiry->id,
+            'followup_type' => trim((string) ($payload['followup_type'] ?? '')),
+            'content' => trim((string) $payload['content']),
+            'next_action' => trim((string) ($payload['next_action'] ?? '')),
+            'next_followup_at' => $payload['next_followup_at'] ?? null,
+            'owner' => trim((string) ($payload['owner'] ?? $inquiry->owner ?? '')),
+            'status' => (string) ($payload['status'] ?? 'open'),
+        ]);
+        return back()->with('message', '跟进记录已添加');
+    }
+
+    public function destroyFollowUp(int $followUpId): RedirectResponse
+    {
+        CrmFollowUp::query()->whereKey($followUpId)->firstOrFail()->delete();
+        return back()->with('message', '跟进记录已删除');
+    }
 }
+
+

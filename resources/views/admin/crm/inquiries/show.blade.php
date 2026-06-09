@@ -110,6 +110,26 @@
                         @endforelse
                     </div>
                 </section>
+                <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="message-square-text" class="mr-2 inline-block h-4 w-4 text-gray-500"></i>跟进记录</h2>
+                    <form method="POST" action="{{ route('admin.crm.inquiries.follow-ups.store', ['inquiryId' => (int) $inquiry->id]) }}" class="mt-4 space-y-3">
+                        @csrf
+                        @include('admin.crm.partials._markdown-editor', ['fieldName' => 'content', 'rows' => 4, 'placeholder' => '跟进内容（支持 Markdown）'])
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <input type="text" name="next_action" placeholder="下一步动作（可选）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <input type="datetime-local" name="next_followup_at" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        </div>
+                        <input type="hidden" name="owner" value="{{ $inquiry->assigned_to ?? '' }}">
+                        <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">添加跟进</button>
+                    </form>
+                    <div class="mt-5 space-y-3">
+                        @forelse ($inquiry->customer?->followUps ?? [] as $followUp)
+                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true])
+                        @empty
+                            <div class="text-sm text-gray-500">暂无跟进记录</div>
+                        @endforelse
+                    </div>
+                </section>
             </div>
 
             <aside class="space-y-6">
@@ -162,6 +182,8 @@
                         <div class="mt-4 whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">{{ $inquiry->notes }}</div>
                     @endif
                 </section>
+
+
             </aside>
         </div>
     </div>

@@ -153,7 +153,7 @@ class CrmQuoteController extends Controller
     public function show(int $quoteId): View
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'items.entity', 'items.image'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
@@ -266,7 +266,7 @@ class CrmQuoteController extends Controller
     public function print(int $quoteId, Request $request): View
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'items.entity', 'items.image'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
@@ -297,7 +297,7 @@ class CrmQuoteController extends Controller
         public function downloadPdf(int $quoteId, Request $request)
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'items.entity', 'items.image'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
@@ -889,7 +889,7 @@ class CrmQuoteController extends Controller
     public function downloadExcel(int $quoteId, Request $request)
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'items.entity', 'items.image'])
             ->whereKey($quoteId)
             ->firstOrFail();
 

@@ -124,6 +124,17 @@
                 </div>
             </section>
 
+            @if ($quote->inquiry?->customer?->followUps?->isNotEmpty())
+                <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="message-square-text" class="mr-2 inline-block h-4 w-4 text-gray-500"></i>跟进记录</h2>
+                    <div class="mt-4 space-y-3">
+                        @foreach ($quote->inquiry->customer->followUps as $followUp)
+                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true])
+                        @endforeach
+                    </div>
+                </section>
+                @endif
+
             <aside class="space-y-6">
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">基础信息</h2>

@@ -36,12 +36,8 @@ class AdminWelcomeModalService
                 'dismissUrl' => route('admin.welcome.dismiss', [], false),
                 'csrfToken' => csrf_token(),
                 'links' => [
-                    'x' => 'https://x.com/yaojingang',
-                    'github' => 'https://github.com/yaojingang/GEOFlow',
-                    'changelog' => [
-                        'zh-CN' => 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG.md',
-                        'en' => 'https://github.com/yaojingang/GEOFlow/blob/main/docs/CHANGELOG_en.md',
-                    ],
+                    'github' => 'https://github.com/AmazingCho/GEOFlow--AI-',
+                    'original_repo' => 'https://github.com/yaojingang/GEOFlow',
                 ],
             ],
         ];
@@ -63,14 +59,7 @@ class AdminWelcomeModalService
         $introVersion = (string) config('geoflow.welcome_intro_version', '2.0');
         $updateState = $this->updateMetadataService->fetchState($introVersion);
 
-        if (! empty($updateState['is_update_available']) && empty($updateState['is_ignored'])) {
-            return [
-                'mode' => 'update',
-                'version' => 'update:'.(string) ($updateState['latest_version'] ?? ''),
-                'update' => $updateState,
-            ];
-        }
-
+        // Always use intro mode for this customized deployment
         return [
             'mode' => 'intro',
             'version' => 'intro:'.$introVersion,

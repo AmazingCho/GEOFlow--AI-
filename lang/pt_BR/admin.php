@@ -362,10 +362,8 @@ return array_replace_recursive($base, [
     'footer' => [
         'copyright' => '© 2026 GEOFlow',
         'version' => 'Versão :version',
-        'author' => 'Autor: Yao Jingang',
-        'author_x_profile' => 'Perfil X do autor',
+        'author' => 'Autor: Leo',
         'project_github_link' => 'GitHub do projeto',
-        'changelog_link' => 'Registro de alterações',
         'project_intro_link' => 'Introdução do projeto',
     ],
     'login' => [
