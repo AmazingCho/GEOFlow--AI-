@@ -42,8 +42,7 @@
 
         @include('admin.crm.partials.nav', ['currentCrmTab' => 'customers'])
 
-        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <div class="space-y-6">
+        <div class="space-y-6">
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">基础信息</h2>
                     <dl class="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
@@ -151,11 +150,9 @@
                         @endforelse
                     </div>
                 </section>
+            <div class="space-y-6">
+
             </div>
-
-            <aside class="space-y-6">
-
-            </aside>
         </div>
     </div>
 @endsection
