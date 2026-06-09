@@ -242,3 +242,29 @@ docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh 
 - 5 种单据类型的条件渲染路径交叉复杂
 
 **安全做法：** 只做局部微调（颜色、间距、字号），不做结构性 CSS 重写。任何 CSS 改动后必须逐一验证 5 种打印模板。
+
+### 19. _markdown-editor 组件不能用 x-cloak
+
+**原因：** 项目没有定义 `[x-cloak] { display: none !important; }` CSS 规则。
+
+**症状：** 预览区和源码区在 Alpine 初始化前短暂裸显。
+
+**解决方案：** 组件中三个模式区（write/code/preview）用内联 `style="display:block"` 或 `style="display:none"` 设置初始可见性，Alpine 的 `x-show` 加载后接管控制。
+
+### 20. 跟进记录删除路由必须在 CRM 组公用层级
+
+**原因：** 如果放在 `inquiries` 子路由组中，路径为 `crm/inquiries/follow-ups/{id}/delete`，路由名为 `admin.crm.inquiries.follow-ups.delete`，而不是预期的 `admin.crm.follow-ups.delete`。
+
+**正确位置：** 在 CRM 组层级直接定义：`Route::post('follow-ups/{followUpId}/delete', ...)`。当前已在正确位置（`routes/web.php` 约 186 行）。
+
+### 21. 跟进记录组件必须用 @include 引入而非内联 HTML
+
+**原因：** 各详情页如果直接内联渲染跟进记录（`@forelse ... @include ... @endforelse` 但 inline HTML），删除按钮等组件更新不会生效。
+
+**正确做法：** 所有 5 个详情页的跟进记录列表使用 `@include('admin.crm.partials._follow-up-item', [...])`。
+
+### 22. 多页面 sed 批量替换 Blade 模板易导致变量丢失
+
+**原因：** Python 正则匹配 Blade 变量（`$xxx->yyy`）时容易出现转义问题，导致 `@forelse ($inquiry->customer?->followUps ?? [] as $followUp)` 等语句被截断。
+
+**解决方案：** 使用精确字符串替换（完整 block match），而非正则匹配。出问题后从 `git checkout HEAD -- <file>` 恢复并重新精确替换。

@@ -635,3 +635,51 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 - 用途：如需恢复打印样式，可通过此 tag 快速还原
 
 **结论：** 该版本打印预览正常、单据类型切换联动正常、编辑页 UI 优化保留。
+
+### 2026-06-09（第9轮）：跟进记录多端展示 + Markdown编辑器 + 布局优化
+
+**背景：** 跟进记录入口只在客户详情页，应围绕"询盘→报价→订单→售后"线索链多端展示。
+
+**改动内容：**
+
+1. **跟进记录多端展示：**
+   - 询盘详情页：新增跟进记录表单 + 列表，`inquiry_id` 自动填入
+   - 客户详情页：表单增加询盘下拉；列表增加来源标签
+   - 报价详情页：通过关联询盘→客户展示跟进 timeline（只读）
+   - 订单详情页：通过关联询盘→客户展示跟进 timeline（只读）
+   - 售后详情页：通过关联订单→询盘→客户展示跟进 timeline（只读）
+   - 共用组件 `_follow-up-item.blade.php` 统一渲染
+
+2. **Markdown 编辑器：**
+   - 新增 `_markdown-editor.blade.php` 组件，三态切换（编辑/预览/源码）
+   - 工具栏支持加粗、斜体、标题、链接、行内代码、列表
+   - 跟进表单 textarea 全部替换为 Markdown 编辑器
+   - 列表渲染使用 `Str::markdown()` 解析
+
+3. **跟进记录删除功能：**
+   - 路由 `POST crm/follow-ups/{followUpId}/delete`
+   - `CrmInquiryController::destroyFollowUp()` 方法
+   - `_follow-up-item` 组件 hover 显示删除按钮
+
+4. **布局调整：**
+   - 跟进记录模块从右侧 aside 移到左侧主内容区（5个页面）
+   - 独立占宽主列，适合较长的跟进内容阅读
+
+5. **列表页修复：**
+   - 订单列表页和售后列表页客户信息从 `company_name` 改为 `contact_person ?: company_name`
+
+**Controller 改动：**
+- `CrmInquiryController`：新增 `storeFollowUp()`、`destroyFollowUp()`，show 方法加载 `customer.followUps.inquiry`
+- `CrmQuoteController`：show 方法加载 `inquiry.customer.followUps.inquiry`
+- `CrmSalesOrderController`：show 方法加载 `inquiry.customer.followUps.inquiry`
+- `CrmAfterSalesTicketController`：show 方法加载 `order.inquiry.customer.followUps.inquiry`
+
+**新增文件：**
+- `resources/views/admin/crm/partials/_markdown-editor.blade.php`
+- `resources/views/admin/crm/partials/_follow-up-item.blade.php`
+- `resources/views/admin/crm/partials/_follow-up-section.blade.php`（未使用，可清理）
+
+**注意事项：**
+- `admin.crm.follow-ups.delete` 路由在 CRM 组公用层级，不在 any 子组内
+- `_markdown-editor` 组件用内联 `style="display:none"` 而非 `x-cloak`（项目未定义对应 CSS）
+- 跟进记录通过 `customer.followUps` 加载，跨询盘共享同一客户的所有跟进
