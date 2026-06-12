@@ -7,9 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CrmInquiry extends Model
 {
+    use SoftDeletes;
     protected $table = 'crm_inquiries';
 
     protected $fillable = [
@@ -84,9 +86,12 @@ class CrmInquiry extends Model
         return $this->hasMany(CrmSalesOrder::class, 'inquiry_id');
     }
 
+    public function opportunities(): HasMany { return $this->hasMany(CrmOpportunity::class, 'source_inquiry_id'); }
+    public function crmTasks(): HasMany { return $this->hasMany(CrmTask::class, 'inquiry_id'); }
+
     protected static function booted(): void
     {
-        static::deleting(static function (CrmInquiry $inquiry): void {
+        static::forceDeleting(static function (CrmInquiry $inquiry): void {
             $inquiry->entities()->detach();
             $inquiry->knowledgeBases()->detach();
             $inquiry->cases()->detach();

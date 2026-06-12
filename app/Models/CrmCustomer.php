@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CrmCustomer extends Model
 {
+    use SoftDeletes;
     protected $table = 'crm_customers';
 
     protected $fillable = [
@@ -67,4 +69,8 @@ class CrmCustomer extends Model
     {
         return $this->hasMany(CrmAfterSalesTicket::class, 'customer_id');
     }
+
+    public function contacts(): HasMany { return $this->hasMany(CrmCustomerContact::class, 'customer_id')->orderByDesc('is_primary')->orderBy('name'); }
+    public function opportunities(): HasMany { return $this->hasMany(CrmOpportunity::class, 'customer_id'); }
+    public function crmTasks(): HasMany { return $this->hasMany(CrmTask::class, 'customer_id'); }
 }

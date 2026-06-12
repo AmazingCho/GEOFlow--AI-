@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
 
 class CrmAfterSalesTicket extends Model
 {
+    use SoftDeletes;
     protected $table = 'crm_after_sales_tickets';
 
     protected $fillable = [
@@ -72,7 +74,7 @@ class CrmAfterSalesTicket extends Model
 
     protected static function booted(): void
     {
-        static::deleting(static function (CrmAfterSalesTicket $ticket): void {
+        static::forceDeleting(static function (CrmAfterSalesTicket $ticket): void {
             DB::table('crm_ticket_knowledge_base')->where('ticket_id', (int) $ticket->id)->delete();
             DB::table('crm_ticket_case_record')->where('ticket_id', (int) $ticket->id)->delete();
         });

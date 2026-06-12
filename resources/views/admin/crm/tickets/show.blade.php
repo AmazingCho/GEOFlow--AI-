@@ -33,7 +33,7 @@
                     <i data-lucide="pencil" class="mr-2 h-4 w-4"></i>
                     编辑
                 </a>
-                <form method="POST" action="{{ route('admin.crm.tickets.delete', ['ticketId' => (int) $ticket->id]) }}" onsubmit="return confirm('确认删除此售后工单？')">
+                <form method="POST" action="{{ route('admin.crm.tickets.delete', ['ticketId' => (int) $ticket->id]) }}" onsubmit="return confirm('确认归档此售后工单？')">
                     @csrf
                     <button type="submit" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">
                         <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>

@@ -118,7 +118,7 @@ class CrmInquiryController extends Controller
     public function show(int $inquiryId): View
     {
         $inquiry = CrmInquiry::query()
-            ->with(['collection', 'customer.followUps.inquiry', 'entities.collection', 'knowledgeBases.collection', 'cases.collection', 'tags', 'quotes', 'salesOrders'])
+            ->with(['collection', 'customer.contacts', 'followUps.inquiry', 'crmTasks.assignee', 'opportunities', 'entities.collection', 'knowledgeBases.collection', 'cases.collection', 'tags', 'quotes', 'salesOrders'])
             ->whereKey($inquiryId)
             ->firstOrFail();
 
@@ -183,7 +183,7 @@ class CrmInquiryController extends Controller
 
         return redirect()
             ->route('admin.crm.inquiries.index')
-            ->with('message', '询盘已删除');
+            ->with('message', '询盘已归档，关联商业记录已保留');
     }
 
     public function analyze(Request $request): JsonResponse
@@ -476,5 +476,4 @@ class CrmInquiryController extends Controller
         return back()->with('message', '跟进记录已删除');
     }
 }
-
 

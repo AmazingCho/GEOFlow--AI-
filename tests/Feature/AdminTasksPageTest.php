@@ -156,7 +156,7 @@ class AdminTasksPageTest extends TestCase
         Queue::assertPushed(ProcessGeoFlowTaskJob::class);
     }
 
-    public function test_task_can_be_created_without_collection_when_unassigned_option_is_selected(): void
+    public function test_task_creation_requires_collection(): void
     {
         $admin = Admin::query()->create([
             'username' => 'tasks_without_collection',
@@ -202,11 +202,10 @@ class AdminTasksPageTest extends TestCase
                 'category_mode' => 'fixed',
                 'model_selection_mode' => 'fixed',
             ])
-            ->assertRedirect(route('admin.tasks.index'));
+            ->assertSessionHasErrors('collection_id');
 
-        $this->assertDatabaseHas('tasks', [
+        $this->assertDatabaseMissing('tasks', [
             'name' => '未指定 Collection 任务',
-            'collection_id' => null,
         ]);
     }
 

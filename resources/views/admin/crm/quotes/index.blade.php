@@ -88,7 +88,7 @@
                                             </form>
                                             <a href="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id]) }}" target="_blank" class="inline-flex items-center rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><i data-lucide="printer" class="mr-1 h-4 w-4"></i>打印</a>
                                             <a href="{{ route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]) }}" class="inline-flex items-center rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><i data-lucide="pencil" class="mr-1 h-4 w-4"></i>编辑</a>
-                                            <form method="POST" action="{{ route('admin.crm.quotes.delete', ['quoteId' => (int) $quote->id]) }}" onsubmit="return confirm('确认删除此单据？')">
+                                            <form method="POST" action="{{ route('admin.crm.quotes.delete', ['quoteId' => (int) $quote->id]) }}" onsubmit="return confirm('确认归档此单据？')">
                                                 @csrf
                                                 <button type="submit" class="inline-flex items-center rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"><i data-lucide="trash-2" class="mr-1 h-3.5 w-3.5"></i>删除</button>
                                             </form>

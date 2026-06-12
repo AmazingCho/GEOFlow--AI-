@@ -187,4 +187,11 @@ final class CrmOptions
             })
             ->all();
     }
+
+    /** @return array<int, string> */
+    public static function employeeOptionsById(): array
+    {
+        return Admin::query()->where('status', 'active')->orderBy('display_name')->orderBy('username')->get(['id','username','display_name'])
+            ->mapWithKeys(static fn (Admin $admin): array => [(int) $admin->id => trim((string) ($admin->display_name ?: $admin->username))])->all();
+    }
 }

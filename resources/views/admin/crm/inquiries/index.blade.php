@@ -102,7 +102,7 @@
                                             <a href="{{ route('admin.crm.inquiries.show', ['inquiryId' => (int) $inquiry->id]) }}" class="inline-flex items-center rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><i data-lucide="eye" class="mr-1 h-4 w-4"></i>查看</a>
                                             <a href="{{ route('admin.crm.inquiries.edit', ['inquiryId' => (int) $inquiry->id]) }}" class="inline-flex items-center rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><i data-lucide="pencil" class="mr-1 h-4 w-4"></i>编辑</a>
                                             <a href="{{ route('admin.crm.quotes.create', ['inquiry_id' => (int) $inquiry->id]) }}" class="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100"><i data-lucide="file-plus-2" class="mr-1 h-4 w-4"></i>报价</a>
-                                            <form method="POST" action="{{ route('admin.crm.inquiries.delete', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm('确认删除此询盘？')">
+                                            <form method="POST" action="{{ route('admin.crm.inquiries.delete', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm('确认归档此询盘？关联商业记录将保留。')">
                                                 @csrf
                                                 <button type="submit" class="inline-flex items-center rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"><i data-lucide="trash-2" class="mr-1 h-3.5 w-3.5"></i>删除</button>
                                             </form>

@@ -33,15 +33,18 @@
                     <i data-lucide="file-plus-2" class="mr-2 h-4 w-4"></i>
                     生成报价
                 </a>
+                @if($inquiry->opportunities->isEmpty())
+                <a href="{{ route('admin.crm.opportunities.create', ['inquiry_id'=>(int)$inquiry->id]) }}" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"><i data-lucide="briefcase-business" class="mr-2 h-4 w-4"></i>转为商机</a>
+                @endif
                 <a href="{{ route('admin.crm.inquiries.edit', ['inquiryId' => (int) $inquiry->id]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     <i data-lucide="pencil" class="mr-2 h-4 w-4"></i>
                     编辑
                 </a>
-                <form method="POST" action="{{ route('admin.crm.inquiries.delete', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm('确认删除此询盘？')">
+                <form method="POST" action="{{ route('admin.crm.inquiries.delete', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm('归档后询盘不再出现在默认列表，关联单据仍会保留。确认归档？')">
                     @csrf
                     <button type="submit" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">
                         <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
-                        删除
+                        归档
                     </button>
                 </form>
             </div>
@@ -111,20 +114,20 @@
                     </div>
                 </section>
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="message-square-text" class="mr-2 inline-block h-4 w-4 text-gray-500"></i>跟进记录</h2>
+                    <h2 class="text-base font-semibold text-gray-900"><i data-lucide="message-square-text" class="mr-2 inline-block h-4 w-4 text-gray-500"></i>活动记录</h2>
+                    <p class="mt-1 text-sm text-gray-500">记录已经发生的电话、邮件、会议或沟通结果。</p>
                     <form method="POST" action="{{ route('admin.crm.inquiries.follow-ups.store', ['inquiryId' => (int) $inquiry->id]) }}" class="mt-4 space-y-3">
                         @csrf
                         @include('admin.crm.partials._markdown-editor', ['fieldName' => 'content', 'rows' => 4, 'placeholder' => '跟进内容（支持 Markdown）'])
                         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <input type="text" name="next_action" placeholder="下一步动作（可选）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <input type="datetime-local" name="next_followup_at" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <input type="text" name="followup_type" placeholder="活动类型：电话 / 邮件 / 会议" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                         </div>
                         <input type="hidden" name="owner" value="{{ $inquiry->assigned_to ?? '' }}">
-                        <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">添加跟进</button>
+                        <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">记录活动</button>
                     </form>
                     <div class="mt-5 space-y-3">
-                        @forelse ($inquiry->customer?->followUps ?? [] as $followUp)
-                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true])
+                        @forelse ($inquiry->followUps as $followUp)
+                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => false])
                         @empty
                             <div class="text-sm text-gray-500">暂无跟进记录</div>
                         @endforelse
@@ -133,6 +136,7 @@
             </div>
 
             <aside class="space-y-6">
+                <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200"><h2 class="text-base font-semibold text-gray-900">下一步待办</h2><p class="mt-1 text-sm text-gray-500">需要在未来完成的动作单独设定截止时间。</p><div class="mt-4">@include('admin.crm.partials.task-form',['customer_id'=>$inquiry->customer_id,'inquiry_id'=>$inquiry->id])</div><div class="mt-5 divide-y divide-gray-100 border-t border-gray-100">@forelse($inquiry->crmTasks as $task)@include('admin.crm.partials.task-row',['task'=>$task])@empty<div class="py-5 text-sm text-gray-500">暂无待办</div>@endforelse</div></section>
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">推荐引用资料</h2>
                     <div class="mt-4 space-y-5">

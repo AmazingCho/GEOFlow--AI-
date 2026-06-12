@@ -154,8 +154,6 @@
                 </div>
             </section>
 
-                </div>
-            </section>
 
             <section class="{{ $sectionClass }}">
                 <div class="-mx-5 -mt-5 mb-4 flex flex-col gap-3 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3 md:flex-row md:items-center md:justify-between">

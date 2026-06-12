@@ -88,6 +88,10 @@
             ->all();
     };
     $crossCollectionMode = old('cross_collection_mode', (string) ($taskForm['cross_collection_mode'] ?? '0')) === '1';
+    $hasImageConfiguration = (string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) !== ''
+        || count($selectedImageTagFilters) > 0;
+    $hasDistributionConfiguration = count($selectedDistributionChannelIds) > 0
+        || $publishScope !== 'local_and_distribution';
     $fieldClass = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
     $compactFieldClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
 @endphp
@@ -119,34 +123,45 @@
                     </div>
                 </div>
             @else
+            <div class="mb-5 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex flex-wrap items-center gap-3 text-xs font-medium">
+                    <span class="inline-flex items-center gap-1.5 text-red-700"><span class="h-2 w-2 rounded-full bg-red-500"></span>必填</span>
+                    <span class="inline-flex items-center gap-1.5 text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>推荐</span>
+                    <span class="inline-flex items-center gap-1.5 text-gray-600"><span class="h-2 w-2 rounded-full bg-gray-400"></span>可选</span>
+                </div>
+                <p class="text-sm text-gray-500">先完成蓝色必填区；素材上下文可提高生成准确度，发布与高级配置可按需展开。</p>
+            </div>
             <form method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="grid grid-cols-1 gap-6 xl:grid-cols-12">
                 @csrf
                 @if ($isEdit)
                     @method('PUT')
                 @endif
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.basic_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.basic_desc') }}</p>
+                <div class="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm xl:col-span-12">
+                    <div class="flex items-start justify-between gap-4 border-b border-blue-200 bg-blue-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">1. {{ $t('task_create.section.basic_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.basic_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">必填</span>
                     </div>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                            <div class="lg:col-span-3">
+                            <div class="order-1 lg:col-span-3">
                                 <label for="task_name" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_name') }} *</label>
                                 <input type="text" name="task_name" id="task_name" required value="{{ old('task_name', (string) ($taskForm['task_name'] ?? '')) }}"
                                        class="{{ $fieldClass }}"
                                        placeholder="{{ $t('task_create.placeholder.task_name') }}">
                             </div>
-                            <div>
+                            <div class="order-2">
                                 @include('admin.partials.collection-select', [
                                     'name' => 'collection_id',
                                     'collectionOptions' => $formOptions['collections'] ?? [],
                                     'selectedId' => old('collection_id', (string) ($taskForm['collection_id'] ?? '')),
                                     'label' => $t('task_create.field.collection'),
-                                    'help' => $t('task_create.help.collection'),
-                                    'required' => false,
-                                    'emptyLabel' => __('admin.collections.option_no_collection'),
+                                    'help' => $t('task_create.help.collection_required'),
+                                    'required' => true,
+                                    'emptyLabel' => '请选择 Collection',
                                     'class' => $fieldClass,
                                 ])
                                 <label class="mt-3 flex items-start gap-2 text-sm text-gray-600">
@@ -157,7 +172,7 @@
                                     </span>
                                 </label>
                             </div>
-                            <div class="lg:col-span-2">
+                            <div class="order-5 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:col-span-2">
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.entities') }}</label>
                                 <div class="mt-1">
                                     @include('admin.partials.entity-selector', [
@@ -169,7 +184,7 @@
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.entities') }}</p>
                             </div>
-                            <div class="lg:col-span-3">
+                            <div class="order-6 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:col-span-3">
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.cases') }}</label>
                                 <div class="mt-1">
                                     @include('admin.partials.option-multi-selector', [
@@ -183,7 +198,7 @@
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.cases') }}</p>
                             </div>
-                            <div class="lg:col-span-2">
+                            <div class="order-3 lg:col-span-2">
                                 <label for="title_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.title_library') }} *</label>
                                 <select name="title_library_id" id="title_library_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_title_library') }}</option>
@@ -194,7 +209,7 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div>
+                            <div class="order-4">
                                 <label for="status" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.task_status') }}</label>
                                 <select name="status" id="status" class="{{ $fieldClass }}">
                                     <option value="active" @selected(old('status', (string) ($taskForm['status'] ?? 'active')) === 'active')>{{ $t('task_create.option.status_active') }}</option>
@@ -205,11 +220,14 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">CRM 来源</h3>
-                        <p class="mt-1 text-sm text-gray-600">可选。用于记录这批文章来自哪个客户、询盘或售后工单，便于后续回溯业务来源。</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-emerald-200 bg-white shadow-sm xl:col-span-12" @if($selectedCrmSourceType !== '') open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-emerald-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">2. CRM 业务来源</h3>
+                            <p class="mt-1 text-sm text-gray-600">推荐在有明确客户、询盘或售后工单时关联，便于回溯业务来源。</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">推荐</span>
+                    </summary>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
                             <div>
@@ -238,16 +256,19 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.content_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.content_desc') }}</p>
+                <div class="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm xl:col-span-12">
+                    <div class="flex items-start justify-between gap-4 border-b border-blue-200 bg-blue-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">3. {{ $t('task_create.section.content_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.content_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">核心必填</span>
                     </div>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 gap-6 lg:grid-cols-4">
-                            <div>
+                            <div class="order-1 lg:col-span-2">
                                 <label for="prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.content_prompt') }} *</label>
                                 <select name="prompt_id" id="prompt_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_prompt') }}</option>
@@ -256,7 +277,7 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div>
+                            <div class="order-3">
                                 <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
                                 <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.no_skill_prompt') }}</option>
@@ -266,7 +287,7 @@
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
                             </div>
-                            <div>
+                            <div class="order-2 lg:col-span-2">
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
                                 <select name="ai_model_id" id="ai_model_id" required class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.select_ai_model') }}</option>
@@ -275,7 +296,7 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div>
+                            <div class="order-4">
                                 <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
                                 <select name="model_selection_mode" id="model_selection_mode" class="{{ $fieldClass }}">
                                     <option value="fixed" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
@@ -283,7 +304,7 @@
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.model_selection_mode') !!}</p>
                             </div>
-                            <div>
+                            <div class="order-5 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
                                 <label for="knowledge_base_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_base') }}</label>
                                 <select name="knowledge_base_id" id="knowledge_base_id" class="{{ $fieldClass }}">
                                     <option value="">{{ $t('task_create.option.no_knowledge_base') }}</option>
@@ -293,7 +314,7 @@
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_base') !!}</p>
                             </div>
-                            <div class="lg:col-span-2">
+                            <div class="order-6 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:col-span-3">
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_tags') }}</label>
                                 <input type="hidden" name="knowledge_tag_filter_present" value="1">
                                 <div class="mt-1">
@@ -309,7 +330,7 @@
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.knowledge_tags') !!}</p>
                             </div>
-                            <div class="lg:col-span-4">
+                            <div class="order-8 lg:col-span-4">
                                 <details class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                                     <summary class="cursor-pointer text-sm font-semibold text-gray-700">{{ $t('task_create.help.controlled_tag_groups_optional') }}</summary>
                                     <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -335,7 +356,7 @@
                                     </div>
                                 </details>
                             </div>
-                            <div>
+                            <div class="order-7">
                                 <label for="author_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.author') }}</label>
                                 <select name="author_id" id="author_id" class="{{ $fieldClass }}">
                                     <option value="0">{{ $t('task_create.option.random_author') }}</option>
@@ -348,11 +369,14 @@
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-6">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.image_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.image_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm xl:col-span-6" @if($hasImageConfiguration) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-gray-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">4. {{ $t('task_create.section.image_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.image_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">可选</span>
+                    </summary>
                     <div class="px-6 py-4">
                         @php($imageCountValue = (string) old('image_count', (string) ($taskForm['image_count'] ?? '1')))
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -397,13 +421,16 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-6">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.publish_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.publish_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-amber-200 bg-white shadow-sm xl:col-span-6">
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-amber-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">5. {{ $t('task_create.section.publish_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.publish_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">按需设置</span>
+                    </summary>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
@@ -422,13 +449,16 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.distribution_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.distribution_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-amber-200 bg-white shadow-sm xl:col-span-12" @if($hasDistributionConfiguration) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-amber-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">6. {{ $t('task_create.section.distribution_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.distribution_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">发布配置</span>
+                    </summary>
                     <div class="px-6 py-4">
                         <fieldset class="mb-5">
                             <legend class="text-sm font-medium text-gray-900">{{ $t('task_create.distribution.scope_title') }}</legend>
@@ -484,13 +514,16 @@
                             <p class="mt-3 text-sm text-gray-500">{{ $t('task_create.distribution.help') }}</p>
                         @endif
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-12">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.seo_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.seo_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm xl:col-span-12">
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-gray-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">7. {{ $t('task_create.section.seo_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.seo_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">高级</span>
+                    </summary>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                             <div>
@@ -511,13 +544,16 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-8">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.category_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.category_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm xl:col-span-8">
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-gray-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">8. {{ $t('task_create.section.category_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.category_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">高级</span>
+                    </summary>
                     @php($categoryMode = (string) old('category_mode', (string) ($taskForm['category_mode'] ?? 'smart')))
                     <div class="px-6 py-4 space-y-4">
                         <div>
@@ -579,13 +615,16 @@
                             <p class="mt-2 text-xs text-gray-500">{{ $t('task_create.preview.categories_count', ['count' => count($formOptions['categories'])]) }}</p>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="bg-white shadow rounded-lg xl:col-span-4">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ $t('task_create.section.advanced_title') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.advanced_desc') }}</p>
-                    </div>
+                <details class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm xl:col-span-4">
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 bg-gray-50 px-6 py-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">9. {{ $t('task_create.section.advanced_title') }}</h3>
+                            <p class="mt-1 text-sm text-gray-600">{{ $t('task_create.section.advanced_desc') }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">高级</span>
+                    </summary>
                     <div class="px-6 py-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
@@ -610,15 +649,21 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="flex justify-end space-x-4 xl:col-span-12">
-                    <a href="{{ route('admin.tasks.index') }}" class="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        {{ __('admin.button.cancel') }}
-                    </a>
-                    <button type="submit" class="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                        {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
-                    </button>
+                <div class="sticky bottom-3 z-30 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur xl:col-span-12 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span data-required-status-dot class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+                        <span data-required-status class="font-medium text-gray-700">正在检查必填项...</span>
+                    </div>
+                    <div class="flex justify-end gap-3">
+                        <a href="{{ route('admin.tasks.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                            {{ __('admin.button.cancel') }}
+                        </a>
+                        <button type="submit" data-task-submit class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+                            {{ $isEdit ? __('admin.task_edit.button.save_changes') : __('admin.button.create_task') }}
+                        </button>
+                    </div>
                 </div>
             </form>
             @endif
@@ -653,10 +698,47 @@
             const publishScopeRadios = document.querySelectorAll('[data-publish-scope-option]');
             const distributionChannelInputs = document.querySelectorAll('[data-distribution-channel-input]');
             const form = document.querySelector('form');
+            const requiredStatus = document.querySelector('[data-required-status]');
+            const requiredStatusDot = document.querySelector('[data-required-status-dot]');
+            const submitButton = document.querySelector('[data-task-submit]');
 
             if (!form) {
                 return;
             }
+
+            const requiredFields = [
+                { id: 'task_name', label: @json($t('task_create.field.task_name')) },
+                { selector: 'select[name="collection_id"]', label: @json($t('task_create.field.collection')) },
+                { id: 'title_library_id', label: @json($t('task_create.field.title_library')) },
+                { id: 'prompt_id', label: @json($t('task_create.field.content_prompt')) },
+                { id: 'ai_model_id', label: @json($t('task_create.field.ai_model')) },
+            ];
+
+            function syncRequiredStatus() {
+                const missing = requiredFields.filter((field) => {
+                    const element = field.id ? document.getElementById(field.id) : document.querySelector(field.selector);
+                    return !String(element?.value || '').trim();
+                });
+
+                if (requiredStatus) {
+                    requiredStatus.textContent = missing.length === 0
+                        ? '必填项已完成，可以创建任务'
+                        : `还需填写 ${missing.length} 项：${missing.map((field) => field.label).join('、')}`;
+                }
+
+                requiredStatusDot?.classList.toggle('bg-emerald-500', missing.length === 0);
+                requiredStatusDot?.classList.toggle('bg-amber-500', missing.length > 0);
+
+                if (submitButton) {
+                    submitButton.disabled = missing.length > 0;
+                }
+            }
+
+            requiredFields.forEach((field) => {
+                const element = field.id ? document.getElementById(field.id) : document.querySelector(field.selector);
+                element?.addEventListener('input', syncRequiredStatus);
+                element?.addEventListener('change', syncRequiredStatus);
+            });
 
             function selectedEntityIds() {
                 return Array.from(document.querySelectorAll('input[name="entity_ids[]"]'))
@@ -935,6 +1017,7 @@
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
+            syncRequiredStatus();
         });
     </script>
 @endpush

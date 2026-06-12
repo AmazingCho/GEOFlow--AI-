@@ -2,6 +2,98 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-12
+
+### Upstream Integration: Article Editor, Template Factory, and First-Deploy Hint
+
+- Integrated the upstream Markdown article editor:
+  - Article create/edit pages now use the Vditor Markdown editor.
+  - Quick insert actions cover headings, quotes, lists, dividers, and images.
+  - Admins can copy the Markdown body directly.
+  - Admins can generate and copy rich-text HTML suitable for WeChat-style editors.
+  - Images uploaded from the editor are stored in the dedicated article-editor image library and linked to the article.
+- Added article editor backend support:
+  - Added `ArticleEditorAssetController`.
+  - Added `WeChatArticleHtmlExporter`, which strips unsafe HTML and applies inline styles to common Markdown elements.
+  - Added editor image upload and WeChat-ready HTML export endpoints.
+- Added the site template replication workflow:
+  - Added the Template Factory entry in Site Settings.
+  - Admins can submit home, listing, and article reference URLs to create a controlled template cloning task.
+  - Reference URL validation blocks localhost, private networks, and reserved addresses.
+  - Generated themes are first written into isolated draft directories instead of overwriting active themes.
+  - The workflow supports previews, feedback iteration, copy-as-new-template, publish, package download, archive, and draft cleanup.
+  - Added `site_theme_replications`, `site_theme_replication_logs`, and `site_theme_replication_versions` tables.
+- Improved distribution logs:
+  - Recent logs on the distribution index are now paginated.
+  - Previous/next links and page jump controls are available.
+- Added a first-deployment login hint:
+  - Before the default admin signs in successfully, the login page can show the initial account hint.
+  - In production environments without a fixed password, the page points admins to the `geoflow-init` initialization log.
+  - The hint can be disabled with `GEOFLOW_INITIAL_ADMIN_HINT_ENABLED=false`.
+- Documentation:
+  - Added `docs/site-template-replication-agent-plan.md`.
+  - Added `功能说明文档/11-文章编辑器与模板复刻使用说明.md`.
+  - Updated README, agent handoff docs, implementation status, and known issues.
+- Verification:
+  - Applied migration `2026_06_10_000000_create_site_theme_replication_tables`.
+  - PHP / Blade / translation syntax checks passed.
+  - Combined regression tests passed for `AdminArticlesPageTest`, `AdminLoginPageTest`, `AdminSiteSettingsPageTest`, `AdminSiteThemeReplicationTest`, and `AdminDistributionPageTest`: `104 passed / 743 assertions`.
+  - Browser smoke check confirmed `http://localhost:18080/admin/site-settings` opens and the Template Factory entry is rendered.
+
+### Skipped Upstream Update
+
+- Skipped the system update center readiness patch because this customized branch does not currently include the full update-center foundation. Integrating only the readiness layer would create a partial feature and unnecessary conflicts. Treat the update center as a separate future phase if needed.
+
+## 2026-06-11
+
+### CRM Workflow and Data Safety Upgrade
+
+- Added a CRM workspace for due tasks, pipeline, active orders, after-sales cases, and recent inquiries.
+- Added an opportunity pipeline with stages, amount, probability, expected close date, next step, and required lost reason.
+- Separated completed interaction history from future CRM tasks; inquiry activity is now scoped to the current inquiry.
+- Added multiple external contacts per customer with a primary-contact designation and backward-compatible legacy-field synchronization.
+- Added soft-delete archiving for customers, inquiries, documents, orders, tickets, and activities so customer archival no longer removes commercial records.
+- Added independent document conversion between quotation, PI, CI, packing list, and contract while retaining the source document link.
+- Unified CRM navigation and detail-page UI, with desktop and mobile visual verification.
+- Expanded CRM regression coverage to 11 tests and 108 assertions.
+
+## 2026-06-09
+
+### CRM Follow-up Timeline and Stable Print Baseline
+
+- Extended follow-up records across the CRM lifecycle:
+  - Customer and inquiry detail pages can create, view, and delete follow-up records.
+  - Document, order, and after-sales detail pages show the related customer's follow-ups as a read-only timeline.
+  - Added shared Markdown editor and follow-up item partials for consistent rendering.
+- Completed the document form section rebuild with consistent collapsible sections for basic, buyer, seller, commercial, items, totals, terms, contract terms, and notes.
+- Established HTML print preview as the current stable output path:
+  - Experimental PDF/Excel backend methods remain without frontend entry points.
+  - Restored the shared A4 styles for all five document types and created the `print-stable-20260609` Git recovery tag.
+- Fixed buyer email and address fallback behavior when importing customer data into a document.
+
+## 2026-06-08
+
+### Consistent CRM Customer Selection and Display
+
+- Unified customer labels across document, order, and after-sales pages, prioritizing the contact person while retaining company context.
+- Added customer selection to order editing, including controller validation and persistence.
+- Standardized customer dropdown metadata to include contact/company and Collection context, reducing ambiguous selections.
+
+## 2026-06-07
+
+### CRM Document Fields and Print Template Refinement
+
+- Normalized customer and buyer field semantics:
+  - Customers now separate `contact_person` from `company_name`.
+  - Documents separate `buyer_contact` from `buyer_company` across forms, customer import, and print output.
+  - Renamed customer `region` to `address`.
+- Added packing terms, PI deposit percentage, loading/destination ports, transport mode, shipping mark, package counts, weights, volume, and package dimensions.
+- Standardized bank-account JSON fields and removed the unused SKU field.
+- Refined all five print templates:
+  - PI payment/bank details, CI parties/declaration, and PL shipment/packing information now follow their document-specific responsibilities.
+  - Unified signature, contact, buyer/seller naming, and notes rendering rules.
+- Added the Entity-to-Entity relationship foundation for future inquiry recommendations, document items, orders, and after-sales context expansion.
+
 ## 2026-06-06
 
 ### CRM Document System Phases 2-10
@@ -37,7 +129,7 @@ This document tracks user-facing updates in the public repository. For future Gi
   - Grand total is now calculated as `items subtotal + shipping fee + tax - discount`.
   - When old quotes have `grand_total=0`, order creation still falls back to the legacy `total_amount`.
 - Documentation:
-  - Updated `CRM_DOCUMENT_SYSTEM_PROMPT.md` to include line item image fields and custom contract terms.
+  - Documented the CRM document implementation plan, including line item images and custom contract terms; completion details are now maintained in the agent implementation status and usage guide.
   - Updated the lightweight CRM usage guide to remove old external-contact wording and keep the internal-owner model consistent.
 - Verification:
   - Applied migration `2026_06_06_030000_enhance_crm_quote_documents`.

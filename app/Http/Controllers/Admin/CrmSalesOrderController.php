@@ -172,7 +172,7 @@ class CrmSalesOrderController extends Controller
     {
         CrmSalesOrder::query()->whereKey($orderId)->firstOrFail()->delete();
 
-        return redirect()->route('admin.crm.orders.index')->with('message', '订单已删除');
+        return redirect()->route('admin.crm.orders.index')->with('message', '订单已归档');
     }
 
     private function generateOrderNo(): string

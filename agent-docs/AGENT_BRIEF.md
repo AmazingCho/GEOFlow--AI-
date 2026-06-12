@@ -35,11 +35,19 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 
 - 主线阶段 1-7 已完成核心功能。
 - Collection、Entity、Case、RAG、质量评分、Prompt Skill v1、URL 智能采集增强已落地。
-- 轻量 CRM 阶段 1-7 已落地：客户、询盘、报价、订单、售后工单、内容候选和任务 CRM 来源关联。
+- 轻量 CRM 已形成工作台、客户、多联系人、询盘、活动记录、待办、商机管道、单据制作、订单、售后和内容候选链路。
+- CRM 业务对象使用软删除归档；归档客户不会级联删除询盘、单据、订单和售后记录。
+- 已发生的沟通存入活动记录，未来动作存入 `crm_tasks`；不要再把二者合并回同一字段。
+- 单据制作支持报价单、PI、CI、装箱单和合同，并可从已有单据转换出带来源关系的独立记录。
+- HTML 打印预览是当前稳定输出方案；自动 PDF/Excel 导出没有前端入口，不要误判为已完成能力。
 - 不同素材的自动 tag 推荐已按用户要求移除；保留手动选择既有标签和白名单标签分组治理。
 - Knowledge / Entity / Case 的 AI 自动分析已统一使用 `MaterialAnalysisPromptRules`。
 - URL 智能采集创建任务页可选择 AI 分析模型；不选时自动选择并保留 failover。
 - AI 模型页支持聊天模型级 `max_tokens`，仅用于文章正文生成；留空使用 `GEOFLOW_CONTENT_MAX_TOKENS`。
+- 文章创建/编辑页已接入 Vditor Markdown 编辑器，支持复制 Markdown、复制公众号/微信格式 HTML 和编辑器图片上传入库。
+- 网站设置页已有模板工厂 / 站点模板复刻入口，支持 3 个参考页面生成隔离草稿、预览、迭代、发布和打包。
+- 分发首页最近日志已分页；后台登录页已有首次部署默认账号提示。
+- 当前本地浏览器后台入口是 `/admin`，`/geo_admin` 可能 404；遇到入口问题先查环境配置、缓存和容器挂载。
 - 任务回收站、AI 知识库纠错助手仍未实现。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。
@@ -71,5 +79,6 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 不要把标签重新设计成 Collection。
 - 不要恢复不同素材的自动 tag 推荐，除非用户重新确认。
 - 不要让 Skill Prompt 承担素材分类、标签或知识库 metadata 职责。
+- 不要让模板复刻流程直接覆盖现有主题文件；必须先生成草稿、预览、确认再发布。
 - UI 改动要复用已有组件，并遵守 GEOFlow UI skill 中的输入框、下拉、border 规则。
 - 涉及 Laravel 测试时，注意 APP_KEY 和 Docker 环境，见 GEOFlow testing skill。

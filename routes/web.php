@@ -14,11 +14,16 @@ use App\Http\Controllers\Admin\AiSpecialPromptController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\ArticleController;
+use App\Http\Controllers\Admin\ArticleEditorAssetController;
 use App\Http\Controllers\Admin\AuthorController;
 use App\Http\Controllers\Admin\CaseController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CollectionController;
 use App\Http\Controllers\Admin\CrmCustomerController;
+use App\Http\Controllers\Admin\CrmContactController;
+use App\Http\Controllers\Admin\CrmDashboardController;
+use App\Http\Controllers\Admin\CrmOpportunityController;
+use App\Http\Controllers\Admin\CrmTaskController;
 use App\Http\Controllers\Admin\CrmAfterSalesTicketController;
 use App\Http\Controllers\Admin\CrmContentProposalController;
 use App\Http\Controllers\Admin\CrmInquiryController;
@@ -34,6 +39,7 @@ use App\Http\Controllers\Admin\LegacyController;
 use App\Http\Controllers\Admin\MaterialsController;
 use App\Http\Controllers\Admin\SecuritySettingsController;
 use App\Http\Controllers\Admin\SiteSettingsController;
+use App\Http\Controllers\Admin\SiteThemeReplicationController;
 use App\Http\Controllers\Admin\TagController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\TitleLibraryController;
@@ -125,6 +131,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('batch/restore', [ArticleController::class, 'batchRestore'])->name('batch.restore');
             Route::post('batch/force-delete', [ArticleController::class, 'batchForceDelete'])->name('batch.force-delete');
             Route::post('trash/empty', [ArticleController::class, 'emptyTrash'])->name('trash.empty');
+            Route::post('editor/wechat-html', [ArticleEditorAssetController::class, 'exportWeChatHtml'])->name('editor.wechat-html');
             Route::get('create', [ArticleController::class, 'create'])->name('create');
             Route::post('create', [ArticleController::class, 'store'])->name('store');
             Route::post('{articleId}/restore', [ArticleController::class, 'restore'])->name('restore')->whereNumber('articleId');
@@ -133,6 +140,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('{articleId}/internal-links/refresh', [ArticleController::class, 'refreshInternalLinks'])->name('internal-links.refresh')->whereNumber('articleId');
             Route::post('{articleId}/internal-links/apply', [ArticleController::class, 'applyInternalLinks'])->name('internal-links.apply')->whereNumber('articleId');
             Route::get('{articleId}/edit', [ArticleController::class, 'edit'])->name('edit');
+            Route::post('{articleId}/editor/images/upload', [ArticleEditorAssetController::class, 'uploadImage'])->name('editor.images.upload')->whereNumber('articleId');
             Route::put('{articleId}', [ArticleController::class, 'update'])->name('update');
         });
 
@@ -160,6 +168,22 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
 
         // 轻量 CRM：客户、询盘与报价辅助
         Route::prefix('crm')->name('crm.')->group(function () {
+            Route::get('/', [CrmDashboardController::class, 'index'])->name('dashboard');
+            Route::prefix('tasks')->name('tasks.')->group(function () {
+                Route::get('/', [CrmTaskController::class, 'index'])->name('index');
+                Route::post('/', [CrmTaskController::class, 'store'])->name('store');
+                Route::post('{taskId}/complete', [CrmTaskController::class, 'complete'])->name('complete')->whereNumber('taskId');
+                Route::post('{taskId}/reopen', [CrmTaskController::class, 'reopen'])->name('reopen')->whereNumber('taskId');
+                Route::post('{taskId}/delete', [CrmTaskController::class, 'destroy'])->name('delete')->whereNumber('taskId');
+            });
+            Route::prefix('opportunities')->name('opportunities.')->group(function () {
+                Route::get('/', [CrmOpportunityController::class, 'index'])->name('index');
+                Route::get('create', [CrmOpportunityController::class, 'create'])->name('create');
+                Route::post('create', [CrmOpportunityController::class, 'store'])->name('store');
+                Route::get('{opportunityId}/edit', [CrmOpportunityController::class, 'edit'])->name('edit')->whereNumber('opportunityId');
+                Route::put('{opportunityId}', [CrmOpportunityController::class, 'update'])->name('update')->whereNumber('opportunityId');
+                Route::post('{opportunityId}/delete', [CrmOpportunityController::class, 'destroy'])->name('delete')->whereNumber('opportunityId');
+            });
             Route::prefix('customers')->name('customers.')->group(function () {
                 Route::get('/', [CrmCustomerController::class, 'index'])->name('index');
                 Route::get('create', [CrmCustomerController::class, 'create'])->name('create');
@@ -169,6 +193,10 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::put('{customerId}', [CrmCustomerController::class, 'update'])->name('update')->whereNumber('customerId');
                 Route::post('{customerId}/delete', [CrmCustomerController::class, 'destroy'])->name('delete')->whereNumber('customerId');
                 Route::post('{customerId}/follow-ups', [CrmCustomerController::class, 'storeFollowUp'])->name('follow-ups.store')->whereNumber('customerId');
+                Route::post('{customerId}/contacts', [CrmContactController::class, 'store'])->name('contacts.store')->whereNumber('customerId');
+                Route::put('{customerId}/contacts/{contactId}', [CrmContactController::class, 'update'])->name('contacts.update')->whereNumber(['customerId','contactId']);
+                Route::post('{customerId}/contacts/{contactId}/primary', [CrmContactController::class, 'primary'])->name('contacts.primary')->whereNumber(['customerId','contactId']);
+                Route::post('{customerId}/contacts/{contactId}/delete', [CrmContactController::class, 'destroy'])->name('contacts.delete')->whereNumber(['customerId','contactId']);
             });
 
             Route::prefix('inquiries')->name('inquiries.')->group(function () {
@@ -196,6 +224,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('{quoteId}/excel', [CrmQuoteController::class, 'downloadExcel'])->name('excel')->whereNumber('quoteId');
                 Route::get('{quoteId}/pdf', [CrmQuoteController::class, 'downloadPdf'])->name('pdf')->whereNumber('quoteId');
                 Route::post('{quoteId}/delete', [CrmQuoteController::class, 'destroy'])->name('delete')->whereNumber('quoteId');
+                Route::post('{quoteId}/convert', [CrmQuoteController::class, 'convert'])->name('convert')->whereNumber('quoteId');
             });
 
             Route::prefix('orders')->name('orders.')->group(function () {
@@ -386,6 +415,40 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('/', [SiteSettingsController::class, 'index'])->name('index');
             Route::post('/', [SiteSettingsController::class, 'update'])->name('update');
             Route::post('theme', [SiteSettingsController::class, 'updateTheme'])->name('theme');
+            Route::get('theme-replications/create', [SiteThemeReplicationController::class, 'create'])->name('theme-replications.create');
+            Route::post('theme-replications', [SiteThemeReplicationController::class, 'store'])->name('theme-replications.store');
+            Route::get('theme-replications/{replicationId}', [SiteThemeReplicationController::class, 'show'])
+                ->name('theme-replications.show')
+                ->whereNumber('replicationId');
+            Route::get('theme-replications/{replicationId}/preview/{page}', [SiteThemeReplicationController::class, 'preview'])
+                ->name('theme-replications.preview')
+                ->whereNumber('replicationId')
+                ->whereIn('page', ['home', 'category', 'article']);
+            Route::get('theme-replications/{replicationId}/assets/{assetPath}', [SiteThemeReplicationController::class, 'asset'])
+                ->name('theme-replications.assets')
+                ->whereNumber('replicationId')
+                ->where('assetPath', '.*');
+            Route::post('theme-replications/{replicationId}/retry', [SiteThemeReplicationController::class, 'retry'])
+                ->name('theme-replications.retry')
+                ->whereNumber('replicationId');
+            Route::post('theme-replications/{replicationId}/iterate', [SiteThemeReplicationController::class, 'iterate'])
+                ->name('theme-replications.iterate')
+                ->whereNumber('replicationId');
+            Route::post('theme-replications/{replicationId}/publish', [SiteThemeReplicationController::class, 'publish'])
+                ->name('theme-replications.publish')
+                ->whereNumber('replicationId');
+            Route::post('theme-replications/{replicationId}/copy', [SiteThemeReplicationController::class, 'copy'])
+                ->name('theme-replications.copy')
+                ->whereNumber('replicationId');
+            Route::post('theme-replications/{replicationId}/archive', [SiteThemeReplicationController::class, 'archive'])
+                ->name('theme-replications.archive')
+                ->whereNumber('replicationId');
+            Route::post('theme-replications/{replicationId}/drafts/delete', [SiteThemeReplicationController::class, 'deleteDrafts'])
+                ->name('theme-replications.delete-drafts')
+                ->whereNumber('replicationId');
+            Route::get('theme-replications/{replicationId}/package', [SiteThemeReplicationController::class, 'downloadPackage'])
+                ->name('theme-replications.package')
+                ->whereNumber('replicationId');
             Route::post('article-detail-ads', [SiteSettingsController::class, 'updateArticleDetailAds'])->name('ads');
             Route::get('sensitive-words', [SecuritySettingsController::class, 'index'])->name('sensitive-words');
             Route::post('sensitive-words', [SecuritySettingsController::class, 'storeSensitiveWords'])->name('sensitive-words.store');

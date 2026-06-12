@@ -5,6 +5,31 @@
     $formAction = $isEdit
         ? route('admin.articles.update', ['articleId' => (int) $articleId])
         : route('admin.articles.store');
+    $articleImageUploadUrl = $isEdit
+        ? route('admin.articles.editor.images.upload', ['articleId' => (int) $articleId], false)
+        : '';
+    $articleWechatHtmlUrl = route('admin.articles.editor.wechat-html', [], false);
+    $vditorLocaleMap = [
+        'zh_CN' => 'zh_CN',
+        'zh-CN' => 'zh_CN',
+        'en' => 'en_US',
+        'en_US' => 'en_US',
+        'ja' => 'ja_JP',
+        'ja_JP' => 'ja_JP',
+        'ru' => 'ru_RU',
+        'ru_RU' => 'ru_RU',
+        'pt_BR' => 'pt_BR',
+        'es' => 'es_ES',
+        'es_ES' => 'es_ES',
+    ];
+    $vditorLang = $vditorLocaleMap[str_replace('-', '_', app()->getLocale())] ?? 'en_US';
+    $editorQuickActions = [
+        ['key' => 'image', 'icon' => 'image', 'label' => __('admin.article_editor.quick_actions.image')],
+        ['key' => 'heading', 'icon' => 'heading-2', 'label' => __('admin.article_editor.quick_actions.heading')],
+        ['key' => 'quote', 'icon' => 'quote', 'label' => __('admin.article_editor.quick_actions.quote')],
+        ['key' => 'list', 'icon' => 'list', 'label' => __('admin.article_editor.quick_actions.list')],
+        ['key' => 'divider', 'icon' => 'minus', 'label' => __('admin.article_editor.quick_actions.divider')],
+    ];
 
     $formData = [
         'title' => old('title', (string) ($articleForm['title'] ?? '')),
@@ -152,21 +177,68 @@
 
                     <div class="bg-white shadow rounded-lg">
                         <div class="px-6 py-4 border-b border-gray-200">
-                            <div class="flex items-center justify-between">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
                                 <h3 class="text-lg font-medium text-gray-900">{{ __($i18nRoot.'.section.content_title') }}</h3>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-sm text-gray-500">{{ __($i18nRoot.'.help.markdown_supported') }}</span>
-                                    <button type="button" onclick="togglePreview()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
-                                        <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
-                                        <span id="preview-toggle-text">{{ __($i18nRoot.'.button.show_preview') }}</span>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ __($i18nRoot.'.help.markdown_supported') }}</span>
+                                    <button
+                                        type="button"
+                                        id="article-editor-copy-markdown"
+                                        class="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                    >
+                                        <i data-lucide="copy" class="mr-1.5 h-4 w-4"></i>
+                                        {{ __('admin.article_editor.copy.button') }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        id="article-editor-copy-wechat-html"
+                                        class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        <i data-lucide="copy-check" class="mr-1.5 h-4 w-4"></i>
+                                        {{ __('admin.article_editor.wechat.button') }}
                                     </button>
                                 </div>
                             </div>
+                            <p class="mt-2 text-sm text-gray-600">{{ __('admin.article_editor.editor_desc') }}</p>
                         </div>
                         <div class="px-6 py-4">
-                            <textarea id="content-textarea" name="content" required class="block w-full h-96 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm editor-textarea" placeholder="{{ __($i18nRoot.'.placeholder.content') }}">{{ $formData['content'] }}</textarea>
-                            <div id="content-preview-panel" class="hidden" aria-hidden="true">
-                                <div id="content-preview" class="markdown-preview-pane"></div>
+                            <textarea id="content-textarea" name="content" required class="hidden">{{ $formData['content'] }}</textarea>
+                            <div class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                                <span class="mr-1 text-xs font-medium text-gray-500">{{ __('admin.article_editor.quick_actions.title') }}</span>
+                                @foreach($editorQuickActions as $quickAction)
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                                        data-editor-action="{{ $quickAction['key'] }}"
+                                    >
+                                        <i data-lucide="{{ $quickAction['icon'] }}" class="mr-1.5 h-4 w-4"></i>
+                                        {{ $quickAction['label'] }}
+                                    </button>
+                                @endforeach
+                                <span class="ml-auto text-xs text-gray-500">{{ __('admin.article_editor.message.context_tip') }}</span>
+                            </div>
+                            <div
+                                id="content-editor"
+                                class="article-markdown-editor"
+                                data-upload-url="{{ $articleImageUploadUrl }}"
+                                data-upload-enabled="{{ $isEdit ? '1' : '0' }}"
+                                data-wechat-html-url="{{ $articleWechatHtmlUrl }}"
+                                data-vditor-lang="{{ $vditorLang }}"
+                            ></div>
+                            <input id="article-editor-quick-image-input" type="file" accept="image/*" class="hidden">
+                            <div id="article-editor-context-menu" class="article-editor-context-menu" hidden>
+                                <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ __('admin.article_editor.quick_actions.context_title') }}</div>
+                                @foreach($editorQuickActions as $quickAction)
+                                    <button type="button" data-editor-action="{{ $quickAction['key'] }}">
+                                        <i data-lucide="{{ $quickAction['icon'] }}" class="h-4 w-4"></i>
+                                        <span>{{ $quickAction['label'] }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                            <div class="mt-3 grid gap-2 text-xs text-gray-500 sm:grid-cols-3">
+                                <div class="rounded-md bg-gray-50 px-3 py-2">{{ __('admin.article_editor.help.markdown') }}</div>
+                                <div class="rounded-md bg-gray-50 px-3 py-2">{{ __('admin.article_editor.help.image') }}</div>
+                                <div class="rounded-md bg-gray-50 px-3 py-2">{{ __('admin.article_editor.help.copy') }}</div>
                             </div>
                         </div>
                     </div>
@@ -539,94 +611,368 @@
 @endsection
 
 @push('styles')
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="{{ asset('vendor/vditor/dist/index.css') }}">
     <style>
-        .editor-textarea {
-            resize: vertical;
-            font-family: Monaco, Menlo, "Ubuntu Mono", monospace;
-            font-size: 14px;
-            line-height: 1.5;
+        .article-markdown-editor .vditor {
+            border-color: #d1d5db;
+            border-radius: 0.5rem;
+            overflow: hidden;
         }
-        /* 与输入框 h-96 同高，内容仅在框内滚动，不撑破下方 SEO 区域 */
-        .markdown-preview-pane {
-            height: 24rem;
-            box-sizing: border-box;
-            border: 1px solid #d1d5db;
-            border-radius: 0.375rem;
-            padding: 1rem 1.125rem;
-            background-color: #f9fafb;
-            overflow-y: auto;
-            overflow-x: auto;
-            line-height: 1.65;
-            word-break: break-word;
-            font-size: 0.9375rem;
+        .article-markdown-editor .vditor-toolbar {
+            border-bottom-color: #e5e7eb;
+            background: #f9fafb;
         }
-        .markdown-preview-pane :where(h1, h2, h3, h4, h5, h6) {
-            font-weight: 600;
-            margin: 0.85em 0 0.4em;
-            line-height: 1.35;
+        .article-markdown-editor .vditor-reset,
+        .article-markdown-editor .vditor-ir pre.vditor-reset,
+        .article-markdown-editor .vditor-sv .vditor-reset {
+            font-size: 15px;
+            line-height: 1.8;
         }
-        .markdown-preview-pane :where(p, ul, ol, pre, blockquote) {
-            margin: 0.55em 0;
-        }
-        .markdown-preview-pane pre {
-            padding: 0.75rem 1rem;
-            overflow-x: auto;
-            border-radius: 0.375rem;
-            background: #fff;
+        .article-editor-context-menu {
+            position: fixed;
+            z-index: 70;
+            width: 220px;
+            overflow: hidden;
             border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+        }
+        .article-editor-context-menu[hidden] {
+            display: none;
+        }
+        .article-editor-context-menu button {
+            display: flex;
+            width: 100%;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            color: #374151;
+            font-size: 14px;
+            text-align: left;
+        }
+        .article-editor-context-menu button:hover {
+            background: #eff6ff;
+            color: #1d4ed8;
         }
     </style>
 @endpush
 
 @push('scripts')
+    <script src="{{ asset('vendor/vditor/dist/index.min.js') }}"></script>
     <script>
-        let previewVisible = false;
-
-        function renderPreview() {
-            const source = document.getElementById('content-textarea');
-            const target = document.getElementById('content-preview');
-            if (!source || !target || typeof marked === 'undefined') {
-                return;
-            }
-            target.innerHTML = marked.parse(source.value || '');
-        }
-
-        function togglePreview() {
+        (function () {
             const textarea = document.getElementById('content-textarea');
-            const panel = document.getElementById('content-preview-panel');
-            const toggleText = document.getElementById('preview-toggle-text');
+            const editorNode = document.getElementById('content-editor');
+            const form = textarea ? textarea.closest('form') : null;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const imageInput = document.getElementById('article-editor-quick-image-input');
+            const contextMenu = document.getElementById('article-editor-context-menu');
+            const copyMarkdownButton = document.getElementById('article-editor-copy-markdown');
+            const copyWechatHtmlButton = document.getElementById('article-editor-copy-wechat-html');
+            const uploadUrl = editorNode?.dataset.uploadUrl || '';
+            const uploadEnabled = editorNode?.dataset.uploadEnabled === '1' && uploadUrl !== '';
+            const wechatHtmlUrl = editorNode?.dataset.wechatHtmlUrl || '';
+            const vditorLang = editorNode?.dataset.vditorLang || 'en_US';
+            let editor = null;
 
-            if (!textarea || !panel || !toggleText) {
+            const messages = {
+                uploadDisabled: @json(__('admin.article_editor.error.upload_disabled')),
+                imageRequired: @json(__('admin.article_editor.error.image_required')),
+                uploadFailed: @json(__('admin.article_editor.error.upload_failed_generic')),
+                uploading: @json(__('admin.article_editor.message.uploading')),
+                uploadSuccess: @json(__('admin.article_editor.message.upload_success')),
+                copyEmpty: @json(__('admin.article_editor.copy.empty')),
+                copySuccess: @json(__('admin.article_editor.copy.success')),
+                copyFailed: @json(__('admin.article_editor.copy.failed')),
+                wechatCopying: @json(__('admin.article_editor.wechat.copying')),
+                wechatSuccess: @json(__('admin.article_editor.wechat.success')),
+                wechatFailed: @json(__('admin.article_editor.wechat.failed')),
+            };
+            const snippets = {
+                heading: @json(__('admin.article_editor.snippets.heading')),
+                quote: @json(__('admin.article_editor.snippets.quote')),
+                list: @json(__('admin.article_editor.snippets.list')),
+                divider: @json(__('admin.article_editor.snippets.divider')),
+            };
+
+            if (!textarea || !editorNode || typeof Vditor === 'undefined') {
                 return;
             }
 
-            previewVisible = !previewVisible;
-            if (previewVisible) {
-                renderPreview();
-                textarea.classList.add('hidden');
-                panel.classList.remove('hidden');
-                panel.setAttribute('aria-hidden', 'false');
-                toggleText.textContent = @json(__($i18nRoot.'.button.hide_preview'));
-            } else {
-                textarea.classList.remove('hidden');
-                panel.classList.add('hidden');
-                panel.setAttribute('aria-hidden', 'true');
-                toggleText.textContent = @json(__($i18nRoot.'.button.show_preview'));
+            function currentMarkdown() {
+                return editor && typeof editor.getValue === 'function'
+                    ? (editor.getValue() || '')
+                    : (textarea.value || '');
             }
-        }
 
-        document.addEventListener('click', (event) => {
-            if (event.target.closest('[data-internal-link-select-all]')) {
-                document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
-                    checkbox.checked = true;
-                });
+            function syncTextarea() {
+                textarea.value = currentMarkdown();
             }
-            if (event.target.closest('[data-internal-link-clear]')) {
-                document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
-                    checkbox.checked = false;
-                });
+
+            function tip(message) {
+                if (!message) {
+                    return;
+                }
+                if (editor && typeof editor.tip === 'function') {
+                    editor.tip(message, 2400);
+                } else {
+                    window.alert(message);
+                }
             }
-        });
+
+            function copyTextFallback(value) {
+                const helper = document.createElement('textarea');
+                helper.value = value;
+                helper.setAttribute('readonly', 'readonly');
+                helper.style.position = 'fixed';
+                helper.style.left = '-9999px';
+                document.body.appendChild(helper);
+                helper.select();
+                helper.setSelectionRange(0, helper.value.length);
+                try {
+                    return document.execCommand('copy');
+                } finally {
+                    helper.remove();
+                }
+            }
+
+            function copyHtmlFallback(html) {
+                const helper = document.createElement('div');
+                helper.setAttribute('contenteditable', 'true');
+                helper.style.position = 'fixed';
+                helper.style.left = '-9999px';
+                helper.style.width = '720px';
+                helper.innerHTML = html;
+                document.body.appendChild(helper);
+                helper.focus();
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(helper);
+                selection?.removeAllRanges();
+                selection?.addRange(range);
+                try {
+                    return document.execCommand('copy');
+                } finally {
+                    selection?.removeAllRanges();
+                    helper.remove();
+                }
+            }
+
+            async function copyMarkdown() {
+                const markdown = currentMarkdown();
+                textarea.value = markdown;
+                if (!markdown.trim()) {
+                    tip(messages.copyEmpty);
+                    return;
+                }
+                try {
+                    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function' && window.isSecureContext) {
+                        await navigator.clipboard.writeText(markdown);
+                    } else if (!copyTextFallback(markdown)) {
+                        throw new Error(messages.copyFailed);
+                    }
+                    tip(messages.copySuccess);
+                } catch (error) {
+                    tip(error.message || messages.copyFailed);
+                }
+            }
+
+            async function copyRichHtml(html, plainText) {
+                if (
+                    navigator.clipboard
+                    && typeof navigator.clipboard.write === 'function'
+                    && typeof window.ClipboardItem !== 'undefined'
+                    && window.isSecureContext
+                ) {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({
+                            'text/html': new Blob([html], { type: 'text/html' }),
+                            'text/plain': new Blob([plainText || html], { type: 'text/plain' }),
+                        }),
+                    ]);
+                    return;
+                }
+                if (!copyHtmlFallback(html)) {
+                    throw new Error(messages.wechatFailed);
+                }
+            }
+
+            async function copyWeChatHtml() {
+                const markdown = currentMarkdown();
+                textarea.value = markdown;
+                if (!markdown.trim()) {
+                    tip(messages.copyEmpty);
+                    return;
+                }
+                if (!wechatHtmlUrl) {
+                    tip(messages.wechatFailed);
+                    return;
+                }
+
+                const originalHtml = copyWechatHtmlButton?.innerHTML || '';
+                if (copyWechatHtmlButton) {
+                    copyWechatHtmlButton.disabled = true;
+                    copyWechatHtmlButton.innerHTML = '<i data-lucide="loader-2" class="mr-1.5 h-4 w-4 animate-spin"></i>' + messages.wechatCopying;
+                    if (window.lucide) {
+                        window.lucide.createIcons();
+                    }
+                }
+
+                try {
+                    const response = await fetch(wechatHtmlUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: JSON.stringify({ content: markdown }),
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.html) {
+                        throw new Error(payload.message || messages.wechatFailed);
+                    }
+                    await copyRichHtml(String(payload.html), String(payload.plain || markdown));
+                    tip(payload.message || messages.wechatSuccess);
+                } catch (error) {
+                    tip(error.message || messages.wechatFailed);
+                } finally {
+                    if (copyWechatHtmlButton) {
+                        copyWechatHtmlButton.disabled = false;
+                        copyWechatHtmlButton.innerHTML = originalHtml;
+                        if (window.lucide) {
+                            window.lucide.createIcons();
+                        }
+                    }
+                }
+            }
+
+            async function uploadImage(file) {
+                if (!uploadEnabled) {
+                    tip(messages.uploadDisabled);
+                    return;
+                }
+                if (!file) {
+                    tip(messages.imageRequired);
+                    return;
+                }
+
+                tip(messages.uploading);
+                const formData = new FormData();
+                formData.append('image', file);
+                formData.append('alt', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
+
+                try {
+                    const response = await fetch(uploadUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: formData,
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.image?.markdown) {
+                        throw new Error(payload.message || messages.uploadFailed);
+                    }
+                    editor.insertValue("\n\n" + payload.image.markdown + "\n\n");
+                    syncTextarea();
+                    tip(payload.message || messages.uploadSuccess);
+                } catch (error) {
+                    tip(error.message || messages.uploadFailed);
+                }
+            }
+
+            function insertSnippet(action) {
+                if (action === 'image') {
+                    imageInput?.click();
+                    return;
+                }
+                const snippet = snippets[action] || '';
+                if (snippet !== '') {
+                    editor.insertValue("\n\n" + snippet + "\n\n");
+                    syncTextarea();
+                }
+            }
+
+            function showContextMenu(event) {
+                if (!contextMenu || !editorNode.contains(event.target)) {
+                    return;
+                }
+                event.preventDefault();
+                contextMenu.style.left = Math.min(event.clientX, window.innerWidth - 240) + 'px';
+                contextMenu.style.top = Math.min(event.clientY, window.innerHeight - 260) + 'px';
+                contextMenu.hidden = false;
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }
+
+            function hideContextMenu() {
+                if (contextMenu) {
+                    contextMenu.hidden = true;
+                }
+            }
+
+            editor = new Vditor('content-editor', {
+                value: textarea.value || '',
+                height: 520,
+                mode: 'ir',
+                lang: vditorLang,
+                cache: { enable: false },
+                placeholder: @json(__($i18nRoot.'.placeholder.content')),
+                toolbar: [
+                    'emoji', 'headings', 'bold', 'italic', 'strike', '|',
+                    'list', 'ordered-list', 'check', 'outdent', 'indent', '|',
+                    'quote', 'line', 'code', 'inline-code', '|',
+                    'upload', 'link', 'table', '|',
+                    'undo', 'redo', 'fullscreen', 'edit-mode', 'preview',
+                ],
+                input: function (value) {
+                    textarea.value = value || '';
+                },
+                upload: {
+                    accept: 'image/*',
+                    multiple: false,
+                    handler: function (files) {
+                        uploadImage(files && files[0] ? files[0] : null);
+                        return null;
+                    },
+                },
+            });
+
+            form?.addEventListener('submit', syncTextarea);
+            copyMarkdownButton?.addEventListener('click', copyMarkdown);
+            copyWechatHtmlButton?.addEventListener('click', copyWeChatHtml);
+            imageInput?.addEventListener('change', function () {
+                uploadImage(this.files && this.files[0] ? this.files[0] : null);
+                this.value = '';
+            });
+            editorNode.addEventListener('contextmenu', showContextMenu);
+            document.addEventListener('click', (event) => {
+                const actionButton = event.target.closest('[data-editor-action]');
+                if (actionButton) {
+                    hideContextMenu();
+                    insertSnippet(actionButton.dataset.editorAction || '');
+                    return;
+                }
+                if (!event.target.closest('#article-editor-context-menu')) {
+                    hideContextMenu();
+                }
+                if (event.target.closest('[data-internal-link-select-all]')) {
+                    document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
+                        checkbox.checked = true;
+                    });
+                }
+                if (event.target.closest('[data-internal-link-clear]')) {
+                    document.querySelectorAll('[data-internal-link-checkbox]').forEach((checkbox) => {
+                        checkbox.checked = false;
+                    });
+                }
+            });
+        })();
     </script>
 @endpush

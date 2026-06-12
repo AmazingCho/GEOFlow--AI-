@@ -36,3 +36,6 @@ Homestead.yaml
 Thumbs.db
 GEOFlow_backup_*.zip
 storage/templates/
+/.codegraph/
+/功能说明文档/
+/单据模板/

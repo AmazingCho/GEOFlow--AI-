@@ -361,21 +361,20 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200" style="table-layout:fixed">
+                    <table class="w-full min-w-[980px] table-fixed divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                         <tr>
-                            <th class="batch-checkbox hidden px-6 py-3 text-left">
+                            <th class="batch-checkbox hidden w-12 px-3 py-3 text-left">
                                 <input type="checkbox" id="select-all" class="rounded border-gray-300 text-blue-600 shadow-sm">
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.id') }}</th>
-                            <th class="w-[22%] max-w-[35%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.task_author') }}</th>
+                            <th class="{{ $isTrashView ? 'w-[46%]' : 'w-[31%]' }} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.info') }}</th>
+                            <th class="{{ $isTrashView ? 'w-[24%]' : 'w-[18%]' }} px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.task_author') }}</th>
                             @if(!$isTrashView)
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.workflow') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.quality') }}</th>
+                            <th class="w-[13%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.workflow') }}</th>
+                            <th class="w-[12%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.quality') }}</th>
                             @endif
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ __('admin.articles.column.actions') }}</th>
+                            <th class="{{ $isTrashView ? 'w-[16%]' : 'w-[10%]' }} px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ $isTrashView ? __('admin.articles.trash.column.deleted_at') : __('admin.articles.column.created_at') }}</th>
+                            <th class="sticky right-0 z-20 {{ $isTrashView ? 'w-[14%]' : 'w-[12%]' }} border-l border-gray-200 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider shadow-[-6px_0_10px_-10px_rgba(15,23,42,0.5)]">{{ __('admin.articles.column.actions') }}</th>
                         </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
@@ -428,13 +427,13 @@
                                 };
                                 $qualityIssues = collect($qualityReport['issues'] ?? [])->filter(fn ($issue) => is_array($issue))->take(2)->values();
                             @endphp
-                            <tr class="hover:bg-gray-50">
-                                <td class="batch-checkbox hidden px-6 py-4">
+                            <tr class="group hover:bg-gray-50">
+                                <td class="batch-checkbox hidden px-3 py-4">
                                     <input type="checkbox" value="{{ (int) $article->id }}" class="article-checkbox rounded border-gray-300 text-blue-600 shadow-sm">
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">#{{ (int) $article->id }}</td>
-                                <td class="w-[22%] max-w-[35%] px-6 py-4">
-                                    <div class="text-sm font-medium text-gray-900 truncate">
+                                <td class="px-4 py-4 align-top">
+                                    <div class="mb-1 text-[11px] font-medium text-gray-400">#{{ (int) $article->id }}</div>
+                                    <div class="line-clamp-2 break-words text-sm font-medium leading-5 text-gray-900" title="{{ $article->title }}">
                                         @if($isTrashView)
                                             <span>{{ $article->title }}</span>
                                         @else
@@ -442,7 +441,7 @@
                                         @endif
                                     </div>
                                     @if((string) ($article->keywords ?? '') !== '')
-                                        <div class="text-xs text-blue-600 mt-1">{{ __('admin.articles.keywords') }}: {{ $article->keywords }}</div>
+                                        <div class="mt-1 truncate text-xs text-blue-600" title="{{ $article->keywords }}">{{ __('admin.articles.keywords') }}: {{ $article->keywords }}</div>
                                     @endif
                                     @if(!$isTrashView && (!empty($article->is_hot) || !empty($article->is_featured)))
                                         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -464,42 +463,41 @@
                                         </div>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td class="px-4 py-4 align-top text-sm text-gray-500">
                                     @if((string) ($article->task->name ?? '') !== '')
-                                        <div class="text-blue-600">{{ $article->task->name }}</div>
+                                        <div class="line-clamp-2 break-words leading-5 text-blue-600" title="{{ $article->task->name }}">{{ $article->task->name }}</div>
                                     @endif
-                                    <div>{{ $article->author->name ?? '' }}</div>
+                                    <div class="mt-1 truncate" title="{{ $article->author->name ?? '' }}">{{ $article->author->name ?? '' }}</div>
                                     @if((int) ($article->is_ai_generated ?? 0) === 1)
                                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">{{ __('admin.articles.ai_generated') }}</span>
                                     @endif
                                 </td>
                                 @if(!$isTrashView)
-                                <td class="px-6 py-4 whitespace-nowrap">
+                                <td class="px-3 py-4 align-top">
                                     <div class="flex flex-col gap-1">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $statusClass }}">
+                                        <span class="inline-flex w-fit max-w-full items-center rounded px-2 py-0.5 text-xs font-medium {{ $statusClass }}">
                                             {{ __('admin.articles.publish_prefix') }}: {{ __('admin.articles.status.'.(string) $article->status) }}
                                         </span>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $reviewClass }}">
+                                        <span class="inline-flex w-fit max-w-full items-center rounded px-2 py-0.5 text-xs font-medium {{ $reviewClass }}">
                                             {{ __('admin.articles.review_prefix') }}: {{ __('admin.articles.review.'.(string) $article->review_status) }}
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4">
+                                <td class="px-3 py-4 align-top">
                                     <div class="flex flex-col gap-2">
                                         <span class="inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 {{ $qualityTone }}">
                                             {{ __('admin.articles.quality.score_label', ['score' => $qualityScore, 'grade' => (string) ($qualityReport['grade'] ?? '-')]) }}
                                         </span>
-                                        @if($qualityIssues->isNotEmpty())
-                                            <div class="max-w-48 space-y-1">
-                                                @foreach($qualityIssues as $issue)
-                                                    <div class="truncate text-xs text-gray-500">{{ __((string) ($issue['message_key'] ?? 'admin.articles.quality.suggestions.structure')) }}</div>
-                                                @endforeach
+                                        @if(!empty($qualityReport['issues']))
+                                            <div class="flex items-center gap-1 text-xs text-gray-500" title="{{ __('admin.articles.column.quality') }}">
+                                                <i data-lucide="circle-alert" class="h-3.5 w-3.5"></i>
+                                                <span>{{ count($qualityReport['issues']) }}</span>
                                             </div>
                                         @endif
                                     </div>
                                 </td>
                                 @endif
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td class="px-3 py-4 align-top whitespace-nowrap text-sm text-gray-500">
                                     @if($isTrashView)
                                         <div>{{ optional($article->deleted_at)->format('Y-m-d H:i') }}</div>
                                         <div class="text-xs text-gray-400">{{ __('admin.articles.trash.created_prefix') }} {{ optional($article->created_at)->format('m-d H:i') }}</div>
@@ -510,7 +508,7 @@
                                         @endif
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <td class="sticky right-0 z-10 border-l border-gray-100 bg-white px-3 py-4 align-top whitespace-nowrap text-sm font-medium shadow-[-6px_0_10px_-10px_rgba(15,23,42,0.5)] group-hover:bg-gray-50">
                                     @if($isTrashView)
                                         <div class="flex items-center space-x-2">
                                             <form method="POST" action="{{ route('admin.articles.restore', ['articleId' => (int) $article->id]) }}" class="inline" onsubmit="return confirm(@json(__('admin.articles.trash.confirm_restore')))">

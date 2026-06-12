@@ -31,15 +31,16 @@
                     </select>
                     <i data-lucide="chevron-down" class="pointer-events-none absolute right-2 h-4 w-4 text-gray-400"></i>
                 </div>
+                <form method="POST" action="{{ route('admin.crm.quotes.convert',['quoteId'=>$quote->id]) }}" class="flex items-center">@csrf<select name="document_type" class="rounded-l-md border border-r-0 border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"><option value="proforma_invoice">转形式发票</option><option value="invoice">转正式发票</option><option value="packing_list">转装箱单</option><option value="contract">转合同</option><option value="quotation">转报价单</option></select><button class="rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">创建副本</button></form>
                 <a href="{{ route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     <i data-lucide="pencil" class="mr-2 h-4 w-4"></i>
                     编辑
                 </a>
-                <form method="POST" action="{{ route('admin.crm.quotes.delete', ['quoteId' => (int) $quote->id]) }}" onsubmit="return confirm('确认删除此单据？')">
+                <form method="POST" action="{{ route('admin.crm.quotes.delete', ['quoteId' => (int) $quote->id]) }}" onsubmit="return confirm('确认归档此单据？关联订单不会被删除。')">
                     @csrf
                     <button type="submit" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">
                         <i data-lucide="trash-2" class="mr-2 h-4 w-4"></i>
-                        删除
+                        归档
                     </button>
                 </form>
             </div>

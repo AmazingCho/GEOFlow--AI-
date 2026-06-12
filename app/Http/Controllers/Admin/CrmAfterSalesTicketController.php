@@ -170,7 +170,7 @@ class CrmAfterSalesTicketController extends Controller
     {
         CrmAfterSalesTicket::query()->whereKey($ticketId)->firstOrFail()->delete();
 
-        return redirect()->route('admin.crm.tickets.index')->with('message', '售后工单已删除');
+        return redirect()->route('admin.crm.tickets.index')->with('message', '售后工单已归档');
     }
 
     public function analyze(Request $request): JsonResponse

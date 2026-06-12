@@ -10,8 +10,11 @@ use App\Models\CrmAfterSalesTicket;
 use App\Models\CrmContentProposal;
 use App\Models\CrmCustomer;
 use App\Models\CrmInquiry;
+use App\Models\CrmCustomerContact;
+use App\Models\CrmOpportunity;
 use App\Models\CrmQuote;
 use App\Models\CrmSalesOrder;
+use App\Models\CrmTask;
 use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
@@ -604,6 +607,61 @@ class AdminCrmPagesTest extends TestCase
         $task = Task::query()->where('name', 'CRM sourced task')->firstOrFail();
         $this->assertSame('inquiry', (string) $task->crm_source_type);
         $this->assertSame((int) $inquiry->id, (int) $task->crm_source_id);
+    }
+
+    public function test_customer_archive_preserves_commercial_records_and_primary_contact(): void
+    {
+        $admin = $this->admin('crm_archive_admin');
+        $collection = $this->collection('Archive CRM');
+        $this->actingAs($admin, 'admin')->post(route('admin.crm.customers.store'), [
+            'collection_id'=>$collection->id,'company_name'=>'Archive Buyer','contact_person'=>'Alice','phone'=>'+1 555','email'=>'alice@example.com','status'=>'active',
+        ])->assertRedirect();
+        $customer = CrmCustomer::query()->where('company_name','Archive Buyer')->firstOrFail();
+        $this->assertDatabaseHas('crm_customer_contacts',['customer_id'=>$customer->id,'name'=>'Alice','is_primary'=>1]);
+        $quote = CrmQuote::query()->create(['customer_id'=>$customer->id,'quote_no'=>'Q-ARCHIVE','title'=>'Archive quote','document_type'=>'quotation','currency'=>'USD','status'=>'draft']);
+        $this->actingAs($admin, 'admin')->post(route('admin.crm.customers.delete',['customerId'=>$customer->id]))->assertRedirect();
+        $this->assertSoftDeleted('crm_customers',['id'=>$customer->id]);
+        $this->assertDatabaseHas('crm_quotes',['id'=>$quote->id,'customer_id'=>$customer->id,'deleted_at'=>null]);
+    }
+
+    public function test_inquiry_activity_is_scoped_and_future_work_uses_tasks(): void
+    {
+        $admin = $this->admin('crm_activity_admin');
+        $customer = CrmCustomer::query()->create(['company_name'=>'Activity Buyer','contact_person'=>'A','status'=>'active']);
+        $first = CrmInquiry::query()->create(['customer_id'=>$customer->id,'subject'=>'First inquiry','status'=>'new','priority'=>'normal']);
+        $second = CrmInquiry::query()->create(['customer_id'=>$customer->id,'subject'=>'Second inquiry','status'=>'new','priority'=>'normal']);
+        $first->followUps()->create(['customer_id'=>$customer->id,'content'=>'Only first activity']);
+        $second->followUps()->create(['customer_id'=>$customer->id,'content'=>'Only second activity']);
+        $this->actingAs($admin,'admin')->get(route('admin.crm.inquiries.show',['inquiryId'=>$first->id]))->assertOk()->assertSee('Only first activity')->assertDontSee('Only second activity')->assertSee('下一步待办');
+        $this->actingAs($admin,'admin')->post(route('admin.crm.tasks.store'),['customer_id'=>$customer->id,'inquiry_id'=>$first->id,'title'=>'Send specification','due_at'=>now()->addDay()->format('Y-m-d H:i:s')])->assertRedirect();
+        $task = CrmTask::query()->firstOrFail();
+        $this->actingAs($admin,'admin')->post(route('admin.crm.tasks.complete',['taskId'=>$task->id]))->assertRedirect();
+        $this->assertSame('done',$task->fresh()->status);
+    }
+
+    public function test_inquiry_can_become_opportunity_and_lost_reason_is_required(): void
+    {
+        $admin = $this->admin('crm_opportunity_admin');
+        $collection = $this->collection('Pipeline CRM');
+        $customer = CrmCustomer::query()->create(['collection_id'=>$collection->id,'company_name'=>'Pipeline Buyer','contact_person'=>'Buyer','status'=>'active']);
+        $inquiry = CrmInquiry::query()->create(['collection_id'=>$collection->id,'customer_id'=>$customer->id,'subject'=>'Machine project','status'=>'qualified','priority'=>'high']);
+        $this->actingAs($admin,'admin')->post(route('admin.crm.opportunities.store'),['collection_id'=>$collection->id,'customer_id'=>$customer->id,'source_inquiry_id'=>$inquiry->id,'name'=>'Machine project','stage'=>'qualified','amount'=>12000,'currency'=>'USD','probability'=>30])->assertRedirect();
+        $opportunity = CrmOpportunity::query()->firstOrFail();
+        $this->actingAs($admin,'admin')->put(route('admin.crm.opportunities.update',['opportunityId'=>$opportunity->id]),['customer_id'=>$customer->id,'name'=>'Machine project','stage'=>'lost','amount'=>12000,'currency'=>'USD','probability'=>0])->assertSessionHasErrors('lost_reason');
+        $this->actingAs($admin,'admin')->get(route('admin.crm.opportunities.index'))->assertOk()->assertSee('Machine project');
+    }
+
+    public function test_quote_conversion_creates_independent_document_and_items(): void
+    {
+        $admin = $this->admin('crm_convert_admin');
+        $customer = CrmCustomer::query()->create(['company_name'=>'Convert Buyer','contact_person'=>'Buyer','status'=>'active']);
+        $quote = CrmQuote::query()->create(['customer_id'=>$customer->id,'quote_no'=>'Q-CONVERT','title'=>'Base quotation','document_type'=>'quotation','currency'=>'USD','status'=>'draft']);
+        $quote->items()->create(['item_name'=>'Machine','quantity'=>2,'unit'=>'set','unit_price'=>100,'amount'=>200]);
+        $this->actingAs($admin,'admin')->post(route('admin.crm.quotes.convert',['quoteId'=>$quote->id]),['document_type'=>'proforma_invoice'])->assertRedirect();
+        $copy = CrmQuote::query()->where('source_quote_id',$quote->id)->firstOrFail();
+        $this->assertSame('proforma_invoice',$copy->document_type);
+        $this->assertNotSame($quote->quote_no,$copy->quote_no);
+        $this->assertDatabaseHas('crm_quote_items',['quote_id'=>$copy->id,'item_name'=>'Machine']);
     }
 
     private function admin(string $username = 'crm_admin'): Admin

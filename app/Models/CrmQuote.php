@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CrmQuote extends Model
 {
+    use SoftDeletes;
     protected $table = 'crm_quotes';
 
     protected $fillable = [
@@ -15,6 +17,8 @@ class CrmQuote extends Model
         'customer_id',
         'owner',
         'inquiry_id',
+        'opportunity_id',
+        'source_quote_id',
         'quote_no',
         'document_type',
         'title',
@@ -63,6 +67,8 @@ class CrmQuote extends Model
             'collection_id' => 'integer',
             'customer_id' => 'integer',
             'inquiry_id' => 'integer',
+            'opportunity_id' => 'integer',
+            'source_quote_id' => 'integer',
             'valid_until' => 'date',
             'revision' => 'integer',
             'total_amount' => 'decimal:2',
@@ -89,6 +95,10 @@ class CrmQuote extends Model
     {
         return $this->belongsTo(CrmInquiry::class, 'inquiry_id');
     }
+
+    public function opportunity(): BelongsTo { return $this->belongsTo(CrmOpportunity::class, 'opportunity_id'); }
+    public function sourceQuote(): BelongsTo { return $this->belongsTo(self::class, 'source_quote_id'); }
+    public function derivedDocuments(): HasMany { return $this->hasMany(self::class, 'source_quote_id'); }
 
     public function items(): HasMany
     {

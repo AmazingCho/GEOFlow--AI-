@@ -260,7 +260,19 @@ class CrmQuoteController extends Controller
 
         return redirect()
             ->route('admin.crm.quotes.index')
-            ->with('message', '单据已删除');
+            ->with('message', '单据已归档');
+    }
+
+    public function convert(Request $request, int $quoteId): RedirectResponse
+    {
+        $source = CrmQuote::query()->with('items')->findOrFail($quoteId);
+        $data = $request->validate(['document_type'=>['required','string',Rule::in(self::DOCUMENT_TYPES)]]);
+        $targetType = (string) $data['document_type'];
+        $copy = $source->replicate(['quote_no','document_type','status','revision','created_at','updated_at']);
+        $copy->fill(['quote_no'=>$this->generateQuoteNo(),'document_type'=>$targetType,'source_quote_id'=>$source->id,'title'=>($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title,'status'=>'draft','revision'=>1]);
+        $copy->save();
+        foreach ($source->items as $item) { $newItem = $item->replicate(['quote_id','created_at','updated_at']); $newItem->quote_id = $copy->id; $newItem->save(); }
+        return redirect()->route('admin.crm.quotes.edit', ['quoteId'=>$copy->id])->with('message','已创建独立单据，请核对后保存');
     }
 
     public function print(int $quoteId, Request $request): View

@@ -5,15 +5,20 @@ namespace Tests\Feature;
 use App\Models\Admin;
 use App\Models\Article;
 use App\Models\ArticleDistribution;
+use App\Models\ArticleImage;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\CollectionRecord;
 use App\Models\DistributionChannel;
 use App\Models\EntityRecord;
+use App\Models\Image;
+use App\Models\ImageLibrary;
 use App\Models\SiteSetting;
 use App\Models\Task;
 use App\Models\TaskRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -126,6 +131,173 @@ class AdminArticlesPageTest extends TestCase
             ->get(route('admin.articles.create'))
             ->assertOk()
             ->assertSee(__('admin.article_create.page_heading'));
+    }
+
+    public function test_article_edit_page_renders_markdown_editor_assets_and_actions(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_editor_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-editor@example.com',
+            'display_name' => 'Articles Editor Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '编辑器分类',
+            'slug' => 'editor-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Editor Author']);
+        $article = Article::query()->create([
+            'title' => 'Markdown 编辑器测试文章',
+            'slug' => 'markdown-editor-article',
+            'excerpt' => '摘要',
+            'content' => "## 小标题\n\n正文内容",
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.edit', ['articleId' => (int) $article->id]));
+
+        $response->assertOk()
+            ->assertSee('vendor/vditor/dist/index.css', false)
+            ->assertSee('vendor/vditor/dist/index.min.js', false)
+            ->assertSee('id="content-textarea"', false)
+            ->assertSee('id="content-editor"', false)
+            ->assertSee('id="article-editor-copy-markdown"', false)
+            ->assertSee('id="article-editor-copy-wechat-html"', false)
+            ->assertSee('id="article-editor-quick-image-input"', false)
+            ->assertSee('id="article-editor-context-menu"', false)
+            ->assertSee(route('admin.articles.editor.wechat-html', [], false), false)
+            ->assertSee(route('admin.articles.editor.images.upload', ['articleId' => (int) $article->id], false), false)
+            ->assertSee('navigator.clipboard.writeText', false)
+            ->assertSee('ClipboardItem', false)
+            ->assertSee(__('admin.article_editor.quick_actions.image'))
+            ->assertSee(__('admin.article_editor.wechat.button'));
+    }
+
+    public function test_admin_can_export_article_editor_wechat_html(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'articles_wechat_export_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-wechat-export@example.com',
+            'display_name' => 'Articles WeChat Export Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.articles.editor.wechat-html'), [
+                'content' => "# 主标题\n\n## 参数表\n\n**重点内容**\n\n| 型号 | 功能 |\n| --- | --- |\n| SJ4060 | 视觉点胶 |\n\n<script>alert('xss')</script>",
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', __('admin.article_editor.wechat.success'))
+            ->assertJsonStructure(['message', 'html', 'plain']);
+
+        $html = (string) $response->json('html');
+        $this->assertStringContainsString('data-geoflow-export="wechat-article"', $html);
+        $this->assertStringContainsString('style=', $html);
+        $this->assertStringContainsString('<h2', $html);
+        $this->assertStringContainsString('<strong', $html);
+        $this->assertStringContainsString('<table', $html);
+        $this->assertStringNotContainsString('<script', $html);
+    }
+
+    public function test_admin_can_upload_article_editor_image_and_receive_markdown(): void
+    {
+        Storage::fake('public');
+
+        $admin = Admin::query()->create([
+            'username' => 'articles_image_upload_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-image-upload@example.com',
+            'display_name' => 'Articles Image Upload Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '图片编辑分类',
+            'slug' => 'image-editor-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Image Editor Author']);
+        $article = Article::query()->create([
+            'title' => '编辑器图片上传文章',
+            'slug' => 'editor-image-upload-article',
+            'excerpt' => '摘要',
+            'content' => '正文',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.articles.editor.images.upload', ['articleId' => (int) $article->id]), [
+                'image' => UploadedFile::fake()->image('editor-screenshot.jpg', 640, 360),
+                'alt' => 'GEOFlow 编辑器截图',
+                'position' => 3,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', __('admin.article_editor.message.upload_success'))
+            ->assertJsonPath('image.alt', 'GEOFlow 编辑器截图');
+
+        $url = (string) $response->json('image.url');
+        $this->assertStringStartsWith('/storage/uploads/images/', $url);
+        $this->assertSame('![GEOFlow 编辑器截图]('.$url.')', (string) $response->json('image.markdown'));
+        Storage::disk('public')->assertExists(str_replace('/storage/', '', $url));
+
+        $this->assertSame(1, ImageLibrary::query()->where('name', '文章编辑器图片')->count());
+        $this->assertSame(1, Image::query()->count());
+        $this->assertSame(1, ArticleImage::query()->where('article_id', (int) $article->id)->count());
+        $this->assertDatabaseHas('article_images', [
+            'article_id' => (int) $article->id,
+            'position' => 3,
+        ]);
+    }
+
+    public function test_article_editor_image_upload_rejects_non_images(): void
+    {
+        Storage::fake('public');
+
+        $admin = Admin::query()->create([
+            'username' => 'articles_image_reject_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-image-reject@example.com',
+            'display_name' => 'Articles Image Reject Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '图片拒绝分类',
+            'slug' => 'image-reject-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Image Reject Author']);
+        $article = Article::query()->create([
+            'title' => '编辑器图片拒绝文章',
+            'slug' => 'editor-image-reject-article',
+            'excerpt' => '摘要',
+            'content' => '正文',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.articles.editor.images.upload', ['articleId' => (int) $article->id]), [
+                'image' => UploadedFile::fake()->create('notes.txt', 4, 'text/plain'),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['image']);
+
+        $this->assertSame(0, Image::query()->count());
+        $this->assertSame(0, ArticleImage::query()->count());
     }
 
     public function test_article_edit_can_suggest_and_apply_entity_internal_links(): void
@@ -359,7 +531,7 @@ class AdminArticlesPageTest extends TestCase
             ->get(route('admin.articles.index'))
             ->assertOk()
             ->assertSee(__('admin.articles.column.quality'))
-            ->assertSee(__('admin.articles.quality.suggestions.knowledge'));
+            ->assertDontSee(__('admin.articles.quality.suggestions.knowledge'));
     }
 
     public function test_article_list_uses_relative_batch_and_action_urls(): void

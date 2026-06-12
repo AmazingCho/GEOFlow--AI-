@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CrmCustomer;
 use App\Models\CrmFollowUp;
+use App\Models\CrmCustomerContact;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
@@ -33,6 +34,9 @@ class CrmCustomerController extends Controller
             $query->where(function ($builder) use ($search): void {
                 $builder
                     ->where('company_name', 'like', '%'.$search.'%')
+                    ->orWhere('contact_person', 'like', '%'.$search.'%')
+                    ->orWhere('phone', 'like', '%'.$search.'%')
+                    ->orWhere('email', 'like', '%'.$search.'%')
                     ->orWhere('country', 'like', '%'.$search.'%')
                     ->orWhere('industry', 'like', '%'.$search.'%')
                     ->orWhere('website', 'like', '%'.$search.'%')
@@ -80,6 +84,7 @@ class CrmCustomerController extends Controller
     {
         $payload = $this->validateCustomer($request);
         $customer = CrmCustomer::query()->create($this->normalizeCustomerPayload($payload, true));
+        $this->syncPrimaryContact($customer, $payload);
 
         return redirect()
             ->route('admin.crm.customers.show', ['customerId' => (int) $customer->id])
@@ -90,7 +95,7 @@ class CrmCustomerController extends Controller
     {
         $customer = CrmCustomer::query()
             ->with([
-                'collection',
+                'collection', 'contacts', 'opportunities', 'crmTasks.assignee',
                 'followUps' => fn ($query) => $query->with('inquiry')->orderByDesc('created_at')->limit(30),
                 'inquiries' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
                 'quotes' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
@@ -141,6 +146,7 @@ class CrmCustomerController extends Controller
         $customer = CrmCustomer::query()->whereKey($customerId)->firstOrFail();
         $payload = $this->validateCustomer($request);
         $customer->update($this->normalizeCustomerPayload($payload, false));
+        $this->syncPrimaryContact($customer, $payload);
 
         return redirect()
             ->route('admin.crm.customers.edit', ['customerId' => (int) $customer->id])
@@ -153,7 +159,7 @@ class CrmCustomerController extends Controller
 
         return redirect()
             ->route('admin.crm.customers.index')
-            ->with('message', '客户已删除');
+            ->with('message', '客户已归档，询盘、单据、订单与售后记录均已保留');
     }
 
     public function storeFollowUp(Request $request, int $customerId): RedirectResponse
@@ -294,5 +300,13 @@ class CrmCustomerController extends Controller
         $admin = auth('admin')->user();
 
         return trim((string) ($admin?->display_name ?: $admin?->username ?: ''));
+    }
+
+    private function syncPrimaryContact(CrmCustomer $customer, array $payload): void
+    {
+        $name = trim((string) ($payload['contact_person'] ?? ''));
+        if ($name === '') return;
+        $contact = $customer->contacts()->where('is_primary', true)->first() ?: new CrmCustomerContact(['customer_id'=>$customer->id,'is_primary'=>true]);
+        $contact->fill(['name'=>$name,'title'=>trim((string) ($payload['contact_title'] ?? '')),'phone'=>trim((string) ($payload['phone'] ?? '')),'email'=>trim((string) ($payload['email'] ?? '')),'status'=>'active'])->save();
     }
 }

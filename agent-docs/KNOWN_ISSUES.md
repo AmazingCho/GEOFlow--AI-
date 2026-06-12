@@ -1,4 +1,7 @@
-# 已知问题与风
+# 已知问题与风险
+
+本文档用于记录容易被上下文压缩丢失的问题。
+
 ### 12. APP_KEY 损坏风险与 Docker 环境覆盖
 
 **症状：** Server Error 500，日志显示 `Unsupported cipher or incorrect key length`。
@@ -23,10 +26,6 @@
 docker exec -e APP_KEY=base64:$(grep '^APP_KEY=' .env | cut -d= -f2-) \
   geoflow-app sh -c 'php artisan config:clear && php artisan test --filter=AdminCrmPagesTest'
 ```
-
-险
-
-本文档用于记录容易被上下文压缩丢失的问题。
 
 ## 高优先级
 
@@ -55,22 +54,28 @@ docker exec -e APP_KEY=base64:$(grep '^APP_KEY=' .env | cut -d= -f2-) \
 
 ### 3. CRM 仍保留轻量边界
 
-轻量 CRM 阶段 1-7 已完成核心功能：
+轻量 CRM 阶段 1-7 及后续单据优化已完成核心功能：
 
-- 客户、联系人、跟进记录。
+- 客户资料、多外部联系人、内部负责人、活动记录和未来待办。
 - 询盘与 AI 需求识别。
-- 报价单与打印页。
+- 商机阶段管道。
+- 单据制作与五类 HTML 打印页。
 - 订单管理。
 - 售后工单。
 - CRM 内容候选审核。
 - 创建任务页 CRM 来源关联。
+- 询盘活动按询盘隔离；客户页可汇总活动。
+- 客户及主要商业对象使用软删除归档，不再因归档客户而级联丢失记录。
 
 仍未实现且建议保持独立阶段：
 
 - 报价审批。
 - PDF 导出。
 - 邮件发送。
-- 客户活动时间线整合。
+- CRM 归档回收站与恢复入口。
+- 旧模块负责人文本字段到 Admin 外键的完整迁移。
+
+说明：人工活动记录与未来待办已经拆分；尚未实现的是更广义的自动活动流，例如状态变更、单据创建、订单推进和邮件事件自动写入同一时间线。
 
 后续继续保持轻量 CRM 定位，不要引入完整 ERP 财务、库存、采购和生产排程逻辑。
 
@@ -268,3 +273,22 @@ docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh 
 **原因：** Python 正则匹配 Blade 变量（`$xxx->yyy`）时容易出现转义问题，导致 `@forelse ($inquiry->customer?->followUps ?? [] as $followUp)` 等语句被截断。
 
 **解决方案：** 使用精确字符串替换（完整 block match），而非正则匹配。出问题后从 `git checkout HEAD -- <file>` 恢复并重新精确替换。
+
+### 23. HTTP 后台入口与 CLI 路由前缀可能不一致
+
+**症状：** 浏览器访问 `http://localhost:18080/geo_admin/site-settings` 返回 404，但 `http://localhost:18080/admin/site-settings` 可以正常打开；同时 CLI `route:list` 可能仍显示 `geo_admin` 前缀。
+
+**当前观察：**
+
+- 本地浏览器可访问后台入口为 `/admin`。
+- 模板工厂入口在 `/admin/site-settings` 页面可见。
+- 模板工厂创建页链接为 `/admin/site-settings/theme-replications/create`。
+
+**排查顺序：**
+
+1. 检查 `.env` / Docker 环境里的后台路径配置，例如 `ADMIN_BASE_PATH` 或项目自定义 admin path。
+2. 检查 Laravel config / route cache：`php artisan optimize:clear` 后再验证。
+3. 检查 Web 容器实际挂载的代码是否与当前工作区一致。
+4. 检查是否存在代理、Nginx rewrite 或历史缓存把后台入口固定到 `/admin`。
+
+**处理原则：** 在确认真实部署入口前，不要直接改业务路由。当前本地操作和浏览器验证优先使用 `/admin`。

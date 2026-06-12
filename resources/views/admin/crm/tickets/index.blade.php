@@ -91,7 +91,7 @@
                                         <div class="flex justify-end gap-2">
                                             <a href="{{ route('admin.crm.tickets.show', ['ticketId' => (int) $ticket->id]) }}" class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">查看</a>
                                             <a href="{{ route('admin.crm.tickets.edit', ['ticketId' => (int) $ticket->id]) }}" class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">编辑</a>
-                                            <form method="POST" action="{{ route('admin.crm.tickets.delete', ['ticketId' => (int) $ticket->id]) }}" onsubmit="return confirm('确认删除此售后工单？')" style="display:inline">
+                                            <form method="POST" action="{{ route('admin.crm.tickets.delete', ['ticketId' => (int) $ticket->id]) }}" onsubmit="return confirm('确认归档此售后工单？')" style="display:inline">
                                                 @csrf
                                                 <button type="submit" class="rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">删除</button>
                                             </form>
