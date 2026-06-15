@@ -14,6 +14,9 @@
     ];
     $opportunityStageLabels = \App\Http\Controllers\Admin\CrmOpportunityController::STAGES;
     $priorityLabels = ['low' => '低', 'normal' => '普通', 'high' => '高', 'urgent' => '紧急'];
+    $conversionOpenTaskCount = $inquiry->crmTasks->filter(static fn ($task) => (string) $task->status !== 'done' && !$task->opportunity_id)->count();
+    $conversionDocumentCount = $inquiry->quotes->whereNull('opportunity_id')->count();
+    $conversionConfirmText = '确认转为商机？系统会补关联 '.$conversionOpenTaskCount.' 个未完成待办和 '.$conversionDocumentCount.' 份已有单据，不会复制记录。';
 @endphp
 
 @section('content')
@@ -50,7 +53,7 @@
                     生成报价
                 </a>
                 @if($inquiry->opportunities->isEmpty())
-                    <form method="POST" action="{{ route('admin.crm.opportunities.from-inquiry', ['inquiryId' => (int) $inquiry->id]) }}">
+                    <form method="POST" action="{{ route('admin.crm.opportunities.from-inquiry', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm(@js($conversionConfirmText))">
                         @csrf
                         <button type="submit" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
                             <i data-lucide="briefcase-business" class="mr-2 h-4 w-4"></i>
@@ -122,7 +125,7 @@
                             <p class="mt-1 text-sm text-gray-500">商机用于推进成交阶段、金额、下一步和单据制作。</p>
                         </div>
                         @if ($inquiry->opportunities->isEmpty())
-                            <form method="POST" action="{{ route('admin.crm.opportunities.from-inquiry', ['inquiryId' => (int) $inquiry->id]) }}">
+                            <form method="POST" action="{{ route('admin.crm.opportunities.from-inquiry', ['inquiryId' => (int) $inquiry->id]) }}" onsubmit="return confirm(@js($conversionConfirmText))">
                                 @csrf
                                 <button type="submit" class="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                                     <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
@@ -144,6 +147,12 @@
                             <div class="rounded-md border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500">暂无关联商机。确认有真实采购可能后，再将询盘转为商机。</div>
                         @endforelse
                     </div>
+                    @if ($inquiry->opportunities->isEmpty())
+                        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div class="rounded-md border border-blue-100 bg-blue-50 px-4 py-3"><div class="text-xs font-medium text-blue-700">将补关联的未完成待办</div><div class="mt-1 text-xl font-semibold text-blue-950">{{ $conversionOpenTaskCount }}</div></div>
+                            <div class="rounded-md border border-purple-100 bg-purple-50 px-4 py-3"><div class="text-xs font-medium text-purple-700">将补关联的已有单据</div><div class="mt-1 text-xl font-semibold text-purple-950">{{ $conversionDocumentCount }}</div></div>
+                        </div>
+                    @endif
                 </section>
 
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">

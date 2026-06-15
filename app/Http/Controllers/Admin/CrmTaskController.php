@@ -12,6 +12,7 @@ use App\Support\GeoFlow\CrmOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class CrmTaskController extends Controller
@@ -37,6 +38,7 @@ class CrmTaskController extends Controller
         ]);
         $data['created_by_admin_id'] = (int) auth('admin')->id();
         $data['assigned_admin_id'] = (int) ($data['assigned_admin_id'] ?? auth('admin')->id()) ?: null;
+        $this->completeSalesChain($data);
         $data['status'] = 'open';
         CrmTask::query()->create($data);
         return back()->with('message', '待办已创建');
@@ -58,5 +60,45 @@ class CrmTaskController extends Controller
     {
         CrmTask::query()->findOrFail($taskId)->delete();
         return back()->with('message', '待办已归档');
+    }
+
+    /** @param array<string, mixed> $data */
+    private function completeSalesChain(array &$data): void
+    {
+        $inquiryId = (int) ($data['inquiry_id'] ?? 0);
+        $opportunityId = (int) ($data['opportunity_id'] ?? 0);
+
+        $inquiry = $inquiryId > 0 ? CrmInquiry::query()->findOrFail($inquiryId) : null;
+        $opportunity = $opportunityId > 0 ? CrmOpportunity::query()->findOrFail($opportunityId) : null;
+
+        if ($inquiryId > 0 && $opportunityId <= 0) {
+            $data['opportunity_id'] = CrmOpportunity::query()
+                ->where('source_inquiry_id', $inquiryId)
+                ->value('id');
+            $opportunity = $data['opportunity_id']
+                ? CrmOpportunity::query()->find((int) $data['opportunity_id'])
+                : null;
+        }
+        if ($opportunityId > 0 && $inquiryId <= 0) {
+            $data['inquiry_id'] = (int) ($opportunity->source_inquiry_id ?? 0) ?: null;
+            $inquiry = $data['inquiry_id']
+                ? CrmInquiry::query()->find((int) $data['inquiry_id'])
+                : null;
+        }
+        if ($inquiry && $opportunity && (int) $opportunity->source_inquiry_id !== (int) $inquiry->id) {
+            throw ValidationException::withMessages([
+                'opportunity_id' => '待办选择的询盘与商机来源不一致。',
+            ]);
+        }
+
+        $expectedCustomerId = (int) ($opportunity?->customer_id ?: $inquiry?->customer_id ?: 0);
+        if ($expectedCustomerId > 0 && (int) ($data['customer_id'] ?? 0) > 0 && (int) $data['customer_id'] !== $expectedCustomerId) {
+            throw ValidationException::withMessages([
+                'customer_id' => '待办客户与询盘或商机客户不一致。',
+            ]);
+        }
+        if ($expectedCustomerId > 0) {
+            $data['customer_id'] = $expectedCustomerId;
+        }
     }
 }

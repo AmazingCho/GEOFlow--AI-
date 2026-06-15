@@ -4,6 +4,15 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Unified Inquiry Conversion
+
+- Added a transactional `OpportunityConversionService` shared by inquiry-detail and global source-inquiry creation flows.
+- Conversion links existing open tasks and unassigned documents in place without copying records; completed tasks remain historical.
+- Inquiry details show the affected task/document counts before conversion and require explicit confirmation.
+- Tasks created from either an inquiry or opportunity automatically retain the complete inquiry, opportunity, and customer chain; contradictory combinations are rejected.
+- Conversion results are written to the administrator activity log.
+- Verification: `AdminCrmPagesTest` 21 tests / 185 assertions; all Blade templates compiled.
+
 ### CRM Sales Pipeline V2: Opportunity Lifecycle
 
 - Added explicit "from inquiry" and "direct without inquiry" modes plus a searchable source-inquiry selector.

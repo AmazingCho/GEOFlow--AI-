@@ -10,6 +10,7 @@ use App\Models\CrmOpportunity;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
+use App\Services\GeoFlow\OpportunityConversionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -63,38 +64,34 @@ class CrmOpportunityController extends Controller
         return view('admin.crm.opportunities.form', $this->formData(null, $inquiry));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, OpportunityConversionService $conversionService): RedirectResponse
     {
-        $opportunity = CrmOpportunity::query()->create($this->validated($request));
-        $this->markSourceInquiryConverted($opportunity);
+        $data = $this->validated($request);
+        if ($data['source_inquiry_id']) {
+            $inquiry = CrmInquiry::query()->findOrFail((int) $data['source_inquiry_id']);
+            $result = $conversionService->convert($inquiry, $data, auth('admin')->user());
+            $opportunity = $result['opportunity'];
+        } else {
+            $opportunity = CrmOpportunity::query()->create($data);
+        }
 
         return redirect()
             ->route('admin.crm.opportunities.edit', ['opportunityId' => (int) $opportunity->id])
             ->with('message', '商机已创建');
     }
 
-    public function storeFromInquiry(int $inquiryId): RedirectResponse
+    public function storeFromInquiry(int $inquiryId, OpportunityConversionService $conversionService): RedirectResponse
     {
         $inquiry = $this->inquiryForOpportunity($inquiryId);
-        $existing = $inquiry->opportunities()->oldest('id')->first();
-        if ($existing) {
-            return redirect()
-                ->route('admin.crm.opportunities.edit', ['opportunityId' => (int) $existing->id])
-                ->with('message', '该询盘已存在关联商机');
-        }
-
-        if ((int) ($inquiry->customer_id ?? 0) <= 0) {
-            return redirect()
-                ->route('admin.crm.inquiries.edit', ['inquiryId' => (int) $inquiry->id])
-                ->withErrors(['customer_id' => '转为商机前，请先为询盘关联客户。']);
-        }
-
-        $opportunity = CrmOpportunity::query()->create($this->payloadFromInquiry($inquiry));
-        $this->markSourceInquiryConverted($opportunity);
+        $result = $conversionService->convert($inquiry, $this->payloadFromInquiry($inquiry), auth('admin')->user());
+        $opportunity = $result['opportunity'];
+        $message = $result['created']
+            ? sprintf('已创建商机，并关联 %d 个未完成待办、%d 份已有单据', $result['linked_tasks'], $result['linked_documents'])
+            : '该询盘已存在关联商机';
 
         return redirect()
             ->route('admin.crm.opportunities.edit', ['opportunityId' => (int) $opportunity->id])
-            ->with('message', '已从询盘创建商机');
+            ->with('message', $message);
     }
 
     public function edit(int $opportunityId): View

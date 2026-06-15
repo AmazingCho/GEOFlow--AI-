@@ -1035,6 +1035,104 @@ class AdminCrmPagesTest extends TestCase
         $this->assertSoftDeleted('crm_opportunities', ['id' => $opportunity->id]);
     }
 
+    public function test_inquiry_conversion_links_existing_open_tasks_and_documents_without_copying(): void
+    {
+        $admin = $this->admin('crm_conversion_chain_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Conversion Chain Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Conversion chain inquiry',
+            'status' => 'qualified',
+            'priority' => 'normal',
+        ]);
+        $openTask = CrmTask::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'title' => 'Open inquiry task',
+            'status' => 'open',
+        ]);
+        $doneTask = CrmTask::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'title' => 'Completed inquiry task',
+            'status' => 'done',
+            'completed_at' => now(),
+        ]);
+        $document = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'quote_no' => 'Q-CONVERSION',
+            'title' => 'Existing inquiry document',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.inquiries.show', ['inquiryId' => $inquiry->id]))
+            ->assertOk()
+            ->assertSee('将补关联的未完成待办')
+            ->assertSee('将补关联的已有单据');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.from-inquiry', ['inquiryId' => $inquiry->id]))
+            ->assertRedirect();
+
+        $opportunity = CrmOpportunity::query()->where('source_inquiry_id', $inquiry->id)->firstOrFail();
+        $this->assertDatabaseHas('crm_tasks', ['id' => $openTask->id, 'opportunity_id' => $opportunity->id]);
+        $this->assertDatabaseHas('crm_tasks', ['id' => $doneTask->id, 'opportunity_id' => null]);
+        $this->assertDatabaseHas('crm_quotes', ['id' => $document->id, 'opportunity_id' => $opportunity->id]);
+        $this->assertSame(2, CrmTask::query()->where('inquiry_id', $inquiry->id)->count());
+        $this->assertSame(1, CrmQuote::query()->where('inquiry_id', $inquiry->id)->count());
+    }
+
+    public function test_new_tasks_keep_inquiry_and_opportunity_sales_chain(): void
+    {
+        $admin = $this->admin('crm_task_chain_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Task Chain Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Task chain inquiry',
+            'status' => 'converted',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Task chain opportunity',
+            'stage' => 'qualified',
+        ]);
+
+        $this->actingAs($admin, 'admin')->post(route('admin.crm.tasks.store'), [
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'title' => 'Created from inquiry',
+        ])->assertRedirect();
+        $this->actingAs($admin, 'admin')->post(route('admin.crm.tasks.store'), [
+            'customer_id' => $customer->id,
+            'opportunity_id' => $opportunity->id,
+            'title' => 'Created from opportunity',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('crm_tasks', [
+            'title' => 'Created from inquiry',
+            'inquiry_id' => $inquiry->id,
+            'opportunity_id' => $opportunity->id,
+        ]);
+        $this->assertDatabaseHas('crm_tasks', [
+            'title' => 'Created from opportunity',
+            'inquiry_id' => $inquiry->id,
+            'opportunity_id' => $opportunity->id,
+        ]);
+    }
+
     public function test_quote_conversion_creates_independent_document_and_items(): void
     {
         $admin = $this->admin('crm_convert_admin');
