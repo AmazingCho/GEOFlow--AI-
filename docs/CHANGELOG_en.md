@@ -4,6 +4,14 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Contracts and Read-only Audit
+
+- Added opportunity and task links to CRM activities; a task can retain multiple historical activities.
+- Added the read-only `crm:pipeline-audit` command for orphan or duplicate opportunities, unlinked tasks and documents, relationship mismatches, open tasks on archived opportunities, and activity-link candidates.
+- Added JSON output and `--fail-on-issues`; the audit never mutates historical records or guesses ambiguous links.
+- The current live audit found 16 relationships requiring later governance, with identical CRM counts before and after the audit.
+- Verification: `CrmPipelineAuditTest` 2 tests / 12 assertions; `AdminCrmPagesTest` 16 tests / 146 assertions.
+
 ### CRM Activity, Contact, and Opportunity Next-Action Refinement
 
 - Historical activities can now be edited and soft-deleted:

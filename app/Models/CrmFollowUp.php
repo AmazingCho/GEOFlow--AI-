@@ -14,6 +14,8 @@ class CrmFollowUp extends Model
     protected $fillable = [
         'customer_id',
         'inquiry_id',
+        'opportunity_id',
+        'task_id',
         'followup_type',
         'content',
         'next_action',
@@ -27,6 +29,8 @@ class CrmFollowUp extends Model
         return [
             'customer_id' => 'integer',
             'inquiry_id' => 'integer',
+            'opportunity_id' => 'integer',
+            'task_id' => 'integer',
             'next_followup_at' => 'datetime',
         ];
     }
@@ -39,5 +43,15 @@ class CrmFollowUp extends Model
     public function inquiry(): BelongsTo
     {
         return $this->belongsTo(CrmInquiry::class, 'inquiry_id');
+    }
+
+    public function opportunity(): BelongsTo
+    {
+        return $this->belongsTo(CrmOpportunity::class, 'opportunity_id');
+    }
+
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(CrmTask::class, 'task_id');
     }
 }

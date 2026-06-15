@@ -21,4 +21,5 @@ class CrmOpportunity extends Model
     public function owner(): BelongsTo { return $this->belongsTo(Admin::class, 'owner_admin_id'); }
     public function tasks(): HasMany { return $this->hasMany(CrmTask::class, 'opportunity_id'); }
     public function quotes(): HasMany { return $this->hasMany(CrmQuote::class, 'opportunity_id'); }
+    public function activities(): HasMany { return $this->hasMany(CrmFollowUp::class, 'opportunity_id'); }
 }

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CrmTask extends Model
@@ -20,4 +21,5 @@ class CrmTask extends Model
     public function order(): BelongsTo { return $this->belongsTo(CrmSalesOrder::class, 'order_id'); }
     public function ticket(): BelongsTo { return $this->belongsTo(CrmAfterSalesTicket::class, 'ticket_id'); }
     public function assignee(): BelongsTo { return $this->belongsTo(Admin::class, 'assigned_admin_id'); }
+    public function activities(): HasMany { return $this->hasMany(CrmFollowUp::class, 'task_id'); }
 }
