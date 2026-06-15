@@ -77,7 +77,7 @@
 | Collection 健康度评分 | 未实现 | 可作为后续治理增强 |
 | 重复素材合并 | 未实现 | 需要更明确的数据合并策略 |
 | 系统更新中心准备度增强 | 跳过 | 本地定制分支没有上游更新中心基底，强行接入会引入不完整入口 |
-| CRM 销售链路 V2 | 阶段 1 已完成 | 已冻结基线，补齐活动到商机/待办的数据契约，并新增只读销售链审计；下一步执行商机生命周期治理 |
+| CRM 销售链路 V2 | 阶段 2 已完成 | 已补齐销售链数据契约与只读审计；商机具备来源模式、重复保护、安全归档和恢复；下一步统一询盘转商机编排 |
 
 ## 最近验证记录
 
@@ -108,6 +108,8 @@
 - `AdminCrmPagesTest` CRM 联系人最小字段创建、活动编辑/软删除、商机待办驱动下一步及空可选字段创建验证，共 16 tests / 146 assertions
 - `CrmPipelineAuditTest` 销售链数据契约与只读审计验证，共 2 tests / 12 assertions
 - `crm:pipeline-audit --json` 真实数据审计：16 项待治理关系，执行前后 CRM 记录数量一致
+- `AdminCrmPagesTest` 商机来源、重复保护、归档/恢复和关联保留验证，共 19 tests / 172 assertions
+- 浏览器检查商机新增、编辑、归档视图：无横向溢出、无控制台错误；截图通道超时，保留 DOM 与交互验证结果
 - Headless Chrome 新建单据页和多类型打印页截图检查
 - 浏览器检查询盘列表、询盘详情、商机创建页和单据创建页，无横向溢出；商机来源卡片和关联商机下拉正常渲染
 - `AdminArticlesPageTest`、`AdminLoginPageTest`、`AdminSiteSettingsPageTest`、`AdminSiteThemeReplicationTest`、`AdminDistributionPageTest` 联合回归通过，共 104 tests / 743 assertions

@@ -184,6 +184,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('{opportunityId}/edit', [CrmOpportunityController::class, 'edit'])->name('edit')->whereNumber('opportunityId');
                 Route::put('{opportunityId}', [CrmOpportunityController::class, 'update'])->name('update')->whereNumber('opportunityId');
                 Route::post('{opportunityId}/delete', [CrmOpportunityController::class, 'destroy'])->name('delete')->whereNumber('opportunityId');
+                Route::post('{opportunityId}/restore', [CrmOpportunityController::class, 'restore'])->name('restore')->whereNumber('opportunityId');
             });
             Route::prefix('customers')->name('customers.')->group(function () {
                 Route::get('/', [CrmCustomerController::class, 'index'])->name('index');

@@ -1,7 +1,89 @@
 @extends('admin.layouts.app')
+
 @section('content')
-<div class="px-4 sm:px-0"><div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 class="text-2xl font-bold text-gray-900">商机管道</h1><p class="mt-1 text-sm text-gray-500">询盘确认有真实采购可能后，再进入商机管道。</p></div><a href="{{ route('admin.crm.opportunities.create') }}" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><i data-lucide="plus" class="mr-2 h-4 w-4"></i>新增商机</a></div>
-@include('admin.crm.partials.nav',['currentCrmTab'=>'opportunities'])
-<form method="GET" class="mb-5 flex gap-3"><select name="collection_id" class="min-w-64 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"><option value="0">全部业务容器</option>@foreach($collectionOptions as $option)<option value="{{ $option['id'] }}" @selected($collectionId===$option['id'])>{{ $option['name'] }}</option>@endforeach</select><button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">筛选</button></form>
-<div class="overflow-x-auto pb-4"><div class="grid min-w-[1260px] grid-cols-7 gap-3">@foreach($stages as $stageKey=>$stageLabel)@php($rows=$opportunities->get($stageKey,collect()))<section class="rounded-lg border border-gray-200 bg-gray-50"><div class="border-b border-gray-200 px-3 py-3"><div class="flex items-center justify-between"><h2 class="text-sm font-semibold text-gray-800">{{ $stageLabel }}</h2><span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 ring-1 ring-gray-200">{{ $rows->count() }}</span></div><div class="mt-1 text-xs text-gray-500">{{ number_format((float)$rows->sum('amount'),2) }}</div></div><div class="space-y-2 p-2">@forelse($rows as $opportunity)<a href="{{ route('admin.crm.opportunities.edit',['opportunityId'=>$opportunity->id]) }}" class="block rounded-md border border-gray-200 bg-white p-3 shadow-sm hover:border-blue-300"><div class="text-sm font-semibold text-gray-900">{{ $opportunity->name }}</div><div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->company_name }}</div><div class="mt-2 flex justify-between text-xs"><span class="font-medium text-gray-700">{{ $opportunity->currency }} {{ number_format((float)$opportunity->amount,0) }}</span><span class="text-gray-500">{{ $opportunity->probability }}%</span></div>@if($opportunity->expected_close_date)<div class="mt-2 text-xs text-gray-500">预计 {{ $opportunity->expected_close_date->format('Y-m-d') }}</div>@endif</a>@empty<div class="px-2 py-8 text-center text-xs text-gray-400">暂无商机</div>@endforelse</div></section>@endforeach</div></div></div>
+<div class="px-4 sm:px-0">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">商机管道</h1>
+            <p class="mt-1 text-sm text-gray-500">询盘确认有真实采购可能后，再进入商机管道。</p>
+        </div>
+        <a href="{{ route('admin.crm.opportunities.create') }}" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+            <i data-lucide="plus" class="mr-2 h-4 w-4"></i>新增商机
+        </a>
+    </div>
+
+    @include('admin.crm.partials.nav', ['currentCrmTab' => 'opportunities'])
+
+    @if ($errors->any())
+        <div class="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ $errors->first() }}</div>
+    @endif
+
+    <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="inline-flex w-fit rounded-md border border-gray-300 bg-white p-1">
+            <a href="{{ route('admin.crm.opportunities.index', array_filter(['collection_id' => $collectionId])) }}" class="rounded px-3 py-1.5 text-sm font-medium {{ !$archived ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50' }}">活动中</a>
+            <a href="{{ route('admin.crm.opportunities.index', array_filter(['collection_id' => $collectionId, 'view' => 'archived'])) }}" class="rounded px-3 py-1.5 text-sm font-medium {{ $archived ? 'bg-gray-700 text-white' : 'text-gray-600 hover:bg-gray-50' }}">已归档</a>
+        </div>
+        <form method="GET" class="flex flex-col gap-2 sm:flex-row">
+            @if($archived)<input type="hidden" name="view" value="archived">@endif
+            <select name="collection_id" class="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                <option value="0">全部业务容器</option>
+                @foreach($collectionOptions as $option)
+                    <option value="{{ $option['id'] }}" @selected($collectionId === $option['id'])>{{ $option['name'] }}</option>
+                @endforeach
+            </select>
+            <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">筛选</button>
+        </form>
+    </div>
+
+    @if($archived)
+        <div class="space-y-3">
+            @forelse($archivedOpportunities as $opportunity)
+                <article class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h2 class="font-semibold text-gray-900">{{ $opportunity->name }}</h2>
+                            <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">已归档 {{ $opportunity->deleted_at?->format('Y-m-d H:i') }}</span>
+                        </div>
+                        <p class="mt-2 text-sm text-gray-500">{{ $opportunity->customer?->company_name ?: '未关联客户' }}@if($opportunity->sourceInquiry) · 来源：{{ $opportunity->sourceInquiry->subject }}@endif</p>
+                        <p class="mt-2 text-xs text-gray-500">保留 {{ $opportunity->tasks_count }} 个待办、{{ $opportunity->activities_count }} 条活动、{{ $opportunity->quotes_count }} 份单据</p>
+                    </div>
+                    <form method="POST" action="{{ route('admin.crm.opportunities.restore', ['opportunityId' => (int) $opportunity->id]) }}">
+                        @csrf
+                        <button type="submit" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                            <i data-lucide="archive-restore" class="mr-2 h-4 w-4"></i>恢复
+                        </button>
+                    </form>
+                </article>
+            @empty
+                <div class="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">暂无已归档商机</div>
+            @endforelse
+        </div>
+    @else
+        <div class="overflow-x-auto pb-4">
+            <div class="grid min-w-[1260px] grid-cols-7 gap-3">
+                @foreach($stages as $stageKey => $stageLabel)
+                    @php($rows = $opportunities->get($stageKey, collect()))
+                    <section class="rounded-lg border border-gray-200 bg-gray-50">
+                        <div class="border-b border-gray-200 px-3 py-3">
+                            <div class="flex items-center justify-between"><h2 class="text-sm font-semibold text-gray-800">{{ $stageLabel }}</h2><span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 ring-1 ring-gray-200">{{ $rows->count() }}</span></div>
+                            <div class="mt-1 text-xs text-gray-500">{{ number_format((float) $rows->sum('amount'), 2) }}</div>
+                        </div>
+                        <div class="space-y-2 p-2">
+                            @forelse($rows as $opportunity)
+                                <a href="{{ route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]) }}" class="block rounded-md border border-gray-200 bg-white p-3 shadow-sm hover:border-blue-300">
+                                    <div class="text-sm font-semibold text-gray-900">{{ $opportunity->name }}</div>
+                                    <div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->company_name }}</div>
+                                    <div class="mt-2 flex justify-between text-xs"><span class="font-medium text-gray-700">{{ $opportunity->currency }} {{ number_format((float) $opportunity->amount, 0) }}</span><span class="text-gray-500">{{ $opportunity->probability }}%</span></div>
+                                    @if($opportunity->expected_close_date)<div class="mt-2 text-xs text-gray-500">预计 {{ $opportunity->expected_close_date->format('Y-m-d') }}</div>@endif
+                                </a>
+                            @empty
+                                <div class="px-2 py-8 text-center text-xs text-gray-400">暂无商机</div>
+                            @endforelse
+                        </div>
+                    </section>
+                @endforeach
+            </div>
+        </div>
+    @endif
+</div>
 @endsection

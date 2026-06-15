@@ -12,6 +12,7 @@ use App\Models\CrmTask;
 use App\Services\GeoFlow\CrmPipelineConsistencyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CrmPipelineAuditTest extends TestCase
@@ -94,6 +95,8 @@ class CrmPipelineAuditTest extends TestCase
             'status' => 'qualified',
             'priority' => 'normal',
         ]);
+        // Simulate duplicate records created before the stage-2 active-source constraint existed.
+        DB::statement('DROP INDEX IF EXISTS crm_opportunities_active_source_inquiry_unique');
         $linkedOpportunity = CrmOpportunity::query()->create([
             'collection_id' => $collection->id,
             'customer_id' => $customer->id,

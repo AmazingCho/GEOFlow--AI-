@@ -4,6 +4,15 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Opportunity Lifecycle
+
+- Added explicit "from inquiry" and "direct without inquiry" modes plus a searchable source-inquiry selector.
+- Source inquiries synchronize the customer and Collection; cross-customer, cross-Collection, and duplicate active links are rejected.
+- Added a database constraint allowing only one active opportunity per source inquiry.
+- Added safe opportunity archive, archived filtering, and restore while preserving linked tasks, activities, and documents.
+- Archive impact is summarized before confirmation, and restore is blocked when the source is already occupied.
+- Verification: `AdminCrmPagesTest` 19 tests / 172 assertions; `CrmPipelineAuditTest` 2 tests / 12 assertions; all Blade templates compiled.
+
 ### CRM Sales Pipeline V2: Contracts and Read-only Audit
 
 - Added opportunity and task links to CRM activities; a task can retain multiple historical activities.

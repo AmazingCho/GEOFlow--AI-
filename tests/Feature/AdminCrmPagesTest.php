@@ -9,6 +9,7 @@ use App\Models\CollectionRecord;
 use App\Models\CrmAfterSalesTicket;
 use App\Models\CrmContentProposal;
 use App\Models\CrmCustomer;
+use App\Models\CrmFollowUp;
 use App\Models\CrmInquiry;
 use App\Models\CrmCustomerContact;
 use App\Models\CrmOpportunity;
@@ -868,6 +869,170 @@ class AdminCrmPagesTest extends TestCase
             ->assertDontSee('name="next_step"', false)
             ->assertDontSee('name="next_step_at"', false)
             ->assertDontSee('Legacy duplicated step');
+    }
+
+    public function test_opportunity_creation_exposes_source_modes_and_blocks_duplicate_active_source(): void
+    {
+        $admin = $this->admin('crm_opportunity_source_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Source Mode Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Source mode inquiry',
+            'status' => 'qualified',
+            'priority' => 'normal',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.create'))
+            ->assertOk()
+            ->assertSee('从询盘创建')
+            ->assertSee('无来源直接创建')
+            ->assertSee('Source mode inquiry');
+
+        $payload = [
+            'source_mode' => 'inquiry',
+            'source_inquiry_id' => $inquiry->id,
+            'customer_id' => $customer->id,
+            'name' => 'Source mode opportunity',
+            'stage' => 'qualified',
+            'currency' => 'USD',
+            'amount' => 0,
+            'probability' => 20,
+        ];
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.store'), $payload)
+            ->assertRedirect();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.store'), $payload)
+            ->assertSessionHasErrors('source_inquiry_id');
+
+        $this->assertSame(1, CrmOpportunity::query()->where('source_inquiry_id', $inquiry->id)->count());
+    }
+
+    public function test_opportunity_can_be_archived_and_restored_without_deleting_related_records(): void
+    {
+        $admin = $this->admin('crm_opportunity_archive_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Archive Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Archive inquiry',
+            'status' => 'qualified',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Archive opportunity',
+            'stage' => 'qualified',
+        ]);
+        $task = CrmTask::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'opportunity_id' => $opportunity->id,
+            'title' => 'Archive task',
+            'status' => 'open',
+        ]);
+        $activity = CrmFollowUp::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'opportunity_id' => $opportunity->id,
+            'content' => 'Archive activity',
+        ]);
+        $document = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'opportunity_id' => $opportunity->id,
+            'quote_no' => 'Q-ARCHIVE',
+            'title' => 'Archive document',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.delete', ['opportunityId' => $opportunity->id]))
+            ->assertRedirect(route('admin.crm.opportunities.index'));
+
+        $this->assertSoftDeleted('crm_opportunities', ['id' => $opportunity->id]);
+        $this->assertDatabaseHas('crm_tasks', ['id' => $task->id, 'opportunity_id' => $opportunity->id]);
+        $this->assertDatabaseHas('crm_follow_ups', ['id' => $activity->id, 'opportunity_id' => $opportunity->id]);
+        $this->assertDatabaseHas('crm_quotes', ['id' => $document->id, 'opportunity_id' => $opportunity->id]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.index', ['view' => 'archived']))
+            ->assertOk()
+            ->assertSee('Archive opportunity')
+            ->assertSee('恢复');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.restore', ['opportunityId' => $opportunity->id]))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_opportunities', ['id' => $opportunity->id, 'deleted_at' => null]);
+    }
+
+    public function test_opportunity_edit_can_attach_same_customer_inquiry_and_restore_blocks_source_conflict(): void
+    {
+        $admin = $this->admin('crm_opportunity_link_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Link Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Link inquiry',
+            'status' => 'qualified',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'name' => 'Direct opportunity to link',
+            'stage' => 'qualified',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.crm.opportunities.update', ['opportunityId' => $opportunity->id]), [
+                'source_mode' => 'inquiry',
+                'source_inquiry_id' => $inquiry->id,
+                'customer_id' => $customer->id,
+                'name' => $opportunity->name,
+                'stage' => 'qualified',
+                'amount' => 0,
+                'currency' => 'USD',
+                'probability' => 20,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_opportunities', [
+            'id' => $opportunity->id,
+            'source_inquiry_id' => $inquiry->id,
+        ]);
+
+        $opportunity->delete();
+        CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Replacement active opportunity',
+            'stage' => 'qualified',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->from(route('admin.crm.opportunities.index', ['view' => 'archived']))
+            ->post(route('admin.crm.opportunities.restore', ['opportunityId' => $opportunity->id]))
+            ->assertRedirect(route('admin.crm.opportunities.index', ['view' => 'archived']))
+            ->assertSessionHasErrors('source_inquiry_id');
+
+        $this->assertSoftDeleted('crm_opportunities', ['id' => $opportunity->id]);
     }
 
     public function test_quote_conversion_creates_independent_document_and_items(): void
