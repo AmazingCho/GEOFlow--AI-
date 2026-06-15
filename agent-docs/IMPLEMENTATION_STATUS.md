@@ -77,7 +77,7 @@
 | Collection 健康度评分 | 未实现 | 可作为后续治理增强 |
 | 重复素材合并 | 未实现 | 需要更明确的数据合并策略 |
 | 系统更新中心准备度增强 | 跳过 | 本地定制分支没有上游更新中心基底，强行接入会引入不完整入口 |
-| CRM 销售链路 V2 | 阶段 4 已完成 | 询盘转商机已统一编排；客户/询盘/商机共享活动时间线，活动可同步创建待办，待办完成可写回活动结果 |
+| CRM 销售链路 V2 | 阶段 5 已完成 | 活动时间线已统一；单据保存会校验并归一化询盘、商机、客户和 Collection 销售链 |
 
 ## 最近验证记录
 
@@ -114,6 +114,8 @@
 - 浏览器检查询盘转换影响摘要和确认文案通过；真实审计仍为 16 项历史问题，未提前修改旧数据
 - `AdminCrmPagesTest` 活动时间线共享、活动创建待办、待办完成生成活动验证，共 22 tests / 202 assertions
 - 浏览器检查商机活动时间线与待办联动控件通过；截图通道仍超时，保留 DOM 与交互验证结果
+- `AdminCrmPagesTest` 单据链自动补齐与冲突拒绝验证，共 23 tests / 211 assertions
+- 浏览器检查新增单据页链路提示、来源询盘/商机自动带出和移动布局通过
 - Headless Chrome 新建单据页和多类型打印页截图检查
 - 浏览器检查询盘列表、询盘详情、商机创建页和单据创建页，无横向溢出；商机来源卡片和关联商机下拉正常渲染
 - `AdminArticlesPageTest`、`AdminLoginPageTest`、`AdminSiteSettingsPageTest`、`AdminSiteThemeReplicationTest`、`AdminDistributionPageTest` 联合回归通过，共 104 tests / 743 assertions

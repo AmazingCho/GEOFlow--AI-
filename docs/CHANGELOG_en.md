@@ -4,6 +4,14 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Document Chain Consistency
+
+- Quote/document saves now validate that customer, inquiry, opportunity, and Collection belong to the same sales chain.
+- Selecting an inquiry automatically links its active opportunity when present; selecting an opportunity automatically links its source inquiry.
+- Mismatched inquiry/opportunity, customer, or Collection combinations are rejected before saving.
+- The document form now explains the consistency rule, and documents created from an opportunity prefill both source inquiry and opportunity.
+- Verification: `AdminCrmPagesTest` 23 tests / 211 assertions; `CrmPipelineAuditTest` 2 tests / 12 assertions; all Blade templates compiled.
+
 ### CRM Sales Pipeline V2: Unified Activity Timeline
 
 - Added `CrmActivityService` so customers, inquiries, and opportunities share one activity-write path.

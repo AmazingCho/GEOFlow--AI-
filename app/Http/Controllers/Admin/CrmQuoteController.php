@@ -29,6 +29,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 
@@ -160,6 +161,7 @@ class CrmQuoteController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $payload = $this->validateQuote($request);
+        $this->applySalesChainToQuotePayload($payload);
         $items = $this->normalizeItems($payload['items'] ?? [], $request);
         $quote = CrmQuote::query()->create($this->normalizeQuotePayload($payload, $items));
         $this->syncItems($quote, $items);
@@ -265,6 +267,7 @@ class CrmQuoteController extends Controller
     {
         $quote = CrmQuote::query()->whereKey($quoteId)->firstOrFail();
         $payload = $this->validateQuote($request, $quote);
+        $this->applySalesChainToQuotePayload($payload);
         $items = $this->normalizeItems($payload['items'] ?? [], $request);
         $quote->update($this->normalizeQuotePayload($payload, $items, $quote));
         $this->syncItems($quote, $items);
@@ -591,6 +594,55 @@ class CrmQuoteController extends Controller
             'governing_law' => trim((string) ($payload['governing_law'] ?? '')),
             'dispute_resolution' => trim((string) ($payload['dispute_resolution'] ?? '')),
         ];
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function applySalesChainToQuotePayload(array &$payload): void
+    {
+        $customerId = (int) ($payload['customer_id'] ?? 0);
+        $inquiryId = $this->normalizeNullableId($payload['inquiry_id'] ?? null);
+        $opportunityId = $this->normalizeNullableId($payload['opportunity_id'] ?? null);
+        $collectionId = $this->normalizeNullableId($payload['collection_id'] ?? null);
+
+        $inquiry = $inquiryId ? CrmInquiry::query()->findOrFail($inquiryId) : null;
+        $opportunity = $opportunityId ? CrmOpportunity::query()->findOrFail($opportunityId) : null;
+
+        if ($inquiry && ! $opportunity) {
+            $opportunity = CrmOpportunity::query()
+                ->where('source_inquiry_id', $inquiry->id)
+                ->oldest('id')
+                ->first();
+            $opportunityId = $opportunity?->id;
+        }
+        if ($opportunity && ! $inquiry && $opportunity->source_inquiry_id) {
+            $inquiry = CrmInquiry::query()->find((int) $opportunity->source_inquiry_id);
+            $inquiryId = $inquiry?->id;
+        }
+
+        if ($inquiry && $opportunity && (int) $opportunity->source_inquiry_id !== (int) $inquiry->id) {
+            throw ValidationException::withMessages([
+                'opportunity_id' => '关联商机与关联询盘不是同一条销售链。',
+            ]);
+        }
+
+        $expectedCustomerId = (int) ($opportunity?->customer_id ?: $inquiry?->customer_id ?: 0);
+        if ($expectedCustomerId > 0 && $customerId !== $expectedCustomerId) {
+            throw ValidationException::withMessages([
+                'customer_id' => '单据客户必须与关联询盘或商机客户一致。',
+            ]);
+        }
+
+        $expectedCollectionId = (int) ($opportunity?->collection_id ?: $inquiry?->collection_id ?: 0) ?: null;
+        if ($expectedCollectionId !== null && $collectionId !== null && $collectionId !== $expectedCollectionId) {
+            throw ValidationException::withMessages([
+                'collection_id' => '单据业务容器必须与关联询盘或商机一致。',
+            ]);
+        }
+
+        $payload['customer_id'] = $expectedCustomerId > 0 ? $expectedCustomerId : $customerId;
+        $payload['inquiry_id'] = $inquiryId;
+        $payload['opportunity_id'] = $opportunityId;
+        $payload['collection_id'] = $expectedCollectionId ?? $collectionId;
     }
 
     /**
@@ -1002,6 +1054,7 @@ class CrmQuoteController extends Controller
                 'label' => (string) $inquiry->subject,
                 'meta' => (string) ($inquiry->collection?->name ?? ''),
                 'collection_id' => (int) ($inquiry->collection_id ?? 0),
+                'customer_id' => (int) ($inquiry->customer_id ?? 0),
             ])
             ->all();
     }
@@ -1012,7 +1065,7 @@ class CrmQuoteController extends Controller
     private function opportunityOptions(?int $collectionId, ?int $customerId): array
     {
         return CrmOpportunity::query()
-            ->with(['collection', 'customer'])
+            ->with(['collection', 'customer', 'sourceInquiry'])
             ->when($collectionId !== null && $collectionId > 0, static fn ($query) => $query->where('collection_id', $collectionId))
             ->when($customerId !== null && $customerId > 0, static fn ($query) => $query->where('customer_id', $customerId))
             ->orderByDesc('updated_at')
@@ -1023,6 +1076,8 @@ class CrmQuoteController extends Controller
                 'label' => (string) $opportunity->name,
                 'meta' => trim((string) ($opportunity->customer?->company_name ?? '').' '.(string) ($opportunity->collection?->name ?? '')),
                 'collection_id' => (int) ($opportunity->collection_id ?? 0),
+                'customer_id' => (int) ($opportunity->customer_id ?? 0),
+                'source_inquiry_id' => (int) ($opportunity->source_inquiry_id ?? 0),
             ])
             ->all();
     }

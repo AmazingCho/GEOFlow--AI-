@@ -1210,6 +1210,81 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_quote_items',['quote_id'=>$copy->id,'item_name'=>'Machine']);
     }
 
+    public function test_quote_sales_chain_is_normalized_and_conflicts_are_rejected(): void
+    {
+        $admin = $this->admin('crm_quote_chain_admin');
+        $collection = $this->collection('Quote Chain Collection');
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => $collection->id,
+            'company_name' => 'Quote Chain Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $otherCustomer = CrmCustomer::query()->create([
+            'company_name' => 'Other Quote Buyer',
+            'contact_person' => 'Other',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'subject' => 'Quote chain inquiry',
+            'status' => 'converted',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Quote chain opportunity',
+            'stage' => 'qualified',
+        ]);
+
+        $basePayload = [
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'title' => 'Quote chain document',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'items' => [
+                'item_name' => ['Machine'],
+                'quantity' => [1],
+                'unit_price' => [100],
+            ],
+        ];
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.store'), $basePayload + ['inquiry_id' => $inquiry->id])
+            ->assertRedirect();
+
+        $quote = CrmQuote::query()->where('title', 'Quote chain document')->firstOrFail();
+        $this->assertSame((int) $inquiry->id, (int) $quote->inquiry_id);
+        $this->assertSame((int) $opportunity->id, (int) $quote->opportunity_id);
+        $this->assertSame((int) $customer->id, (int) $quote->customer_id);
+        $this->assertSame((int) $collection->id, (int) $quote->collection_id);
+
+        $otherInquiry = CrmInquiry::query()->create([
+            'customer_id' => $otherCustomer->id,
+            'subject' => 'Other quote chain inquiry',
+            'status' => 'qualified',
+            'priority' => 'normal',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.store'), array_replace($basePayload, [
+                'inquiry_id' => $otherInquiry->id,
+                'opportunity_id' => $opportunity->id,
+            ]))
+            ->assertSessionHasErrors('opportunity_id');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.store'), array_replace($basePayload, [
+                'customer_id' => $otherCustomer->id,
+                'opportunity_id' => $opportunity->id,
+            ]))
+            ->assertSessionHasErrors('customer_id');
+    }
+
     private function admin(string $username = 'crm_admin'): Admin
     {
         return Admin::query()->create([

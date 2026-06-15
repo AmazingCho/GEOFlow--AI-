@@ -140,6 +140,9 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="lg:col-span-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
+                        选择商机后，系统会自动校验并同步来源询盘、客户和业务容器；不一致的组合不会保存。
+                    </div>
                     <div class="lg:col-span-2">
                         <label class="mb-2 block text-sm font-medium text-gray-700">单据类型</label>
                         <select name="document_type" class="{{ $inputClass }}">
