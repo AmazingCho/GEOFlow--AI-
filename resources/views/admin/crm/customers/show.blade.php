@@ -166,9 +166,9 @@
                     </form>
                     <div class="mt-5 space-y-3">
                         @forelse ($customer->followUps as $followUp)
-                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true])
+                            @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true, 'editable' => true])
                         @empty
-                            <div class="text-sm text-gray-500">暂无跟进记录</div>
+                            <div class="text-sm text-gray-500">暂无活动记录</div>
                         @endforelse
                     </div>
                 </section>

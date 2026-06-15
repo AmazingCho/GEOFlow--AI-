@@ -467,12 +467,30 @@ class CrmInquiryController extends Controller
             'owner' => trim((string) ($payload['owner'] ?? $inquiry->owner ?? '')),
             'status' => (string) ($payload['status'] ?? 'open'),
         ]);
-        return back()->with('message', '跟进记录已添加');
+        return back()->with('message', '活动记录已添加');
+    }
+
+    public function updateFollowUp(Request $request, int $followUpId): RedirectResponse
+    {
+        $followUp = CrmFollowUp::query()->whereKey($followUpId)->firstOrFail();
+        $payload = $request->validate([
+            'followup_type' => ['nullable', 'string', 'max:80'],
+            'content' => ['required', 'string', 'max:10000'],
+            'owner' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $followUp->update([
+            'followup_type' => trim((string) ($payload['followup_type'] ?? '')),
+            'content' => trim((string) $payload['content']),
+            'owner' => trim((string) ($payload['owner'] ?? '')),
+        ]);
+
+        return back()->with('message', '活动记录已更新');
     }
 
     public function destroyFollowUp(int $followUpId): RedirectResponse
     {
         CrmFollowUp::query()->whereKey($followUpId)->firstOrFail()->delete();
-        return back()->with('message', '跟进记录已删除');
+        return back()->with('message', '活动记录已删除');
     }
 }

@@ -15,7 +15,7 @@ class CrmContactController extends Controller
     public function store(Request $request, int $customerId): RedirectResponse
     {
         $customer = CrmCustomer::query()->findOrFail($customerId);
-        $data = $this->validated($request);
+        $data = $this->validated($request, true);
         DB::transaction(function () use ($customer, $data): void {
             if ((bool) ($data['is_primary'] ?? false)) $customer->contacts()->update(['is_primary'=>false]);
             $contact = $customer->contacts()->create($data);
@@ -28,7 +28,7 @@ class CrmContactController extends Controller
     {
         $customer = CrmCustomer::query()->findOrFail($customerId);
         $contact = $customer->contacts()->findOrFail($contactId);
-        $data = $this->validated($request);
+        $data = $this->validated($request, false);
         DB::transaction(function () use ($customer, $contact, $data): void {
             if ((bool) ($data['is_primary'] ?? false)) $customer->contacts()->where('id', '<>', $contact->id)->update(['is_primary'=>false]);
             $contact->update($data);
@@ -53,9 +53,21 @@ class CrmContactController extends Controller
         return back()->with('message', '联系人已归档');
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, bool $forCreate): array
     {
-        return $request->validate(['name'=>['required','string','max:160'],'title'=>['nullable','string','max:160'],'department'=>['nullable','string','max:160'],'phone'=>['nullable','string','max:120'],'email'=>['nullable','email','max:200'],'decision_role'=>['nullable',Rule::in(['decision_maker','influencer','technical','procurement','finance','user','other'])],'is_primary'=>['nullable','boolean'],'status'=>['nullable',Rule::in(['active','inactive'])],'notes'=>['nullable','string','max:5000']]);
+        $data = $request->validate(['name'=>['required','string','max:160'],'title'=>['nullable','string','max:160'],'department'=>['nullable','string','max:160'],'phone'=>['nullable','string','max:120'],'email'=>['nullable','email','max:200'],'decision_role'=>['nullable',Rule::in(['decision_maker','influencer','technical','procurement','finance','user','other'])],'is_primary'=>['nullable','boolean'],'status'=>['nullable',Rule::in(['active','inactive'])],'notes'=>['nullable','string','max:5000']]);
+
+        $data['name'] = trim((string) $data['name']);
+        foreach (['title', 'department', 'phone', 'email', 'decision_role'] as $field) {
+            if ($forCreate || array_key_exists($field, $data)) {
+                $data[$field] = trim((string) ($data[$field] ?? ''));
+            }
+        }
+        if ($forCreate || array_key_exists('status', $data)) {
+            $data['status'] = trim((string) ($data['status'] ?? '')) ?: 'active';
+        }
+
+        return $data;
     }
 
     private function makePrimary(CrmCustomer $customer, CrmCustomerContact $contact): void
@@ -65,6 +77,11 @@ class CrmContactController extends Controller
 
     private function syncLegacy(CrmCustomer $customer, CrmCustomerContact $contact): void
     {
-        $customer->update(['contact_person'=>$contact->name,'contact_title'=>$contact->title,'phone'=>$contact->phone,'email'=>$contact->email]);
+        $customer->update([
+            'contact_person' => (string) $contact->name,
+            'contact_title' => (string) ($contact->title ?? ''),
+            'phone' => (string) ($contact->phone ?? ''),
+            'email' => (string) ($contact->email ?? ''),
+        ]);
     }
 }

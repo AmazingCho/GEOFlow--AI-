@@ -212,6 +212,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::post('{inquiryId}/follow-ups', [CrmInquiryController::class, 'storeFollowUp'])->name('follow-ups.store')->whereNumber('inquiryId');
             });
 
+            Route::put('follow-ups/{followUpId}', [CrmInquiryController::class, 'updateFollowUp'])->name('follow-ups.update')->whereNumber('followUpId');
             Route::post('follow-ups/{followUpId}/delete', [CrmInquiryController::class, 'destroyFollowUp'])->name('follow-ups.delete')->whereNumber('followUpId');
 
             Route::prefix('quotes')->name('quotes.')->group(function () {

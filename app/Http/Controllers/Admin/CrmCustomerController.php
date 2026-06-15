@@ -186,7 +186,7 @@ class CrmCustomerController extends Controller
             'status' => (string) ($payload['status'] ?? 'open'),
         ]);
 
-        return back()->with('message', '跟进记录已添加');
+        return back()->with('message', '活动记录已添加');
     }
 
     /**

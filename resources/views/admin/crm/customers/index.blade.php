@@ -5,7 +5,7 @@
         <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">CRM 客户管理</h1>
-                <p class="mt-1 text-sm text-gray-600">管理客户、内部负责人、跟进记录，并与业务容器关联。</p>
+                <p class="mt-1 text-sm text-gray-600">管理客户、内部负责人、活动记录，并与业务容器关联。</p>
             </div>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('admin.crm.inquiries.create') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">

@@ -2,6 +2,24 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-15
+
+### CRM Activity, Contact, and Opportunity Next-Action Refinement
+
+- Historical activities can now be edited and soft-deleted:
+  - Customer and inquiry detail pages expose persistent edit and delete controls.
+  - Editing reuses the lightweight Markdown editor; document, order, and ticket timelines remain read-only.
+- Fixed the `500` error when creating a customer contact with only a name or blank optional fields:
+  - Laravel converts empty strings to `null`, while the contact table keeps non-null string constraints.
+  - The controller now normalizes optional strings before persistence and safely synchronizes legacy customer contact fields.
+- Clarified CRM responsibilities:
+  - Activities store completed communication facts.
+  - CRM tasks store future actions, assignees, and due dates.
+  - Opportunities store pipeline data and display the first unfinished task as the current next action.
+- Removed duplicated manual next-action fields from the active opportunity form while retaining legacy database columns for compatibility.
+- Fixed a `500` error when manually creating an opportunity with a blank competitor field; blank amount input now also falls back to `0`.
+- Verification: the complete `AdminCrmPagesTest` suite passed with `16 tests / 146 assertions`.
+
 ## 2026-06-14
 
 ### CRM Activity Editor Refinement

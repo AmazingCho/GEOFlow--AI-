@@ -256,17 +256,17 @@ docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh 
 
 **解决方案：** CRM 轻量编辑器使用 `data-crm-markdown-editor` + 原生 JS 初始化，写/预览/源码三个 panel 使用 `hidden` 控制。除非先确认页面已全局加载 Alpine，否则不要再给该组件添加 `x-data`、`@click`、`x-show` 或 `x-cloak`。
 
-### 20. 跟进记录删除路由必须在 CRM 组公用层级
+### 20. 活动记录编辑和删除路由必须在 CRM 组公用层级
 
-**原因：** 如果放在 `inquiries` 子路由组中，路径为 `crm/inquiries/follow-ups/{id}/delete`，路由名为 `admin.crm.inquiries.follow-ups.delete`，而不是预期的 `admin.crm.follow-ups.delete`。
+**原因：** 如果放在 `inquiries` 子路由组中，路由名会带上 `admin.crm.inquiries` 前缀，客户详情页无法稳定复用。
 
-**正确位置：** 在 CRM 组层级直接定义：`Route::post('follow-ups/{followUpId}/delete', ...)`。当前已在正确位置（`routes/web.php` 约 186 行）。
+**正确位置：** 在 CRM 组公用层级定义 `admin.crm.follow-ups.update` 和 `admin.crm.follow-ups.delete`。客户、询盘页面可编辑和删除；单据、订单、售后只读。
 
-### 21. 跟进记录组件必须用 @include 引入而非内联 HTML
+### 21. 活动记录组件必须用 @include 引入而非内联 HTML
 
-**原因：** 各详情页如果直接内联渲染跟进记录（`@forelse ... @include ... @endforelse` 但 inline HTML），删除按钮等组件更新不会生效。
+**原因：** 各详情页如果直接内联渲染活动记录，编辑、删除和 Markdown 展示规则容易在不同页面分叉。
 
-**正确做法：** 所有 5 个详情页的跟进记录列表使用 `@include('admin.crm.partials._follow-up-item', [...])`。
+**正确做法：** 所有详情页使用 `@include('admin.crm.partials._follow-up-item', [...])`；仅客户和询盘传入 `editable => true`。
 
 ### 22. 多页面 sed 批量替换 Blade 模板易导致变量丢失
 
@@ -292,3 +292,27 @@ docker exec -e APP_KEY="$(grep '^APP_KEY=' .env | cut -d= -f2-)" geoflow-app sh 
 4. 检查是否存在代理、Nginx rewrite 或历史缓存把后台入口固定到 `/admin`。
 
 **处理原则：** 在确认真实部署入口前，不要直接改业务路由。当前本地操作和浏览器验证优先使用 `/admin`。
+
+### 24. 联系人可选字段不能直接以 null 写入非空字符串列
+
+**症状：** 客户详情页新增联系人时，只填写姓名或将电话、邮箱、职位等可选字段留空，会返回 `500`，日志包含 `null value in column ... violates not-null constraint`。
+
+**原因：** Laravel 的 `ConvertEmptyStringsToNull` 中间件会把空输入转为 `null`，但 `crm_customer_contacts` 的部分字符串列使用 `NOT NULL` 和空字符串默认值。
+
+**正确做法：** 在 `CrmContactController` 的验证边界将可选字符串统一规范化为 `''`，并在同步 `crm_customers` 旧兼容字段时继续做字符串转换。不要只修改前端 `required` 属性掩盖数据库契约问题。
+
+### 25. 商机表单空字符串会被转换为 null
+
+**症状：** 手动新建商机时，如果“竞争对手”留空，保存返回 `500`，日志提示 `crm_opportunities.competitor` 违反非空约束。
+
+**原因：** 表单始终提交该字段，Laravel 会把空字符串转换为 `null`；数据库的 `competitor` 列虽然默认值为 `''`，但显式写入 `null` 时不会使用默认值。
+
+**正确做法：** `CrmOpportunityController` 在验证后将 `competitor` 规范化为字符串，并为可清空的金额兜底为 `0`。相关测试必须模拟浏览器提交空字符串，不能只省略字段，否则无法覆盖该错误。
+
+### 26. CRM 销售链路存在跨对象断链风险
+
+**症状：** 全局新增商机可能没有来源询盘；询盘待办和已有单据不会自动补关联新商机；商机页缺少统一活动时间线；同一询盘可能通过不同入口产生重复商机。
+
+**原因：** 询盘、商机、活动、待办和单据分别按页面实现，尚未由统一的转换服务和一致性规则编排。
+
+**当前处理：** 不要继续通过局部按钮或复制数据临时修补。后续以 [CRM 销售链路 V2 优化白皮书](./CRM_SALES_PIPELINE_V2_WHITEPAPER.md) 为唯一规划依据，先建立恢复点和数据契约，再处理创建、转换、活动、待办与单据联动。

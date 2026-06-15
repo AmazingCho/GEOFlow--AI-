@@ -51,6 +51,7 @@
 | [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) | 每个 agent 开发前后必须遵守的交接规则 |
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
+| [CRM_SALES_PIPELINE_V2_WHITEPAPER.md](./CRM_SALES_PIPELINE_V2_WHITEPAPER.md) | CRM 客户、询盘、商机、活动、待办和单据统一链路的后续实施白皮书 |
 
 ## 每次开发后按需更新
 

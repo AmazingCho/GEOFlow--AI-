@@ -679,6 +679,75 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_quotes',['id'=>$quote->id,'customer_id'=>$customer->id,'deleted_at'=>null]);
     }
 
+    public function test_contact_can_be_created_with_only_required_name(): void
+    {
+        $admin = $this->admin('crm_contact_optional_fields_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Optional Contact Buyer',
+            'contact_person' => 'Primary Buyer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.customers.contacts.store', ['customerId' => $customer->id]), [
+                'name' => 'Secondary Buyer',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_customer_contacts', [
+            'customer_id' => $customer->id,
+            'name' => 'Secondary Buyer',
+            'title' => '',
+            'department' => '',
+            'phone' => '',
+            'email' => '',
+            'decision_role' => '',
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_activity_can_be_updated_and_soft_deleted(): void
+    {
+        $admin = $this->admin('crm_activity_edit_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Activity Edit Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $followUp = $customer->followUps()->create([
+            'content' => 'Original activity',
+            'followup_type' => 'Email',
+            'owner' => 'Leo',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.customers.show', ['customerId' => $customer->id]))
+            ->assertOk()
+            ->assertSee('编辑活动记录')
+            ->assertSee(route('admin.crm.follow-ups.update', ['followUpId' => $followUp->id]), false);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.crm.follow-ups.update', ['followUpId' => $followUp->id]), [
+                'content' => 'Updated activity',
+                'followup_type' => 'Meeting',
+                'owner' => 'Sales Admin',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_follow_ups', [
+            'id' => $followUp->id,
+            'content' => 'Updated activity',
+            'followup_type' => 'Meeting',
+            'owner' => 'Sales Admin',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.follow-ups.delete', ['followUpId' => $followUp->id]))
+            ->assertRedirect();
+
+        $this->assertSoftDeleted('crm_follow_ups', ['id' => $followUp->id]);
+    }
+
     public function test_inquiry_activity_is_scoped_and_future_work_uses_tasks(): void
     {
         $admin = $this->admin('crm_activity_admin');
@@ -734,6 +803,71 @@ class AdminCrmPagesTest extends TestCase
             'probability'=>10,
         ])->assertRedirect();
         $this->assertSame('closed', (string) $closedInquiry->fresh()->status);
+    }
+
+    public function test_opportunity_can_be_created_with_blank_optional_text_fields(): void
+    {
+        $admin = $this->admin('crm_opportunity_blank_fields_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Blank Fields Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.store'), [
+                'customer_id' => $customer->id,
+                'name' => 'Blank optional fields project',
+                'stage' => 'qualified',
+                'amount' => 0,
+                'currency' => 'USD',
+                'probability' => 20,
+                'expected_close_date' => '',
+                'competitor' => '',
+                'lost_reason' => '',
+                'notes' => '',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_opportunities', [
+            'customer_id' => $customer->id,
+            'name' => 'Blank optional fields project',
+            'competitor' => '',
+        ]);
+    }
+
+    public function test_opportunity_uses_open_tasks_as_the_next_action(): void
+    {
+        $admin = $this->admin('crm_opportunity_task_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Task Driven Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'name' => 'Task Driven Project',
+            'stage' => 'qualified',
+            'currency' => 'USD',
+            'probability' => 20,
+            'next_step' => 'Legacy duplicated step',
+        ]);
+        CrmTask::query()->create([
+            'customer_id' => $customer->id,
+            'opportunity_id' => $opportunity->id,
+            'title' => 'Send technical proposal',
+            'status' => 'open',
+            'due_at' => now()->addDay(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]))
+            ->assertOk()
+            ->assertSee('当前下一步')
+            ->assertSee('Send technical proposal')
+            ->assertDontSee('name="next_step"', false)
+            ->assertDontSee('name="next_step_at"', false)
+            ->assertDontSee('Legacy duplicated step');
     }
 
     public function test_quote_conversion_creates_independent_document_and_items(): void

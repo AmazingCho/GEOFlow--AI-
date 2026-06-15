@@ -100,6 +100,10 @@ class CrmOpportunityController extends Controller
                 'sourceInquiry.entities',
                 'sourceInquiry.knowledgeBases',
                 'sourceInquiry.cases',
+                'tasks' => static fn ($query) => $query
+                    ->orderByRaw('due_at IS NULL')
+                    ->orderBy('due_at')
+                    ->latest('id'),
                 'tasks.assignee',
                 'quotes.inquiry',
             ])
@@ -150,8 +154,6 @@ class CrmOpportunityController extends Controller
             'currency' => ['nullable', 'string', 'max:10'],
             'probability' => ['nullable', 'integer', 'between:0,100'],
             'expected_close_date' => ['nullable', 'date'],
-            'next_step' => ['nullable', 'string', 'max:500'],
-            'next_step_at' => ['nullable', 'date'],
             'competitor' => ['nullable', 'string', 'max:200'],
             'lost_reason' => [
                 Rule::requiredIf(fn () => $request->input('stage') === 'lost'),
@@ -165,8 +167,11 @@ class CrmOpportunityController extends Controller
         foreach (['collection_id', 'primary_contact_id', 'source_inquiry_id', 'owner_admin_id'] as $key) {
             $data[$key] = (int) ($data[$key] ?? 0) ?: null;
         }
+        $data['name'] = trim((string) $data['name']);
+        $data['amount'] = (float) ($data['amount'] ?? 0);
         $data['currency'] = strtoupper(trim((string) ($data['currency'] ?? 'USD'))) ?: 'USD';
         $data['probability'] = (int) ($data['probability'] ?? 20);
+        $data['competitor'] = trim((string) ($data['competitor'] ?? ''));
 
         return $data;
     }
@@ -217,11 +222,6 @@ class CrmOpportunityController extends Controller
             'amount' => 0,
             'currency' => 'USD',
             'probability' => 20,
-            'next_step' => $this->firstNonEmpty([
-                (string) ($inquiry->missing_information_questions ?? ''),
-                (string) ($inquiry->suggested_reply_points ?? ''),
-                '确认需求、预算、交期和目标配置。',
-            ]),
             'notes' => $this->opportunityNotesFromInquiry($inquiry),
         ];
     }
@@ -262,21 +262,6 @@ class CrmOpportunityController extends Controller
         }
 
         return (int) ($contacts->firstWhere('is_primary', true)?->id ?: $contacts->first()?->id) ?: null;
-    }
-
-    /**
-     * @param  list<string>  $values
-     */
-    private function firstNonEmpty(array $values): string
-    {
-        foreach ($values as $value) {
-            $text = trim($value);
-            if ($text !== '') {
-                return $text;
-            }
-        }
-
-        return '';
     }
 
     private function opportunityNotesFromInquiry(CrmInquiry $inquiry): string

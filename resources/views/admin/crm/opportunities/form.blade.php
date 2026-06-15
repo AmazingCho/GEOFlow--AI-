@@ -9,6 +9,9 @@
     $textareaClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
     $sourcePrimaryContactId = $sourceInquiry?->customer?->contacts?->firstWhere('is_primary', true)?->id
         ?: $sourceInquiry?->customer?->contacts?->first()?->id;
+    $currentOpportunityTask = $isEdit
+        ? $opportunity->tasks->first(static fn ($task) => (string) $task->status !== 'done')
+        : null;
 @endphp
 
 @section('content')
@@ -115,14 +118,6 @@
                             <span class="mb-1.5 block text-sm font-medium text-gray-700">预计成交日期</span>
                             <input type="date" name="expected_close_date" value="{{ old('expected_close_date', $opportunity?->expected_close_date?->format('Y-m-d')) }}" class="{{ $inputClass }}">
                         </label>
-                        <label>
-                            <span class="mb-1.5 block text-sm font-medium text-gray-700">下一步时间</span>
-                            <input type="datetime-local" name="next_step_at" value="{{ old('next_step_at', $opportunity?->next_step_at?->format('Y-m-d\TH:i')) }}" class="{{ $inputClass }}">
-                        </label>
-                        <label class="md:col-span-2">
-                            <span class="mb-1.5 block text-sm font-medium text-gray-700">下一步动作</span>
-                            <input name="next_step" maxlength="500" value="{{ old('next_step', $opportunity?->next_step) }}" class="{{ $inputClass }}" placeholder="例如：确认预算、发配置方案、安排样机测试">
-                        </label>
                         <label class="md:col-span-2">
                             <span class="mb-1.5 block text-sm font-medium text-gray-700">竞争对手</span>
                             <input name="competitor" maxlength="200" value="{{ old('competitor', $opportunity?->competitor) }}" class="{{ $inputClass }}">
@@ -185,6 +180,33 @@
                 @endif
 
                 @if($isEdit)
+                    <section class="rounded-lg border border-blue-100 bg-blue-50 p-5 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h2 class="font-semibold text-blue-950">当前下一步</h2>
+                                <p class="mt-1 text-sm text-blue-700">商机的未来动作统一由 CRM 待办管理，避免与活动记录和商机字段重复。</p>
+                            </div>
+                            <i data-lucide="list-checks" class="h-5 w-5 shrink-0 text-blue-600"></i>
+                        </div>
+                        @if($currentOpportunityTask)
+                            <div class="mt-4 rounded-md border border-blue-100 bg-white px-4 py-3">
+                                <div class="font-medium text-gray-900">{{ $currentOpportunityTask->title }}</div>
+                                <div class="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
+                                    @if($currentOpportunityTask->due_at)
+                                        <span>截止：{{ $currentOpportunityTask->due_at->format('Y-m-d H:i') }}</span>
+                                    @else
+                                        <span>未设置截止时间</span>
+                                    @endif
+                                    @if($currentOpportunityTask->assignee)
+                                        <span>负责人：{{ $currentOpportunityTask->assignee->display_name ?: $currentOpportunityTask->assignee->username }}</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            <div class="mt-4 rounded-md border border-dashed border-blue-200 px-4 py-3 text-sm text-blue-700">暂无未完成待办，请在下方创建下一步动作。</div>
+                        @endif
+                    </section>
+
                     <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                             <h2 class="font-semibold text-gray-900">关联单据</h2>
