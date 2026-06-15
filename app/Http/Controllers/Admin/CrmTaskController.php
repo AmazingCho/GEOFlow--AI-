@@ -9,6 +9,7 @@ use App\Models\CrmOpportunity;
 use App\Models\CrmTask;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CrmOptions;
+use App\Services\GeoFlow\CrmActivityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -44,10 +45,20 @@ class CrmTaskController extends Controller
         return back()->with('message', '待办已创建');
     }
 
-    public function complete(int $taskId): RedirectResponse
+    public function complete(Request $request, int $taskId, CrmActivityService $activityService): RedirectResponse
     {
-        CrmTask::query()->findOrFail($taskId)->update(['status'=>'done','completed_at'=>now()]);
-        return back()->with('message', '待办已完成');
+        $payload = $request->validate([
+            'result_content' => ['nullable', 'string', 'max:10000'],
+            'followup_type' => ['nullable', 'string', 'max:80'],
+        ]);
+        $activity = $activityService->completeTask(
+            CrmTask::query()->findOrFail($taskId),
+            $payload['result_content'] ?? null,
+            $payload['followup_type'] ?? null,
+            auth('admin')->user(),
+        );
+
+        return back()->with('message', $activity ? '待办已完成，结果已记录到活动时间线' : '待办已完成');
     }
 
     public function reopen(int $taskId): RedirectResponse

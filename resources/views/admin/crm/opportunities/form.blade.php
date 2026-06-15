@@ -247,6 +247,25 @@
                     </section>
 
                     <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                        <h2 class="font-semibold text-gray-900">活动时间线</h2>
+                        <p class="mt-1 text-sm text-gray-500">记录已经发生的沟通；可同时安排下一步待办。</p>
+                        <form method="POST" action="{{ route('admin.crm.opportunities.activities.store', ['opportunityId' => (int) $opportunity->id]) }}" class="mt-4 space-y-3">
+                            @csrf
+                            @include('admin.crm.partials._markdown-editor', ['fieldName' => 'content', 'rows' => 4, 'placeholder' => '沟通结果（支持 Markdown）'])
+                            <input type="text" name="followup_type" maxlength="80" placeholder="活动类型：电话 / 邮件 / 会议" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            @include('admin.crm.partials._activity-next-task-fields')
+                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">记录活动</button>
+                        </form>
+                        <div class="mt-5 space-y-3">
+                            @forelse($opportunity->activities as $followUp)
+                                @include('admin.crm.partials._follow-up-item', ['followUp' => $followUp, 'showInquiryLink' => true, 'editable' => true])
+                            @empty
+                                <div class="rounded-md border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500">暂无活动记录</div>
+                            @endforelse
+                        </div>
+                    </section>
+
+                    <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                             <h2 class="font-semibold text-gray-900">关联单据</h2>
                             <a href="{{ route('admin.crm.quotes.create', ['opportunity_id' => (int) $opportunity->id]) }}" class="inline-flex items-center rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100">

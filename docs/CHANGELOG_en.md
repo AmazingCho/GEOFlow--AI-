@@ -4,6 +4,15 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Unified Activity Timeline
+
+- Added `CrmActivityService` so customers, inquiries, and opportunities share one activity-write path.
+- Added an activity timeline and activity entry form to opportunity details.
+- Activities can create a next-step task while preserving the customer, inquiry, and opportunity chain.
+- Completing a task can now create a linked activity result when a result note is provided.
+- Activity rows show linked inquiry, opportunity, and source task while keeping edit and soft-delete behavior.
+- Verification: `AdminCrmPagesTest` 22 tests / 202 assertions; `CrmPipelineAuditTest` 2 tests / 12 assertions; all Blade templates compiled.
+
 ### CRM Sales Pipeline V2: Unified Inquiry Conversion
 
 - Added a transactional `OpportunityConversionService` shared by inquiry-detail and global source-inquiry creation flows.

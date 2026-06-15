@@ -161,6 +161,7 @@
                                 @endforeach
                             </select>
                         @endif
+                        @include('admin.crm.partials._activity-next-task-fields')
                         <input type="hidden" name="owner" value="{{ $customer->owner }}">
                         <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">记录活动</button>
                     </form>

@@ -11,6 +11,7 @@ use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
 use App\Services\GeoFlow\OpportunityConversionService;
+use App\Services\GeoFlow\CrmActivityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -109,6 +110,7 @@ class CrmOpportunityController extends Controller
                     ->latest('id'),
                 'tasks.assignee',
                 'quotes.inquiry',
+                'activities' => static fn ($query) => $query->with(['inquiry', 'opportunity', 'task'])->latest('created_at'),
             ])
             ->findOrFail($opportunityId);
 
@@ -161,6 +163,21 @@ class CrmOpportunityController extends Controller
         return redirect()
             ->route('admin.crm.opportunities.edit', ['opportunityId' => (int) $opportunity->id])
             ->with('message', '商机已恢复，原有关联数据保持不变');
+    }
+
+    public function storeActivity(Request $request, int $opportunityId, CrmActivityService $activityService): RedirectResponse
+    {
+        $opportunity = CrmOpportunity::query()->with(['customer', 'sourceInquiry'])->findOrFail($opportunityId);
+        $payload = $request->validate($activityService->rules());
+        $result = $activityService->record(
+            $opportunity->customer,
+            $opportunity->sourceInquiry,
+            $opportunity,
+            $payload,
+            auth('admin')->user(),
+        );
+
+        return back()->with('message', $result['task'] ? '活动已记录，并创建下一步待办' : '活动记录已添加');
     }
 
     /**

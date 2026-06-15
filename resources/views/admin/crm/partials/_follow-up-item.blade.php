@@ -34,6 +34,12 @@
                 @if ($showInquiryLink && $followUp->inquiry_id && ($followUp->inquiry ?? false))
                     <a href="{{ route('admin.crm.inquiries.show', ['inquiryId' => (int) $followUp->inquiry->id]) }}" class="rounded-full bg-blue-50 px-2 py-0.5 text-blue-600 hover:bg-blue-100">询盘：{{ $followUp->inquiry->subject }}</a>
                 @endif
+                @if ($followUp->opportunity_id && ($followUp->opportunity ?? false))
+                    <a href="{{ route('admin.crm.opportunities.edit', ['opportunityId' => (int) $followUp->opportunity->id]) }}" class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 hover:bg-emerald-100">商机：{{ $followUp->opportunity->name }}</a>
+                @endif
+                @if ($followUp->task_id && ($followUp->task ?? false))
+                    <span class="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700">来自待办：{{ $followUp->task->title }}</span>
+                @endif
                 @if ($followUp->next_followup_at)
                     <span class="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">下次跟进：{{ $followUp->next_followup_at->format('m-d H:i') }}</span>
                 @endif

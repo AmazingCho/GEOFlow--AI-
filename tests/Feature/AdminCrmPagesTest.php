@@ -1133,6 +1133,70 @@ class AdminCrmPagesTest extends TestCase
         ]);
     }
 
+    public function test_opportunity_activity_is_shared_and_can_create_and_complete_next_task(): void
+    {
+        $admin = $this->admin('crm_activity_timeline_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Timeline Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'customer_id' => $customer->id,
+            'subject' => 'Timeline inquiry',
+            'status' => 'converted',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Timeline opportunity',
+            'stage' => 'qualified',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.opportunities.activities.store', ['opportunityId' => $opportunity->id]), [
+                'followup_type' => '会议',
+                'content' => 'Customer confirmed the technical scope.',
+                'create_task' => '1',
+                'task_title' => 'Send revised proposal',
+                'task_priority' => 'high',
+            ])
+            ->assertRedirect();
+
+        $task = CrmTask::query()->where('title', 'Send revised proposal')->firstOrFail();
+        $activity = CrmFollowUp::query()->where('content', 'Customer confirmed the technical scope.')->firstOrFail();
+        $this->assertSame((int) $customer->id, (int) $activity->customer_id);
+        $this->assertSame((int) $inquiry->id, (int) $activity->inquiry_id);
+        $this->assertSame((int) $opportunity->id, (int) $activity->opportunity_id);
+        $this->assertSame((int) $task->id, (int) $activity->task_id);
+        $this->assertSame((int) $inquiry->id, (int) $task->inquiry_id);
+        $this->assertSame((int) $opportunity->id, (int) $task->opportunity_id);
+
+        foreach ([
+            route('admin.crm.customers.show', ['customerId' => $customer->id]),
+            route('admin.crm.inquiries.show', ['inquiryId' => $inquiry->id]),
+            route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]),
+        ] as $url) {
+            $this->actingAs($admin, 'admin')->get($url)->assertOk()->assertSee('Customer confirmed the technical scope.');
+        }
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.tasks.complete', ['taskId' => $task->id]), [
+                'followup_type' => '待办结果',
+                'result_content' => 'Revised proposal sent to customer.',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('crm_tasks', ['id' => $task->id, 'status' => 'done']);
+        $this->assertDatabaseHas('crm_follow_ups', [
+            'task_id' => $task->id,
+            'opportunity_id' => $opportunity->id,
+            'content' => 'Revised proposal sent to customer.',
+        ]);
+        $this->assertSame(2, CrmFollowUp::query()->where('task_id', $task->id)->count());
+    }
+
     public function test_quote_conversion_creates_independent_document_and_items(): void
     {
         $admin = $this->admin('crm_convert_admin');

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CrmCustomer;
 use App\Models\CrmFollowUp;
 use App\Models\CrmCustomerContact;
+use App\Models\CrmInquiry;
+use App\Services\GeoFlow\CrmActivityService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
@@ -96,7 +98,7 @@ class CrmCustomerController extends Controller
         $customer = CrmCustomer::query()
             ->with([
                 'collection', 'contacts', 'opportunities', 'crmTasks.assignee',
-                'followUps' => fn ($query) => $query->with('inquiry')->orderByDesc('created_at')->limit(30),
+                'followUps' => fn ($query) => $query->with(['inquiry', 'opportunity', 'task'])->orderByDesc('created_at')->limit(30),
                 'inquiries' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
                 'quotes' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
                 'salesOrders' => fn ($query) => $query->orderByDesc('created_at')->limit(10),
@@ -162,31 +164,17 @@ class CrmCustomerController extends Controller
             ->with('message', '客户已归档，询盘、单据、订单与售后记录均已保留');
     }
 
-    public function storeFollowUp(Request $request, int $customerId): RedirectResponse
+    public function storeFollowUp(Request $request, int $customerId, CrmActivityService $activityService): RedirectResponse
     {
         $customer = CrmCustomer::query()->whereKey($customerId)->firstOrFail();
-        $payload = $request->validate([
+        $payload = $request->validate($activityService->rules() + [
             'inquiry_id' => ['nullable', 'integer', Rule::exists('crm_inquiries', 'id')->where('customer_id', $customerId)],
-            'followup_type' => ['nullable', 'string', 'max:80'],
-            'content' => ['required', 'string', 'max:10000'],
-            'next_action' => ['nullable', 'string', 'max:5000'],
-            'next_followup_at' => ['nullable', 'date'],
-            'owner' => ['nullable', 'string', 'max:120'],
-            'status' => ['nullable', 'string', Rule::in(['open', 'done', 'paused'])],
         ]);
+        $inquiry = isset($payload['inquiry_id']) ? CrmInquiry::query()->find((int) $payload['inquiry_id']) : null;
+        $opportunity = $inquiry?->opportunities()->oldest('id')->first();
+        $result = $activityService->record($customer, $inquiry, $opportunity, $payload, auth('admin')->user());
 
-        CrmFollowUp::query()->create([
-            'customer_id' => (int) $customer->id,
-            'inquiry_id' => isset($payload['inquiry_id']) && (int) $payload['inquiry_id'] > 0 ? (int) $payload['inquiry_id'] : null,
-            'followup_type' => trim((string) ($payload['followup_type'] ?? '')),
-            'content' => trim((string) $payload['content']),
-            'next_action' => trim((string) ($payload['next_action'] ?? '')),
-            'next_followup_at' => $payload['next_followup_at'] ?? null,
-            'owner' => trim((string) ($payload['owner'] ?? '')),
-            'status' => (string) ($payload['status'] ?? 'open'),
-        ]);
-
-        return back()->with('message', '活动记录已添加');
+        return back()->with('message', $result['task'] ? '活动已记录，并创建下一步待办' : '活动记录已添加');
     }
 
     /**

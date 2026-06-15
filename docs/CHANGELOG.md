@@ -4,6 +4,15 @@
 
 ## 2026-06-15
 
+### CRM 销售链路 V2：统一活动时间线
+
+- 新增 `CrmActivityService`，客户、询盘、商机共享同一个活动写入逻辑。
+- 商机详情页新增活动时间线和活动记录入口。
+- 活动记录支持同时创建下一步待办，并自动保留客户、询盘和商机来源链。
+- 待办完成时可填写完成结果，系统会同步生成一条关联该待办的活动记录。
+- 活动条目展示关联询盘、商机和来源待办，编辑与软删除能力保持不变。
+- 验证：`AdminCrmPagesTest` 22 tests / 202 assertions；`CrmPipelineAuditTest` 2 tests / 12 assertions；Blade 全量编译通过。
+
 ### CRM 销售链路 V2：询盘转商机统一编排
 
 - 新增事务型 `OpportunityConversionService`，统一询盘详情和全局来源询盘创建流程。

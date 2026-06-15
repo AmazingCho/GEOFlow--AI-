@@ -191,6 +191,7 @@
                         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <input type="text" name="followup_type" placeholder="活动类型：电话 / 邮件 / 会议" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                         </div>
+                        @include('admin.crm.partials._activity-next-task-fields')
                         <input type="hidden" name="owner" value="{{ $inquiry->assigned_to ?? '' }}">
                         <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">记录活动</button>
                     </form>
