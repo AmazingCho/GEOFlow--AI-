@@ -4,6 +4,14 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: UI, Tests, and Documentation Closure
+
+- Completed CRM Sales Pipeline V2 stages 0-7 with restorable checkpoints.
+- Updated CRM usage docs, Agent brief, implementation status, known issues, and the V2 whitepaper for low-token handoff.
+- Full regression passed: `CrmPipelineAuditTest`, `AdminCrmPagesTest`, and `AdminTasksPageTest` with 42 tests / 361 assertions.
+- Browser checks covered the CRM dashboard, opportunity edit page, and quote/document create page with no Server Error and no horizontal overflow; system screenshots were saved when the in-app screenshot channel timed out.
+- The final audit still has 8 ambiguous historical items: 1 orphan opportunity, 5 documents without a unique candidate, and 2 activities without a unique candidate. They remain manual by design.
+
 ### CRM Sales Pipeline V2: Historical Link Repair
 
 - Added `--apply` to `crm:pipeline-audit`; the command remains read-only by default.

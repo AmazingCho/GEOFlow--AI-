@@ -4,6 +4,14 @@
 
 ## 2026-06-15
 
+### CRM 销售链路 V2：UI、测试与文档收口
+
+- CRM 销售链路 V2 阶段 0-7 已全部完成，并形成可恢复的阶段断点。
+- 同步更新 CRM 使用说明、Agent brief、实现状态、已知问题和白皮书，便于后续 agent 低 token 接手。
+- 完整回归验证通过：`CrmPipelineAuditTest`、`AdminCrmPagesTest`、`AdminTasksPageTest` 共 42 tests / 361 assertions。
+- 浏览器检查 CRM 工作台、商机编辑页和新增单据页：无 Server Error、无横向溢出；截图通道超时时已使用系统截图保存验证产物。
+- 最终审计仍剩 8 项历史歧义数据：1 个孤立商机、5 份无唯一候选单据、2 条无唯一候选活动，按设计保留人工判断。
+
 ### CRM 销售链路 V2：历史断链修复
 
 - `crm:pipeline-audit` 新增 `--apply`，默认仍保持只读审计。
