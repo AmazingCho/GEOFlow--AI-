@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CollectionRecord;
+use App\Models\AdminActivityLog;
 use App\Models\CrmCustomer;
 use App\Models\CrmFollowUp;
 use App\Models\CrmInquiry;
@@ -13,6 +14,7 @@ use App\Services\GeoFlow\CrmPipelineConsistencyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class CrmPipelineAuditTest extends TestCase
@@ -185,5 +187,78 @@ class CrmPipelineAuditTest extends TestCase
             'tasks' => CrmTask::withTrashed()->count(),
             'documents' => CrmQuote::withTrashed()->count(),
         ]);
+    }
+
+    public function test_pipeline_audit_apply_repairs_only_unique_candidates(): void
+    {
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Repair Collection',
+            'slug' => 'repair-collection',
+            'status' => 'active',
+        ]);
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => $collection->id,
+            'company_name' => 'Repair Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'subject' => 'Repair inquiry',
+            'status' => 'converted',
+            'priority' => 'normal',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'source_inquiry_id' => $inquiry->id,
+            'name' => 'Repair opportunity',
+            'stage' => 'qualified',
+        ]);
+        $task = CrmTask::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'title' => 'Repair task',
+            'status' => 'open',
+        ]);
+        $document = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'quote_no' => 'Q-REPAIR',
+            'title' => 'Repair document',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $activity = CrmFollowUp::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'content' => 'Repair activity',
+        ]);
+        $orphan = CrmOpportunity::query()->create([
+            'collection_id' => $collection->id,
+            'customer_id' => $customer->id,
+            'name' => 'Orphan should remain',
+            'stage' => 'qualified',
+        ]);
+
+        Artisan::call('crm:pipeline-audit', ['--apply' => true, '--json' => true]);
+        $report = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $report['repair']['applied']['tasks_linked']);
+        $this->assertSame(1, $report['repair']['applied']['documents_linked']);
+        $this->assertSame(1, $report['repair']['applied']['activities_linked']);
+        $this->assertSame(1, $report['repair']['skipped']['orphan_opportunities']);
+        $this->assertSame($opportunity->id, $task->refresh()->opportunity_id);
+        $this->assertSame($opportunity->id, $document->refresh()->opportunity_id);
+        $this->assertSame($collection->id, $document->collection_id);
+        $this->assertSame($opportunity->id, $activity->refresh()->opportunity_id);
+        $this->assertNull($orphan->refresh()->source_inquiry_id);
+        if (Schema::hasTable('admin_activity_logs')) {
+            $this->assertDatabaseHas('admin_activity_logs', [
+                'admin_username' => 'system',
+                'action' => 'crm:pipeline-audit:apply',
+            ]);
+        }
     }
 }

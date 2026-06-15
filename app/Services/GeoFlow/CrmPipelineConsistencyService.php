@@ -3,11 +3,13 @@
 namespace App\Services\GeoFlow;
 
 use App\Models\CrmFollowUp;
+use App\Models\AdminActivityLog;
 use App\Models\CrmOpportunity;
 use App\Models\CrmQuote;
 use App\Models\CrmTask;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class CrmPipelineConsistencyService
 {
@@ -148,6 +150,112 @@ final class CrmPipelineConsistencyService
         $report['summary']['total_issues'] = array_sum($report['summary']);
 
         return $report;
+    }
+
+    /**
+     * Apply only unambiguous relationship repairs from the current audit report.
+     *
+     * @return array<string, mixed>
+     */
+    public function repairUniqueLinks(): array
+    {
+        $before = $this->audit();
+        $applied = [
+            'tasks_linked' => 0,
+            'documents_linked' => 0,
+            'activities_linked' => 0,
+            'document_collections_fixed' => 0,
+        ];
+        $skipped = [
+            'orphan_opportunities' => count($before['orphan_opportunities']),
+            'duplicate_inquiry_opportunities' => count($before['duplicate_inquiry_opportunities']),
+            'unlinked_tasks_without_unique_candidate' => 0,
+            'unlinked_documents_without_unique_candidate' => 0,
+            'activities_without_unique_candidate' => 0,
+            'relationship_mismatches_not_auto_fixed' => 0,
+        ];
+
+        DB::transaction(function () use ($before, &$applied, &$skipped): void {
+            foreach ($before['unlinked_tasks'] as $row) {
+                $candidateId = (int) ($row['suggested_opportunity_id'] ?? 0);
+                if ($candidateId <= 0) {
+                    $skipped['unlinked_tasks_without_unique_candidate']++;
+                    continue;
+                }
+                $updated = CrmTask::query()
+                    ->whereKey((int) $row['task_id'])
+                    ->whereNull('opportunity_id')
+                    ->update(['opportunity_id' => $candidateId]);
+                $applied['tasks_linked'] += (int) $updated;
+            }
+
+            foreach ($before['unlinked_documents'] as $row) {
+                $candidateId = (int) ($row['suggested_opportunity_id'] ?? 0);
+                if ($candidateId <= 0) {
+                    $skipped['unlinked_documents_without_unique_candidate']++;
+                    continue;
+                }
+                $opportunity = CrmOpportunity::query()->find($candidateId);
+                $values = ['opportunity_id' => $candidateId];
+                if ($opportunity && $opportunity->collection_id) {
+                    $values['collection_id'] = (int) $opportunity->collection_id;
+                }
+                $updated = CrmQuote::query()
+                    ->whereKey((int) $row['document_id'])
+                    ->whereNull('opportunity_id')
+                    ->update($values);
+                $applied['documents_linked'] += (int) $updated;
+            }
+
+            foreach ($before['activity_candidates'] as $row) {
+                $candidateId = (int) ($row['suggested_opportunity_id'] ?? 0);
+                if ($candidateId <= 0) {
+                    $skipped['activities_without_unique_candidate']++;
+                    continue;
+                }
+                $updated = CrmFollowUp::query()
+                    ->whereKey((int) $row['activity_id'])
+                    ->whereNull('opportunity_id')
+                    ->update(['opportunity_id' => $candidateId]);
+                $applied['activities_linked'] += (int) $updated;
+            }
+
+            foreach ($before['relationship_mismatches'] as $row) {
+                if (($row['record_type'] ?? '') === 'document'
+                    && ($row['field'] ?? '') === 'collection_id'
+                    && ($row['actual'] ?? null) === null
+                    && (int) ($row['expected'] ?? 0) > 0) {
+                    $updated = CrmQuote::query()
+                        ->whereKey((int) $row['record_id'])
+                        ->whereNull('collection_id')
+                        ->update(['collection_id' => (int) $row['expected']]);
+                    $applied['document_collections_fixed'] += (int) $updated;
+                    continue;
+                }
+                $skipped['relationship_mismatches_not_auto_fixed']++;
+            }
+
+            if (Schema::hasTable('admin_activity_logs')) {
+                AdminActivityLog::query()->create([
+                    'admin_id' => null,
+                    'admin_username' => 'system',
+                    'admin_role' => 'system',
+                    'action' => 'crm:pipeline-audit:apply',
+                    'request_method' => 'CLI',
+                    'page' => 'crm-pipeline-audit',
+                    'target_type' => 'crm_pipeline',
+                    'target_id' => null,
+                    'ip_address' => '',
+                    'details' => json_encode(['applied' => $applied, 'skipped' => $skipped], JSON_UNESCAPED_UNICODE),
+                ]);
+            }
+        });
+
+        return [
+            'before' => $before,
+            'repair' => ['applied' => $applied, 'skipped' => $skipped],
+            'after' => $this->audit(),
+        ];
     }
 
     /**

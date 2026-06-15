@@ -4,6 +4,15 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ## 2026-06-15
 
+### CRM Sales Pipeline V2: Historical Link Repair
+
+- Added `--apply` to `crm:pipeline-audit`; the command remains read-only by default.
+- `--apply` repairs only unique candidates: tasks, documents, and activities linked to opportunities, plus explicit empty Collection fixes.
+- Live data repair linked 1 task, 3 documents, and 3 activities to their opportunity, and fixed 1 document Collection.
+- Audit issues dropped from 16 to 8; orphan opportunities, documents without candidates, and activities without candidates remain for manual review.
+- Repair operations are written to the administrator activity log, with before/after reports saved.
+- Verification: `CrmPipelineAuditTest` 3 tests / 21 assertions; `AdminCrmPagesTest` 23 tests / 211 assertions; all Blade templates compiled.
+
 ### CRM Sales Pipeline V2: Document Chain Consistency
 
 - Quote/document saves now validate that customer, inquiry, opportunity, and Collection belong to the same sales chain.

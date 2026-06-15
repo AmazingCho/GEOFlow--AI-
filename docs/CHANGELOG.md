@@ -4,6 +4,15 @@
 
 ## 2026-06-15
 
+### CRM 销售链路 V2：历史断链修复
+
+- `crm:pipeline-audit` 新增 `--apply`，默认仍保持只读审计。
+- `--apply` 只修复唯一候选关系：待办、单据、活动补关联商机，以及明确的空 Collection 补齐。
+- 真实数据修复：1 个待办、3 份单据、3 条活动补关联商机，1 个单据补齐 Collection。
+- 审计问题从 16 项降至 8 项；孤立商机、无候选单据和无候选活动保留人工判断，不自动猜测。
+- 修复操作写入管理员活动日志，并保存修复前后报告。
+- 验证：`CrmPipelineAuditTest` 3 tests / 21 assertions；`AdminCrmPagesTest` 23 tests / 211 assertions；Blade 全量编译通过。
+
 ### CRM 销售链路 V2：单据链一致性
 
 - 单据保存前统一校验客户、询盘、商机和 Collection 是否属于同一销售链。
