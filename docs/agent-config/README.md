@@ -23,3 +23,7 @@ Some integration files intentionally remain at the repository root because the r
 The full Laravel Boost guidance lives in:
 
 `../../.boost/guidelines.md`
+
+The GEOFlow-specific product-manager requirement interpretation rule lives in:
+
+`../../agent-docs/USER_REQUIREMENT_INTERPRETATION.md`

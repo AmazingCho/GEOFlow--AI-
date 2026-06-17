@@ -13,6 +13,10 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <a href="{{ route('admin.knowledge-bases.governance', array_filter(['collection_id' => $collectionId ?? null])) }}" class="inline-flex items-center px-4 py-2 border border-purple-200 text-sm font-medium rounded-md text-purple-700 bg-purple-50 hover:bg-purple-100">
+                    <i data-lucide="shield-alert" class="w-4 h-4 mr-2"></i>
+                    {{ __('admin.knowledge_governance.entry_button') }}
+                </a>
                 <a href="{{ route('admin.knowledge-bases.create') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                     <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
                     {{ __('admin.knowledge_bases.create_first') }}
@@ -307,8 +311,18 @@
                 </div>
                 <div class="divide-y divide-gray-200">
                     @foreach ($knowledgeBases as $item)
+                        @php
+                            $chunkSync = $item['chunk_sync'] ?? [];
+                            $chunkSyncStatus = (string) ($chunkSync['status'] ?? 'idle');
+                            $chunkSyncIsActive = (bool) ($chunkSync['is_active'] ?? false);
+                        @endphp
                         <div class="px-6 py-6">
-                            <div class="flex flex-col gap-5 lg:flex-row lg:items-center">
+                            <div
+                                class="flex flex-col gap-5 lg:flex-row lg:items-center"
+                                data-knowledge-sync-row
+                                data-knowledge-sync-status="{{ $chunkSyncStatus }}"
+                                data-knowledge-sync-status-url="{{ route('admin.knowledge-bases.chunks.status', ['knowledgeBaseId' => (int) $item['id']]) }}"
+                            >
                                 <div class="flex min-w-0 gap-3 lg:flex-1">
                                     <div class="pt-1">
                                         <input type="checkbox" form="knowledge-bulk-form" name="knowledge_ids[]" value="{{ (int) $item['id'] }}" class="rounded border-gray-300 text-orange-600 focus:ring-orange-500" data-knowledge-bulk-check>
@@ -351,14 +365,24 @@
                                             </span>
                                         @endif
                                         @if ((int) ($item['chunk_count'] ?? 0) > 0)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700" data-knowledge-sync-summary>
                                                 {{ __('admin.knowledge_bases.vectorized_summary', [
                                                     'vectorized' => (int) ($item['vectorized_chunk_count'] ?? 0),
                                                     'chunks' => (int) ($item['chunk_count'] ?? 0),
                                                 ]) }}
                                             </span>
+                                        @else
+                                            <span class="hidden items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700" data-knowledge-sync-summary></span>
                                         @endif
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $chunkSync['badge_class'] ?? 'bg-slate-100 text-slate-600' }}" data-knowledge-sync-badge>
+                                            {{ $chunkSync['label'] ?? __('admin.knowledge_bases.chunk_sync.status_idle') }}
+                                        </span>
                                     </div>
+                                    @if ((string) ($chunkSync['message'] ?? '') !== '')
+                                        <p class="mt-1 text-xs text-gray-500" data-knowledge-sync-message>{{ $chunkSync['message'] }}</p>
+                                    @else
+                                        <p class="mt-1 hidden text-xs text-gray-500" data-knowledge-sync-message></p>
+                                    @endif
                                     @if ($item['description'] !== '')
                                         <p class="mt-1 text-sm text-gray-600">{{ $item['description'] }}</p>
                                     @endif
@@ -396,24 +420,51 @@
                                 <div class="flex flex-wrap items-start justify-start gap-2 lg:shrink-0 lg:justify-end lg:pl-8" style="width: 440px;">
                                     @if ($hasDefaultEmbeddingModel)
                                         <div style="width: 148px;" data-refresh-chunks-action>
-                                            <form
-                                                method="POST"
-                                                action="{{ route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $item['id']]) }}"
-                                                class="inline-block"
-                                                data-refresh-chunks-form
-                                                data-knowledge-name="{{ $item['name'] }}"
-                                                data-knowledge-summary="{{ __('admin.knowledge_bases.vectorized_summary', [
-                                                    'vectorized' => (int) ($item['vectorized_chunk_count'] ?? 0),
-                                                    'chunks' => (int) ($item['chunk_count'] ?? 0),
-                                                ]) }}"
-                                                data-word-count="{{ __('admin.knowledge_bases.text_unit', ['count' => number_format((int) $item['word_count'])]) }}"
-                                            >
-                                                @csrf
-                                                <button type="submit" class="inline-flex w-full items-center justify-center px-3 py-1.5 border border-emerald-200 text-xs font-medium rounded text-emerald-700 bg-emerald-50 hover:bg-emerald-100" data-refresh-submit-button>
-                                                    <i data-lucide="refresh-cw" class="w-4 h-4 mr-1" data-refresh-submit-icon></i>
-                                                    <span data-refresh-submit-label>{{ __('admin.knowledge_bases.refresh_chunks') }}</span>
+                                            @if ($chunkSyncIsActive)
+                                                <button type="button" class="inline-flex w-full cursor-wait items-center justify-center rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 opacity-80" data-refresh-active-button data-refresh-submit-button disabled>
+                                                    <i data-lucide="loader-2" class="mr-1 h-4 w-4 animate-spin" data-refresh-submit-icon></i>
+                                                    <span data-refresh-submit-label>{{ __('admin.knowledge_bases.chunk_sync.manual_refresh_disabled') }}</span>
                                                 </button>
-                                            </form>
+                                                <form
+                                                    method="POST"
+                                                    action="{{ route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $item['id']]) }}"
+                                                    class="hidden"
+                                                    data-refresh-ready-form
+                                                    data-refresh-chunks-form
+                                                    data-knowledge-name="{{ $item['name'] }}"
+                                                    data-knowledge-summary="{{ __('admin.knowledge_bases.vectorized_summary', [
+                                                        'vectorized' => (int) ($item['vectorized_chunk_count'] ?? 0),
+                                                        'chunks' => (int) ($item['chunk_count'] ?? 0),
+                                                    ]) }}"
+                                                    data-word-count="{{ __('admin.knowledge_bases.text_unit', ['count' => number_format((int) $item['word_count'])]) }}"
+                                                >
+                                                    @csrf
+                                                    <button type="submit" class="inline-flex w-full items-center justify-center px-3 py-1.5 border border-emerald-200 text-xs font-medium rounded text-emerald-700 bg-emerald-50 hover:bg-emerald-100" data-refresh-submit-button>
+                                                        <i data-lucide="refresh-cw" class="w-4 h-4 mr-1" data-refresh-submit-icon></i>
+                                                        <span data-refresh-submit-label>{{ __('admin.knowledge_bases.refresh_chunks') }}</span>
+                                                    </button>
+                                                </form>
+                                            @else
+                                                <form
+                                                    method="POST"
+                                                    action="{{ route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $item['id']]) }}"
+                                                    class="inline-block"
+                                                    data-refresh-ready-form
+                                                    data-refresh-chunks-form
+                                                    data-knowledge-name="{{ $item['name'] }}"
+                                                    data-knowledge-summary="{{ __('admin.knowledge_bases.vectorized_summary', [
+                                                        'vectorized' => (int) ($item['vectorized_chunk_count'] ?? 0),
+                                                        'chunks' => (int) ($item['chunk_count'] ?? 0),
+                                                    ]) }}"
+                                                    data-word-count="{{ __('admin.knowledge_bases.text_unit', ['count' => number_format((int) $item['word_count'])]) }}"
+                                                >
+                                                    @csrf
+                                                    <button type="submit" class="inline-flex w-full items-center justify-center px-3 py-1.5 border border-emerald-200 text-xs font-medium rounded text-emerald-700 bg-emerald-50 hover:bg-emerald-100" data-refresh-submit-button>
+                                                        <i data-lucide="refresh-cw" class="w-4 h-4 mr-1" data-refresh-submit-icon></i>
+                                                        <span data-refresh-submit-label>{{ $chunkSyncStatus === 'failed' ? __('admin.knowledge_bases.chunk_sync.retry_failed') : __('admin.knowledge_bases.refresh_chunks') }}</span>
+                                                    </button>
+                                                </form>
+                                            @endif
                                             <div class="mt-2 hidden" data-refresh-progress>
                                                 <div class="flex items-center justify-between text-[11px] font-medium text-emerald-700">
                                                     <span data-refresh-progress-label>{{ __('admin.knowledge_bases.refresh_progress_initial') }}</span>
@@ -660,6 +711,84 @@
             }, 180);
         }
 
+        function applyKnowledgeSyncStatus(row, data) {
+            if (!row || !data) {
+                return;
+            }
+
+            row.dataset.knowledgeSyncStatus = data.status || 'idle';
+
+            const badge = row.querySelector('[data-knowledge-sync-badge]');
+            if (badge) {
+                badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ' + (data.badge_class || 'bg-slate-100 text-slate-600');
+                badge.textContent = data.label || '';
+            }
+
+            const summary = row.querySelector('[data-knowledge-sync-summary]');
+            if (summary) {
+                summary.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700';
+                summary.textContent = data.summary || '';
+            }
+
+            const message = row.querySelector('[data-knowledge-sync-message]');
+            if (message) {
+                const text = data.message || '';
+                message.textContent = text;
+                message.classList.toggle('hidden', text === '');
+            }
+
+            if (!data.is_active) {
+                const activeButton = row.querySelector('[data-refresh-active-button]');
+                const readyForm = row.querySelector('[data-refresh-ready-form]');
+                if (activeButton) {
+                    activeButton.classList.add('hidden');
+                }
+                if (readyForm) {
+                    readyForm.classList.remove('hidden');
+                    readyForm.classList.add('inline-block');
+                }
+            }
+
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+        }
+
+        function pollKnowledgeSyncRows() {
+            const rows = Array.from(document.querySelectorAll('[data-knowledge-sync-row]'))
+                .filter(function (row) {
+                    return ['queued', 'running'].includes(row.dataset.knowledgeSyncStatus || '');
+                });
+
+            if (rows.length === 0) {
+                return;
+            }
+
+            rows.forEach(function (row) {
+                const url = row.dataset.knowledgeSyncStatusUrl || '';
+                if (!url) {
+                    return;
+                }
+
+                fetch(url, {
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                })
+                    .then(function (response) {
+                        return response.ok ? response.json() : null;
+                    })
+                    .then(function (data) {
+                        applyKnowledgeSyncStatus(row, data);
+                    })
+                    .catch(function () {
+                        // 静默失败，避免网络抖动影响列表操作。
+                    });
+            });
+
+            window.setTimeout(pollKnowledgeSyncRows, 5000);
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const bulkAction = document.getElementById('knowledge-bulk-action');
             const bulkPanels = Array.from(document.querySelectorAll('[data-knowledge-bulk-panel]'));
@@ -726,6 +855,8 @@
                     startRefreshChunksProgress(form);
                 });
             }
+
+            pollKnowledgeSyncRows();
 
             document.addEventListener('keydown', function (event) {
                 if (event.key === 'Escape' && pendingRefreshChunksForm) {

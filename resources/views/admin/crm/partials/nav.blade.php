@@ -4,6 +4,7 @@
         'customers' => ['route' => 'admin.crm.customers.index', 'label' => '客户'],
         'inquiries' => ['route' => 'admin.crm.inquiries.index', 'label' => '询盘'],
         'opportunities' => ['route' => 'admin.crm.opportunities.index', 'label' => '商机'],
+        'opportunities_kanban' => ['route' => 'admin.crm.opportunities.kanban', 'label' => '商机看板'],
         'tasks' => ['route' => 'admin.crm.tasks.index', 'label' => '待办'],
         'quotes' => ['route' => 'admin.crm.quotes.index', 'label' => '单据制作'],
         'orders' => ['route' => 'admin.crm.orders.index', 'label' => '订单'],

@@ -12,6 +12,8 @@ use App\Models\CrmCustomer;
 use App\Models\CrmFollowUp;
 use App\Models\CrmInquiry;
 use App\Models\CrmCustomerContact;
+use App\Models\CrmDocumentPdfRegressionBaseline;
+use App\Models\CrmDocumentPdfRegressionRun;
 use App\Models\CrmOpportunity;
 use App\Models\CrmQuote;
 use App\Models\CrmSalesOrder;
@@ -19,13 +21,21 @@ use App\Models\CrmSellerProfile;
 use App\Models\CrmTask;
 use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
+use App\Models\KnowledgeChunk;
+use App\Models\KnowledgeCorrection;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\Title;
 use App\Models\TitleLibrary;
+use App\Jobs\GenerateCrmDocumentPdfRegressionRun;
+use App\Services\GeoFlow\CrmDocumentPdfRegressionCleanupService;
+use App\Services\GeoFlow\CrmDocumentPdfVisualDiffService;
+use App\Services\GeoFlow\CrmDocumentPdfService;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -70,6 +80,7 @@ class AdminCrmPagesTest extends TestCase
                 'industry' => 'Battery Manufacturing',
                 'source_channel' => 'Website',
                 'phone' => '+61 400',
+                'tax_number' => 'ABN-51824753556',
                 'contact_title' => 'Purchasing Manager',
                 'owner' => 'CRM Admin',
                 'status' => 'active',
@@ -82,12 +93,14 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_customers', [
             'id' => (int) $customer->id,
             'phone' => '+61 400',
+            'tax_number' => 'ABN-51824753556',
             'contact_title' => 'Purchasing Manager',
             'owner' => 'CRM Admin',
         ]);
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.crm.customers.follow-ups.store', ['customerId' => (int) $customer->id]), [
+                'activity_type' => 'call',
                 'content' => 'Confirmed application requirements.',
                 'next_action' => 'Prepare quotation.',
                 'owner' => 'CRM Admin',
@@ -97,6 +110,7 @@ class AdminCrmPagesTest extends TestCase
 
         $this->assertDatabaseHas('crm_follow_ups', [
             'customer_id' => (int) $customer->id,
+            'activity_type' => 'call',
             'content' => 'Confirmed application requirements.',
             'owner' => 'CRM Admin',
         ]);
@@ -107,8 +121,198 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('Acme Automation Ltd')
             ->assertSee('Purchasing Manager')
             ->assertSee('+61 400')
+            ->assertSee('ABN-51824753556')
             ->assertSee('CRM Admin')
+            ->assertSee('电话沟通')
             ->assertSee('Confirmed application requirements.');
+    }
+
+    public function test_customer_detail_shows_full_crm_chain_overview(): void
+    {
+        $admin = $this->admin('crm_customer_overview_admin');
+        $collection = $this->collection('Customer Overview CRM');
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => 'Overview Buyer',
+            'contact_person' => 'Graham',
+            'status' => 'active',
+            'owner' => 'CRM Admin',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'subject' => 'Need machine quotation',
+            'status' => 'converted',
+            'priority' => 'high',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'source_inquiry_id' => (int) $inquiry->id,
+            'name' => 'Machine opportunity',
+            'stage' => 'proposal',
+            'amount' => 12000,
+            'currency' => 'USD',
+            'probability' => 60,
+        ]);
+        $quote = CrmQuote::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'opportunity_id' => (int) $opportunity->id,
+            'quote_no' => 'Q-CUSTOMER-001',
+            'title' => 'Customer quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'grand_total' => 12500,
+            'status' => 'sent',
+        ]);
+        $order = CrmSalesOrder::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'quote_id' => (int) $quote->id,
+            'order_no' => 'SO-CUSTOMER-001',
+            'title' => 'Customer order',
+            'currency' => 'USD',
+            'total_amount' => 12500,
+            'order_status' => 'production',
+        ]);
+        CrmAfterSalesTicket::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'order_id' => (int) $order->id,
+            'title' => 'Install issue',
+            'issue_description' => 'Need installation support.',
+            'priority' => 'high',
+            'status' => 'open',
+        ]);
+        CrmTask::query()->create([
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'opportunity_id' => (int) $opportunity->id,
+            'title' => 'Send follow-up pack',
+            'status' => 'open',
+            'priority' => 'normal',
+        ]);
+        $customer->followUps()->create([
+            'inquiry_id' => (int) $inquiry->id,
+            'opportunity_id' => (int) $opportunity->id,
+            'activity_type' => 'meeting',
+            'content' => 'Negotiation note for overview.',
+            'followup_type' => '会议',
+            'owner' => 'CRM Admin',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.customers.show', ['customerId' => (int) $customer->id]))
+            ->assertOk()
+            ->assertSee('销售链条')
+            ->assertSee('Machine opportunity')
+            ->assertSee('Need machine quotation')
+            ->assertSee('Q-CUSTOMER-001')
+            ->assertSee('SO-CUSTOMER-001')
+            ->assertSee('Install issue')
+            ->assertSee('Send follow-up pack')
+            ->assertSee('Negotiation note for overview.');
+    }
+
+    public function test_document_chain_is_visible_from_inquiry_opportunity_and_customer(): void
+    {
+        $admin = $this->admin('crm_document_chain_admin');
+        $collection = $this->collection('Document Chain CRM');
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => 'Chain Buyer',
+            'contact_person' => 'Graham',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'subject' => 'Chain source inquiry',
+            'status' => 'converted',
+            'priority' => 'high',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'source_inquiry_id' => (int) $inquiry->id,
+            'name' => 'Chain opportunity',
+            'stage' => 'proposal',
+            'amount' => 15500,
+            'currency' => 'USD',
+            'probability' => 70,
+        ]);
+        $quote = CrmQuote::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'opportunity_id' => (int) $opportunity->id,
+            'quote_no' => 'Q-CHAIN-001',
+            'title' => 'Chain quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'grand_total' => 15500,
+            'status' => 'sent',
+        ]);
+        $order = CrmSalesOrder::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'quote_id' => (int) $quote->id,
+            'order_no' => 'SO-CHAIN-001',
+            'title' => 'Chain order',
+            'currency' => 'USD',
+            'total_amount' => 15500,
+            'order_status' => 'production',
+        ]);
+        $ticket = CrmAfterSalesTicket::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'order_id' => (int) $order->id,
+            'title' => 'Chain after-sales issue',
+            'issue_description' => 'Need installation support.',
+            'priority' => 'normal',
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.inquiries.show', ['inquiryId' => (int) $inquiry->id]))
+            ->assertOk()
+            ->assertSee('单据链路')
+            ->assertSee('Chain opportunity')
+            ->assertSee('Q-CHAIN-001')
+            ->assertSee('SO-CHAIN-001')
+            ->assertSee('Chain after-sales issue')
+            ->assertSee(route('admin.crm.quotes.show', ['quoteId' => (int) $quote->id]), false)
+            ->assertSee(route('admin.crm.orders.show', ['orderId' => (int) $order->id]), false)
+            ->assertSee(route('admin.crm.tickets.show', ['ticketId' => (int) $ticket->id]), false);
+
+        $opportunityResponse = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.edit', ['opportunityId' => (int) $opportunity->id]))
+            ->assertOk()
+            ->assertSee('单据链路')
+            ->assertSee('Chain source inquiry')
+            ->assertSee('Q-CHAIN-001')
+            ->assertSee('SO-CHAIN-001')
+            ->assertSee('Chain after-sales issue');
+        $opportunityContent = $opportunityResponse->getContent();
+        $chainPosition = strpos($opportunityContent, '单据链路');
+        $asidePosition = strpos($opportunityContent, '<aside class="space-y-6">');
+        $this->assertNotFalse($chainPosition);
+        $this->assertNotFalse($asidePosition);
+        $this->assertLessThan($asidePosition, $chainPosition);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.customers.show', ['customerId' => (int) $customer->id]))
+            ->assertOk()
+            ->assertSee('客户单据链路')
+            ->assertSee('Chain source inquiry')
+            ->assertSee('Chain opportunity')
+            ->assertSee('Q-CHAIN-001')
+            ->assertSee('SO-CHAIN-001')
+            ->assertSee('Chain after-sales issue');
     }
 
     public function test_inquiry_links_are_collection_limited_and_analysis_recommends_existing_materials(): void
@@ -204,6 +408,7 @@ class AdminCrmPagesTest extends TestCase
             'collection_id' => (int) $collection->id,
             'company_name' => 'Quote Buyer',
                 'contact_person' => 'John Smith', 
+            'tax_number' => 'TAX-QB-001',
             'status' => 'active',
         ]);
         $entity = EntityRecord::query()->create([
@@ -249,6 +454,7 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_quotes', [
             'title' => 'SJ4060 Quotation',
             'total_amount' => 3000,
+            'buyer_tax_number' => 'TAX-QB-001',
         ]);
         $this->assertDatabaseHas('crm_quote_items', [
             'item_name' => 'SJ4060 System',
@@ -312,7 +518,9 @@ class AdminCrmPagesTest extends TestCase
             ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $invoice->id]))
             ->assertOk()
             ->assertSee('Commercial Invoice')
-            ->assertSee('SJ4060 Invoice System');
+            ->assertSee('SJ4060 Invoice System')
+            ->assertSee('TAX-QB-001');
+        $this->assertSame('TAX-QB-001', (string) $invoice->buyer_tax_number);
 
         foreach ([
             'proforma_invoice' => 'Proforma Invoice',
@@ -327,10 +535,18 @@ class AdminCrmPagesTest extends TestCase
                 'title' => $expectedTitle.' Test',
                 'currency' => 'USD',
                 'buyer_company' => 'Quote Buyer',
+                'buyer_tax_number' => 'DOC-TAX-001',
                 'payment_terms' => '30% deposit.',
                 'delivery_terms' => 'Ship by sea.',
                 'contract_terms' => 'Custom contract terms for this buyer.',
-                'bank_account_json' => ['bank_name' => 'Test Bank', 'account_no' => '123456', 'beneficiary' => 'Test Beneficiary', 'swift' => 'TESTCNBJ'],
+                'bank_account_json' => [
+                    'bank_name' => 'Test Bank',
+                    'account_no' => '123456',
+                    'bank_code' => 'BANK001',
+                    'branch_code' => 'BRANCH002',
+                    'beneficiary' => 'Test Beneficiary',
+                    'swift' => 'TESTCNBJ',
+                ],
                 'total_amount' => 1000,
                 'grand_total' => 1000,
                 'status' => 'draft',
@@ -358,13 +574,18 @@ class AdminCrmPagesTest extends TestCase
                 ->assertSee($expectedTitle);
 
             if ($documentType === 'packing_list') {
-                $response->assertSee('Packages')->assertDontSee('Unit Price');
+                $response->assertSee('Packages')->assertSee('DOC-TAX-001')->assertDontSee('Unit Price');
             }
             if ($documentType === 'contract') {
                 $response->assertSee('Custom contract terms for this buyer.');
             }
             if ($documentType === 'proforma_invoice') {
-                $response->assertSee('Test Bank');
+                $response->assertSee('Test Bank')
+                    ->assertSee('Bank Code')
+                    ->assertSee('BANK001')
+                    ->assertSee('Branch Code')
+                    ->assertSee('BRANCH002')
+                    ->assertSee('DOC-TAX-001');
             }
         }
     }
@@ -405,7 +626,9 @@ class AdminCrmPagesTest extends TestCase
             ->get(route('admin.crm.quotes.create', ['collection_id' => (int) $collection->id]))
             ->assertOk()
             ->assertSee('Robota Default Seller')
-            ->assertSee('Seller Company JSON');
+            ->assertSee('Seller Company JSON')
+            ->assertSee('bank_code')
+            ->assertSee('branch_code');
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.crm.quotes.store'), [
@@ -475,6 +698,16 @@ class AdminCrmPagesTest extends TestCase
             'content' => 'Alarm diagnosis content.',
             'file_type' => 'markdown',
         ]);
+        $knowledgeChunk = KnowledgeChunk::query()->create([
+            'knowledge_base_id' => (int) $knowledgeBase->id,
+            'chunk_index' => 0,
+            'content' => 'Alarm diagnosis content.',
+            'content_hash' => hash('sha256', 'Alarm diagnosis content.'),
+            'token_count' => 3,
+            'embedding_json' => '[]',
+            'embedding_dimensions' => 0,
+            'embedding_provider' => '',
+        ]);
         $caseRecord = CaseRecord::query()->create([
             'collection_id' => (int) $collection->id,
             'entity_id' => (int) $entity->id,
@@ -511,7 +744,25 @@ class AdminCrmPagesTest extends TestCase
             ->get(route('admin.crm.tickets.show', ['ticketId' => (int) $ticket->id]))
             ->assertOk()
             ->assertSee('生成 FAQ 草稿')
+            ->assertSee('生成 Case 草稿')
+            ->assertSee('知识纠错候选')
+            ->assertSee('发起知识纠错')
             ->assertSee('SJ4060 Troubleshooting');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-corrections.store'), [
+                'source_type' => 'knowledge_base',
+                'knowledge_base_id' => (int) $knowledgeBase->id,
+                'error_description' => '来源售后工单 #'.$ticket->id.'：customer reports a repeated alarm; check if troubleshooting content is incomplete.',
+                'ai_model_id' => 0,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('knowledge_corrections', [
+            'knowledge_base_id' => (int) $knowledgeBase->id,
+            'knowledge_chunk_id' => (int) $knowledgeChunk->id,
+            'status' => KnowledgeCorrection::STATUS_PENDING,
+        ]);
     }
 
     public function test_crm_content_proposals_are_applied_only_after_confirmation(): void
@@ -586,6 +837,28 @@ class AdminCrmPagesTest extends TestCase
             'collection_id' => (int) $collection->id,
             'knowledge_type' => 'faq',
             'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.proposals.from-ticket', ['ticketId' => (int) $ticket->id]), [
+                'proposal_type' => 'case_draft',
+            ])
+            ->assertRedirect(route('admin.crm.proposals.index', ['proposal_type' => 'case_draft']));
+
+        $caseProposal = CrmContentProposal::query()->where('proposal_type', 'case_draft')->firstOrFail();
+        $this->assertSame('pending', (string) $caseProposal->status);
+        $this->assertSame(0, CaseRecord::query()->where('title', (string) $caseProposal->title)->count());
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.proposals.apply', ['proposalId' => (int) $caseProposal->id]))
+            ->assertRedirect();
+
+        $caseProposal->refresh();
+        $this->assertSame('applied', (string) $caseProposal->status);
+        $this->assertDatabaseHas('case_records', [
+            'collection_id' => (int) $collection->id,
+            'title' => (string) $caseProposal->title,
+            'case_type' => 'troubleshooting_case',
         ]);
     }
 
@@ -717,6 +990,7 @@ class AdminCrmPagesTest extends TestCase
         ]);
         $followUp = $customer->followUps()->create([
             'content' => 'Original activity',
+            'activity_type' => 'call',
             'followup_type' => 'Email',
             'owner' => 'Leo',
         ]);
@@ -725,10 +999,12 @@ class AdminCrmPagesTest extends TestCase
             ->get(route('admin.crm.customers.show', ['customerId' => $customer->id]))
             ->assertOk()
             ->assertSee('编辑活动记录')
+            ->assertSee('电话沟通')
             ->assertSee(route('admin.crm.follow-ups.update', ['followUpId' => $followUp->id]), false);
 
         $this->actingAs($admin, 'admin')
             ->put(route('admin.crm.follow-ups.update', ['followUpId' => $followUp->id]), [
+                'activity_type' => 'meeting',
                 'content' => 'Updated activity',
                 'followup_type' => 'Meeting',
                 'owner' => 'Sales Admin',
@@ -737,6 +1013,7 @@ class AdminCrmPagesTest extends TestCase
 
         $this->assertDatabaseHas('crm_follow_ups', [
             'id' => $followUp->id,
+            'activity_type' => 'meeting',
             'content' => 'Updated activity',
             'followup_type' => 'Meeting',
             'owner' => 'Sales Admin',
@@ -806,6 +1083,57 @@ class AdminCrmPagesTest extends TestCase
         $this->assertSame('closed', (string) $closedInquiry->fresh()->status);
     }
 
+    public function test_opportunity_kanban_shows_stage_cards_and_next_task(): void
+    {
+        $admin = $this->admin('crm_opportunity_kanban_admin');
+        $collection = $this->collection('Kanban CRM');
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => 'Kanban Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $inquiry = CrmInquiry::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'subject' => 'Kanban source inquiry',
+            'status' => 'converted',
+            'priority' => 'high',
+        ]);
+        $opportunity = CrmOpportunity::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'source_inquiry_id' => (int) $inquiry->id,
+            'name' => 'Kanban opportunity',
+            'stage' => 'proposal',
+            'amount' => 9800,
+            'currency' => 'USD',
+            'probability' => 55,
+            'expected_close_date' => now()->addDays(12)->toDateString(),
+        ]);
+        CrmTask::query()->create([
+            'customer_id' => (int) $customer->id,
+            'inquiry_id' => (int) $inquiry->id,
+            'opportunity_id' => (int) $opportunity->id,
+            'title' => 'Send PI for approval',
+            'priority' => 'high',
+            'status' => 'open',
+            'due_at' => now()->addDay(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.kanban', ['collection_id' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee('商机看板')
+            ->assertSee('报价方案')
+            ->assertSee('Kanban opportunity')
+            ->assertSee('Kanban Buyer')
+            ->assertSee('USD 9,800')
+            ->assertSee('55%')
+            ->assertSee('Kanban source inquiry')
+            ->assertSee('Send PI for approval');
+    }
+
     public function test_opportunity_can_be_created_with_blank_optional_text_fields(): void
     {
         $admin = $this->admin('crm_opportunity_blank_fields_admin');
@@ -861,14 +1189,29 @@ class AdminCrmPagesTest extends TestCase
             'due_at' => now()->addDay(),
         ]);
 
-        $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]))
             ->assertOk()
-            ->assertSee('当前下一步')
+            ->assertSee('下一步摘要')
+            ->assertSee('来自商机待办')
+            ->assertSee('商机工作区')
+            ->assertSee('商机待办')
             ->assertSee('Send technical proposal')
+            ->assertSee('快捷操作')
             ->assertDontSee('name="next_step"', false)
             ->assertDontSee('name="next_step_at"', false)
-            ->assertDontSee('Legacy duplicated step');
+            ->assertDontSee('Legacy duplicated step')
+            ->assertDontSee('当前下一步')
+            ->assertDontSee('新建待办</h2>', false);
+
+        $html = $response->getContent();
+        $sidebarPosition = strpos($html, '<aside class="space-y-6');
+
+        $this->assertNotFalse($sidebarPosition);
+        $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-activity"'));
+        $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-tasks"'));
+        $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-documents"'));
+        $this->assertGreaterThan($sidebarPosition, strpos($html, '快捷操作'));
     }
 
     public function test_opportunity_creation_exposes_source_modes_and_blocks_duplicate_active_source(): void
@@ -1018,6 +1361,13 @@ class AdminCrmPagesTest extends TestCase
             'source_inquiry_id' => $inquiry->id,
         ]);
 
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]))
+            ->assertOk()
+            ->assertSee('当前来源询盘')
+            ->assertSee('修改来源询盘')
+            ->assertSee('data-source-editor class="mt-5 hidden"', false);
+
         $opportunity->delete();
         CrmOpportunity::query()->create([
             'customer_id' => $customer->id,
@@ -1156,6 +1506,7 @@ class AdminCrmPagesTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.crm.opportunities.activities.store', ['opportunityId' => $opportunity->id]), [
+                'activity_type' => 'meeting',
                 'followup_type' => '会议',
                 'content' => 'Customer confirmed the technical scope.',
                 'create_task' => '1',
@@ -1167,6 +1518,7 @@ class AdminCrmPagesTest extends TestCase
         $task = CrmTask::query()->where('title', 'Send revised proposal')->firstOrFail();
         $activity = CrmFollowUp::query()->where('content', 'Customer confirmed the technical scope.')->firstOrFail();
         $this->assertSame((int) $customer->id, (int) $activity->customer_id);
+        $this->assertSame('meeting', (string) $activity->activity_type);
         $this->assertSame((int) $inquiry->id, (int) $activity->inquiry_id);
         $this->assertSame((int) $opportunity->id, (int) $activity->opportunity_id);
         $this->assertSame((int) $task->id, (int) $activity->task_id);
@@ -1183,6 +1535,7 @@ class AdminCrmPagesTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.crm.tasks.complete', ['taskId' => $task->id]), [
+                'activity_type' => 'task_completed',
                 'followup_type' => '待办结果',
                 'result_content' => 'Revised proposal sent to customer.',
             ])
@@ -1192,6 +1545,7 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_follow_ups', [
             'task_id' => $task->id,
             'opportunity_id' => $opportunity->id,
+            'activity_type' => 'task_completed',
             'content' => 'Revised proposal sent to customer.',
         ]);
         $this->assertSame(2, CrmFollowUp::query()->where('task_id', $task->id)->count());
@@ -1208,6 +1562,375 @@ class AdminCrmPagesTest extends TestCase
         $this->assertSame('proforma_invoice',$copy->document_type);
         $this->assertNotSame($quote->quote_no,$copy->quote_no);
         $this->assertDatabaseHas('crm_quote_items',['quote_id'=>$copy->id,'item_name'=>'Machine']);
+    }
+
+    public function test_quote_show_uses_print_type_switch_instead_of_copy_creation_entry(): void
+    {
+        $admin = $this->admin('crm_quote_print_switch_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Print Switch Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PRINT-SWITCH',
+            'title' => 'Print switch quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.show', ['quoteId' => $quote->id]))
+            ->assertOk()
+            ->assertSee('打印单据')
+            ->assertSee('下载 PDF')
+            ->assertSee('形式发票')
+            ->assertSee('正式发票')
+            ->assertDontSee('创建副本')
+            ->assertDontSee(route('admin.crm.quotes.convert', ['quoteId' => $quote->id]));
+    }
+
+    public function test_quote_pdf_download_uses_chromium_service_and_print_template(): void
+    {
+        $admin = $this->admin('crm_quote_pdf_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'PDF Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PDF',
+            'title' => 'PDF quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $quote->items()->create([
+            'item_name' => 'PDF Machine',
+            'quantity' => 1,
+            'unit' => 'set',
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        $this->app->bind(CrmDocumentPdfService::class, static function () {
+            return new class extends CrmDocumentPdfService {
+                public function render(string $html, string $fileStem): string
+                {
+                    if (! str_contains($html, 'PDF Machine')) {
+                        throw new \RuntimeException('Expected print template HTML was not rendered.');
+                    }
+
+                    $path = storage_path('app/tmp/testing-crm-document.pdf');
+                    if (! is_dir(dirname($path))) {
+                        mkdir(dirname($path), 0777, true);
+                    }
+                    file_put_contents($path, "%PDF-1.4\n% Test PDF\n");
+
+                    return $path;
+                }
+            };
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.pdf', ['quoteId' => $quote->id, 'type' => 'invoice']))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_quote_pdf_print_template_paginates_long_item_tables(): void
+    {
+        $admin = $this->admin('crm_quote_pdf_pagination_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Long PDF Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PDF-LONG',
+            'title' => 'Long PDF quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        for ($index = 1; $index <= 18; $index++) {
+            $quote->items()->create([
+                'item_name' => 'Long PDF Machine '.$index,
+                'description' => str_repeat('Stable pagination requires conservative row height estimation for long product descriptions. ', 3),
+                'quantity' => 1,
+                'unit' => 'set',
+                'unit_price' => 100 + $index,
+                'amount' => 100 + $index,
+            ]);
+        }
+
+        $capturedHtml = null;
+        $this->app->bind(CrmDocumentPdfService::class, static function () use (&$capturedHtml) {
+            return new class($capturedHtml) extends CrmDocumentPdfService {
+                private $capturedHtml;
+
+                public function __construct(&$capturedHtml)
+                {
+                    $this->capturedHtml = &$capturedHtml;
+                }
+
+                public function render(string $html, string $fileStem): string
+                {
+                    $this->capturedHtml = $html;
+
+                    $path = storage_path('app/tmp/testing-crm-document-pagination.pdf');
+                    if (! is_dir(dirname($path))) {
+                        mkdir(dirname($path), 0777, true);
+                    }
+                    file_put_contents($path, "%PDF-1.4\n% Test PDF\n");
+
+                    return $path;
+                }
+            };
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.pdf', ['quoteId' => $quote->id, 'type' => 'quotation']))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
+        $this->assertIsString($capturedHtml);
+        $this->assertStringContainsString('Long PDF Machine 18', $capturedHtml);
+        $this->assertStringContainsString('Items continued', $capturedHtml);
+        $this->assertStringContainsString('Page 2 of', $capturedHtml);
+    }
+
+    public function test_quote_print_template_keeps_compact_no_image_quotation_on_one_page(): void
+    {
+        $admin = $this->admin('crm_quote_compact_pagination_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Compact PDF Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PDF-COMPACT',
+            'title' => 'Compact quotation',
+            'document_type' => 'quotation',
+            'document_language' => 'en',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'trade_term' => 'EXW',
+            'lead_time' => '15-20 working days',
+            'valid_until' => now()->addMonth(),
+            'payment_terms' => '50% deposit, 50% balance before shipment.',
+            'delivery_terms' => 'DDP',
+            'warranty_terms' => '18 months warranty for machine main parts.',
+            'installation_terms' => 'Remote training and online technical support included.',
+            'total_amount' => 15345,
+            'shipping_fee' => 1200,
+            'grand_total' => 16545,
+        ]);
+
+        foreach ([
+            ['Base recommended 2K epoxy dispensing system', 'Stand-alone XYZ dispensing machine, 300*300 mm working area, 2K servo-driven kit', 'SF331-2K', 6500],
+            ['Optional cooling system', '', '-', 200],
+            ['Optional simple 1K pneumatic syringe module', '', '-', 850],
+            ['Optional 1K silicone screw valve module', '', '-', 3000],
+            ['Optional CCD alignment system', '', '-', 4500],
+            ['Dispensing tips', '21G(0.6)-1000pcs, 22G(0.45)-2000pcs, 23G(0.34)-1000pcs, 24(0.31)G-1000pcs', '-', 110],
+            ['Static mixers', 'PMF06-24 or to be determined', '-', 185],
+        ] as $index => [$name, $description, $model, $amount]) {
+            $quote->items()->create([
+                'item_name' => $name,
+                'description' => $description,
+                'model' => $model,
+                'quantity' => $index === 6 ? 500 : 1,
+                'unit' => $index === 6 ? 'pcs' : 'set',
+                'unit_price' => $index === 6 ? 0.37 : $amount,
+                'amount' => $amount,
+                'sort_order' => $index + 1,
+            ]);
+        }
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'quotation', 'language' => 'en']))
+            ->assertOk()
+            ->assertSee('Static mixers')
+            ->assertSee('Page 1 of 1')
+            ->assertDontSee('Items continued')
+            ->assertDontSee('Page 2 of');
+
+        $response->assertSee('class="term-item" data-term-field="payment_terms"', false)
+            ->assertSee('class="term-item" data-term-field="delivery_terms"', false)
+            ->assertSee('class="term-item full" data-term-field="warranty_terms"', false)
+            ->assertSee('class="term-item full" data-term-field="installation_terms"', false)
+            ->assertSee('class="term-item full" data-term-field="packing_terms"', false);
+    }
+
+    public function test_quote_pdf_regression_admin_page_can_start_run(): void
+    {
+        Queue::fake();
+        $admin = $this->admin('crm_pdf_regression_admin');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.index'))
+            ->assertOk()
+            ->assertSee('PDF 回归检查');
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.pdf-regression.index'))
+            ->assertOk()
+            ->assertSee('PDF 回归检查')
+            ->assertSee('print CSS');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.pdf-regression.store'))
+            ->assertRedirect();
+
+        $run = CrmDocumentPdfRegressionRun::query()->firstOrFail();
+        $this->assertSame(CrmDocumentPdfRegressionRun::STATUS_PENDING, (string) $run->status);
+        $this->assertSame((int) $admin->id, (int) $run->triggered_by_admin_id);
+        Queue::assertPushed(GenerateCrmDocumentPdfRegressionRun::class);
+    }
+
+    public function test_quote_pdf_regression_cleanup_keeps_baseline_runs(): void
+    {
+        $oldDirectory = storage_path('app/pdf-regression/testing-old-baseline');
+        File::ensureDirectoryExists($oldDirectory);
+        File::put($oldDirectory.'/report.json', '{}');
+
+        $run = CrmDocumentPdfRegressionRun::query()->create([
+            'status' => CrmDocumentPdfRegressionRun::STATUS_COMPLETED,
+            'output_directory' => $oldDirectory,
+            'created_at' => now()->subDays(60),
+            'updated_at' => now()->subDays(60),
+        ]);
+        CrmDocumentPdfRegressionBaseline::query()->create([
+            'name' => 'default',
+            'run_id' => (int) $run->id,
+            'baseline_directory' => storage_path('app/pdf-regression-baselines/default'),
+            'render_context_json' => ['render_media' => 'print'],
+        ]);
+        CrmDocumentPdfRegressionRun::query()->create([
+            'status' => CrmDocumentPdfRegressionRun::STATUS_COMPLETED,
+            'output_directory' => storage_path('app/pdf-regression/testing-newer-run'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $cleanup = app(CrmDocumentPdfRegressionCleanupService::class);
+        $preview = $cleanup->preview(1, 30);
+
+        $this->assertSame([], $preview['candidates']);
+        $this->assertDirectoryExists($oldDirectory);
+
+        File::deleteDirectory($oldDirectory);
+    }
+
+    public function test_quote_pdf_visual_diff_rejects_render_context_mismatch(): void
+    {
+        $baselineDirectory = storage_path('app/tmp/testing-pdf-baseline-context');
+        $currentDirectory = storage_path('app/tmp/testing-pdf-current-context');
+        File::deleteDirectory($baselineDirectory);
+        File::deleteDirectory($currentDirectory);
+        File::ensureDirectoryExists($baselineDirectory);
+        File::ensureDirectoryExists($currentDirectory);
+        File::put($baselineDirectory.'/baseline.json', json_encode([
+            'render_context' => ['render_media' => 'screen', 'page_size' => 'A4', 'viewport_width' => 1240, 'viewport_height' => 1754, 'device_scale_factor' => 1],
+            'results' => [],
+        ]));
+        File::put($currentDirectory.'/report.json', json_encode([
+            'render_context' => ['render_media' => 'print', 'page_size' => 'A4', 'viewport_width' => 1240, 'viewport_height' => 1754, 'device_scale_factor' => 1],
+            'results' => [],
+        ]));
+
+        $baseline = CrmDocumentPdfRegressionBaseline::query()->create([
+            'name' => 'default',
+            'baseline_directory' => $baselineDirectory,
+            'render_context_json' => ['render_media' => 'screen', 'page_size' => 'A4', 'viewport_width' => 1240, 'viewport_height' => 1754, 'device_scale_factor' => 1],
+        ]);
+
+        $result = app(CrmDocumentPdfVisualDiffService::class)->compareReportToBaseline([
+            'run_directory' => $currentDirectory,
+            'render_context' => ['render_media' => 'print', 'page_size' => 'A4', 'viewport_width' => 1240, 'viewport_height' => 1754, 'device_scale_factor' => 1],
+            'results' => [],
+        ], $baseline);
+
+        $this->assertSame('render_context_mismatch', $result['status']);
+
+        File::deleteDirectory($baselineDirectory);
+        File::deleteDirectory($currentDirectory);
+    }
+
+    public function test_quote_pdf_regression_command_generates_report_artifacts(): void
+    {
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'PDF Regression Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PDF-REGRESSION',
+            'title' => 'PDF regression quotation',
+            'document_type' => 'quotation',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $quote->items()->create([
+            'item_name' => 'Regression Machine',
+            'quantity' => 1,
+            'unit' => 'set',
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        $outputRoot = storage_path('app/tmp/testing-crm-document-pdf-regression');
+        \Illuminate\Support\Facades\File::deleteDirectory($outputRoot);
+
+        $this->app->bind(CrmDocumentPdfService::class, static function () {
+            return new class extends CrmDocumentPdfService {
+                public function render(string $html, string $fileStem): string
+                {
+                    if (! str_contains($html, 'Regression Machine')) {
+                        throw new \RuntimeException('Expected regression print template HTML was not rendered.');
+                    }
+
+                    $path = storage_path('app/tmp/'.$fileStem.'-testing-regression.pdf');
+                    if (! is_dir(dirname($path))) {
+                        mkdir(dirname($path), 0777, true);
+                    }
+                    file_put_contents($path, "%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n");
+
+                    return $path;
+                }
+            };
+        });
+
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('crm:document-pdf-regression', [
+            '--quote' => (string) $quote->id,
+            '--invoice-quote' => (string) $quote->id,
+            '--skip-screenshots' => true,
+            '--output' => 'tmp/testing-crm-document-pdf-regression',
+        ]);
+
+        $this->assertSame(0, $exitCode, \Illuminate\Support\Facades\Artisan::output());
+        $reports = glob($outputRoot.'/*/report.json') ?: [];
+        $this->assertCount(1, $reports);
+
+        $report = json_decode((string) file_get_contents($reports[0]), true);
+        $this->assertIsArray($report);
+        $this->assertCount(5, $report['results']);
+        $this->assertSame(['quotation', 'proforma_invoice', 'invoice', 'packing_list', 'contract'], array_column($report['results'], 'document_type'));
+        foreach ($report['results'] as $result) {
+            $this->assertSame(1, (int) $result['pdf_pages']);
+            $this->assertFileExists($result['pdf_path']);
+            $this->assertFileExists($result['html_path']);
+        }
+
+        \Illuminate\Support\Facades\File::deleteDirectory($outputRoot);
     }
 
     public function test_quote_sales_chain_is_normalized_and_conflicts_are_rejected(): void

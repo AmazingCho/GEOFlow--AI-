@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CollectionRecord;
+use App\Services\GeoFlow\CollectionHealthService;
 use App\Support\AdminWeb;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ use Illuminate\View\View;
 
 class CollectionController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, CollectionHealthService $collectionHealthService): View
     {
         $search = trim((string) $request->query('search', ''));
 
@@ -39,6 +40,7 @@ class CollectionController extends Controller
         }
 
         $collections = $query->paginate(20)->withQueryString();
+        $healthSummaries = $collectionHealthService->summariesFor($collections->getCollection());
 
         return view('admin.collections.index', [
             'pageTitle' => __('admin.collections.page_title'),
@@ -46,6 +48,7 @@ class CollectionController extends Controller
             'adminSiteName' => AdminWeb::siteName(),
             'search' => $search,
             'collections' => $collections,
+            'healthSummaries' => $healthSummaries,
             'stats' => [
                 'total' => CollectionRecord::query()->count(),
                 'active' => CollectionRecord::query()->where('status', 'active')->count(),
@@ -61,6 +64,18 @@ class CollectionController extends Controller
                     })
                     ->count(),
             ],
+        ]);
+    }
+
+    public function health(int $collectionId, CollectionHealthService $collectionHealthService): View
+    {
+        $collection = CollectionRecord::query()->whereKey($collectionId)->firstOrFail();
+
+        return view('admin.collections.health', [
+            'pageTitle' => __('admin.collections.health.page_title', ['name' => (string) $collection->name]),
+            'activeMenu' => 'collections',
+            'adminSiteName' => AdminWeb::siteName(),
+            'health' => $collectionHealthService->assess($collection),
         ]);
     }
 

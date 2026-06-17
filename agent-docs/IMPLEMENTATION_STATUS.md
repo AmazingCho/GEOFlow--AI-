@@ -7,18 +7,24 @@
 | 功能 | 状态 | 说明 |
 | --- | --- | --- |
 | Collection 顶层容器 | 已完成 | 创建任务页必选，素材按 Collection 归属治理 |
+| Collection 健康度评分 | 已完成核心功能 | Collection 列表显示健康度分数，详情页只读检查 Entity、知识库、标题库、图片库、Case、素材关联、向量化和标签治理问题 |
 | Entity DB | 已完成核心功能 | 支持基础字段、属性 JSON、标签、AI 分析、素材关联 |
 | Case DB | 已完成核心功能 | 支持案例管理、受控 Case 类型并关联核心 Entity |
 | 知识库治理字段 | 已完成 | type、role、importance、summary、source URL、status |
 | 知识库 Entity 独立关系 | 已完成 | 知识库可关联多个 Entity，并为每个 Entity 单独设置关系 |
 | 关系多选组件复用 | 已完成 | Entity 页关联知识库与知识库页关联 Entity 复用 `relation-multi-selector` |
 | RAG 检索 | 已完成核心功能 | 支持 Entity、Case、Knowledge Base、Collection 上下文 |
-| RAG 检索解释增强 | 已完成 | trace 记录 evidence_score、retrieval_source、match_reasons、score_components 与 evidence_summary |
+| RAG 检索解释增强 | 已完成增强 | trace 记录 evidence_score、retrieval_source、match_reasons、score_components 与 evidence_summary；文章编辑页已展示策略、使用知识库、片段元数据和匹配原因 |
+| AI 知识库纠错助手 | 已完成核心功能 | 知识库详情页和文章编辑页可发起纠错；AI 生成 proposal，管理员批准/拒绝/应用；应用后刷新单个 chunk embedding 并保存版本，支持回滚 |
+| 知识库向量化异步队列 | 已完成核心功能 | 切片/向量化任务写回 queued/running/completed/failed 状态；列表页和详情页展示状态并轮询；重复更新有保护，失败可重试 |
+| 知识库重复与冲突检测 | 已完成核心功能 | 知识库治理检查页可按 Collection 扫描疑似重复资料和数值型事实冲突，只生成报告和详情跳转，不自动合并或覆盖 |
+| 知识库治理建议工作流 | 已完成核心功能 | 重复/冲突检查结果可创建 proposal；重复项可确认后标记 inactive 并可回滚；冲突项只记录人工审核，不自动改正文 |
 | 生成追踪 | 已完成核心功能 | 文章可记录生成来源、检索 chunk、上下文 |
-| 文章质量评分 | 已完成核心功能 | 列表和编辑页显示评分与审核建议 |
+| 文章质量评分 | 已完成增强 | 列表和编辑页显示评分、审核建议、细化指标和扣分原因 |
 | 文章 Markdown 编辑器 | 已完成 | 文章创建/编辑页接入 Vditor，支持快捷插入和 Markdown 正文编辑 |
 | 文章复制导出与图片上传 | 已完成 | 支持复制 Markdown、复制公众号/微信格式 HTML，编辑器上传图片自动入库并关联文章 |
 | 标签管理页增强 | 已完成核心功能 | 标签列表、引用统计、引用明细、删除、重命名、分页 |
+| 标签性能体验补强 | 已完成核心功能 | 标签选择器远程搜索和引用明细懒加载已确认；搜索接口补充 `has_more`；标签统计缓存 key 与写入侧清理已统一 |
 | 受控标签分组白名单 | 已完成核心功能 | 支持新增、编辑、删除可用分组 |
 | 不同素材自动 tag 推荐 | 已移除 | 按用户要求删除自动推荐入口，避免误标签和无效标签扩散 |
 | 创建任务页重整 | 已完成核心功能 | Collection 必选，Entity / Case 多选，标签筛选折叠 |
@@ -32,19 +38,22 @@
 | AI 分析补充要求 | 已完成 | Knowledge、Entity、Case 表单支持折叠式“补充分析要求”与快捷模板 |
 | URL 采集 Entity 语言修复 | 已完成 | 英文等非中文页面不再套中文 Entity 描述模板 |
 | 文章生成语言强制 | 已完成 | 生成语言优先由标题和关键词判断，最终提示词强制目标语言 |
-| Prompt Skill System v1 | 已完成 | 任务支持可选 `skill_prompt_id`，提示词页可管理 Master Prompt 与 Skill Prompt |
+| 任务回收站 | 已完成 | 任务删除改为软删除；已生成文章和 task_id 来源关系保留；回收站支持查看与恢复，恢复后保持暂停 |
+| Prompt Skill System v1 | 已完成增强 | 任务支持可选 `skill_prompt_id`，提示词页可管理 Master Prompt 与 Skill Prompt；创建任务页支持根据标题库智能推荐 Skill，并保留不使用/手动覆盖 |
 | 轻量 CRM 阶段 1 | 已完成 | 新增客户、内部负责人、跟进记录，客户可关联 Collection |
 | 轻量 CRM 阶段 2 | 已完成 | 新增询盘管理，支持 AI 需求识别并关联 Entity、知识库、Case、Tag |
 | 轻量 CRM 阶段 3 | 已完成 | 新增报价单、报价明细和打印页，可从询盘生成报价 |
 | 轻量 CRM 阶段 4 | 已完成 | 新增订单管理，支持从报价生成订单并维护订单明细 |
-| 轻量 CRM 阶段 5 | 已完成 | 新增售后工单，支持 AI 分析、关联订单、Entity、知识库和 Case |
+| 轻量 CRM 阶段 5 | 已完成增强 | 售后工单支持 AI 分析、关联订单/Entity/知识库/Case，并可沉淀 FAQ、Case 和知识纠错候选 |
 | 轻量 CRM 阶段 6 | 已完成 | 新增 CRM 内容候选与任务 CRM 来源关联，支持从询盘/工单沉淀标题、FAQ、Case |
 | 轻量 CRM 阶段 7 | 已完成核心功能 | CRM 列表筛选、Collection 约束、任务页 CRM 来源筛选和主要 UI 入口已补齐 |
 | CRM 活动与待办 | 已完成核心功能 | 询盘活动按询盘隔离，客户可汇总活动；活动可编辑、软删除；未来动作统一使用独立 CRM 待办 |
-| CRM 工作台与商机管道 | 已完成核心功能 | 支持今日/逾期待办、商机阶段、金额、概率、成交日期和输单原因；当前下一步读取首个未完成待办 |
+| CRM 轻量增强第一批 | 已完成 | 客户详情页升级为客户总览，集中展示销售链条、联系人、活动和待办；活动记录新增结构化类型并复用统一选择器 |
+| CRM 工作台与商机管道 | 已完成核心功能 | 支持今日/逾期待办、商机阶段、金额、概率、成交日期和输单原因；当前下一步读取首个未完成待办；新增只读商机 Kanban 看板 |
+| CRM 单据链路视图 | 已完成核心功能 | 询盘详情、商机编辑页和客户详情页复用单据链路组件，展示客户、询盘、商机、单据、订单和售后工单关系 |
 | CRM 多联系人 | 已完成核心功能 | 客户可维护多个外部联系人并指定主联系人；可选字段写入已兼容数据库非空约束和旧单据字段同步 |
 | CRM 数据归档安全 | 已完成核心功能 | 客户及商业对象使用软删除；归档客户不会级联删除商业记录 |
-| CRM 单据独立转换 | 已完成核心功能 | 支持从已有单据创建独立报价 / PI / CI / PL / 合同副本并保留来源 |
+| CRM 单据独立转换 | 后台保留，前端收敛 | `source_quote_id` 和转换接口暂保留兼容历史数据；详情页“创建副本”入口已移除，默认通过打印类型切换输出 PI / CI / PL / 合同，避免单据列表重复膨胀 |
 | CRM 单据系统阶段 1 | 已完成 | 报价/发票/装箱/合同基础字段结构、正式发票类型、最终合计和明细扩展字段已补齐 |
 | CRM 单据系统阶段 2-10 | 已完成核心功能 | 单据表单 UI、项目图片、报价/PI/发票/装箱单/合同分模板打印、卖方信息读取、基础中英文标签、测试与文档已补齐 |
 | CRM 卖方常用信息模板 | 已完成核心功能 | 单据卖方信息支持 Seller Company / Bank Account JSON 编辑、格式化、保存常用、导入常用和默认模板 |
@@ -61,23 +70,18 @@
 
 | 功能 | 状态 | 待检查点 |
 | --- | --- | --- |
-| 阶段 7 性能优化 | 部分完成 | 需要用大量标签、图片、知识库、文章做真实压力验证 |
-| 标签远程搜索 | 部分完成或需确认 | 检查所有标签选择器是否都避免一次性渲染大量数据 |
-| 标签引用明细懒加载 | 部分完成或需确认 | 检查标签管理页查看明细是否按需请求 |
-| 统计缓存 | 部分完成或需确认 | 检查素材统计和标签统计是否频繁重复计算 |
-| 知识库向量化异步队列 | 部分完成或需确认 | 大文件导入时是否阻塞页面操作 |
+| 真实大数据压力验证 | 待真实数据压测 | 标签远程搜索、引用懒加载、统计缓存和知识库队列已完成核心验证；仍建议用上千标签、图片、知识库和大文件做真实压力测试 |
 | 旧文章生成来源展示 | 兼容性风险 | 旧文章没有 trace 时可能不显示生成来源 |
 
 ## 未完成
 
 | 功能 | 状态 | 原因 |
 | --- | --- | --- |
-| 任务回收站 | 未实现 | 会改变任务删除语义，建议独立阶段做 |
-| AI 知识库纠错助手 | 未实现 | 涉及新表、diff UI、审批、embedding、回滚，建议独立阶段做 |
-| Collection 健康度评分 | 未实现 | 可作为后续治理增强 |
-| 重复素材合并 | 未实现 | 需要更明确的数据合并策略 |
+| 重复素材自动合并 | 跳过/待明确 | Phase 3 已完成可审核 proposal 和重复项归档；自动合并会改变资料正文、切片和 embedding，默认禁用 |
 | 系统更新中心准备度增强 | 跳过 | 本地定制分支没有上游更新中心基底，强行接入会引入不完整入口 |
 | CRM 销售链路 V2 | 阶段 0-7 已完成 | 数据契约、商机生命周期、询盘转商机、活动时间线、单据链一致性、历史唯一候选修复和 UI/文档收口已完成；剩余 8 项历史歧义数据保留人工判断 |
+| CRM 单据 Chrome PDF 导出、分页与回归检查 | 阶段 0-9 已完成核心功能 | 已接入 `CrmDocumentPdfService` + Puppeteer/Chromium，详情页和打印页提供 PDF 下载入口；HTML 打印预览保留为兜底；打印模板支持动态明细分页和动态 `Page X of Y` 页码；后台“PDF 回归检查”支持一键生成回归包、默认视觉基线、截图 diff 和旧回归包清理 |
+| 产品资料线 / Datasheet 固定模板 | 待定 | 与 CRM 商业票据分开规划；后续可做 A4 固定页产品资料模板，如封面、Overview、Specification、Photos、Options、Contact。目前先不进入票据 PDF 优化主线 |
 
 ## 最近验证记录
 
@@ -120,8 +124,22 @@
 - `CrmPipelineAuditTest` 修复命令覆盖只读默认、唯一候选修复和跳过歧义数据，共 3 tests / 21 assertions
 - CRM 销售链路 V2 阶段 7 收口验证：`CrmPipelineAuditTest`、`AdminCrmPagesTest`、`AdminTasksPageTest` 联合通过，共 42 tests / 361 assertions；浏览器检查 CRM 工作台、商机编辑页和新增单据页无 Server Error、无横向溢出
 - Headless Chrome 新建单据页和多类型打印页截图检查
+- `AdminCrmPagesTest` CRM 单据 PDF 聚焦验证通过，覆盖 Chromium PDF 服务调用和长明细动态分页 HTML，共 2 tests / 10 assertions
+- CRM 单据 PDF 阶段 6 文档收口：功能说明、Agent brief/handoff、已知问题和 PDF 优化规划均已同步到 Chromium/Puppeteer + 动态分页路线
+- CRM 单据 PDF 真实样本视觉回归：Quotation、PI、CI、PL、Contract 五类 PDF 均可生成；修复容器缺中文字体导致 CI 备注显示方块的问题。详见 `agent-docs/CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md`
+- CRM 单据 PDF 视觉回归自动化：新增 `crm:document-pdf-regression` 命令，可生成五类真实样本 PDF、HTML、逐页截图和报告，并校验 PDF 页数与 HTML 页面数一致
+- CRM 单据 PDF 后台回归检查：`/admin/crm/quotes/pdf-regression` 可生成运行记录和报告；默认视觉基线已验证，第二轮截图 diff 结果为 `passed`，五类单据 diff ratio 为 0；`crm:document-pdf-regression:prune --dry-run` 验证不会误删基线或近期记录
+- `AdminCrmPagesTest` PDF 回归聚焦验证通过，共 5 tests / 37 assertions，覆盖后台启动、清理基线保护、渲染基准不一致拦截、命令报告生成和无图片 quotation 单页分页
 - 浏览器检查询盘列表、询盘详情、商机创建页和单据创建页，无横向溢出；商机来源卡片和关联商机下拉正常渲染
 - `AdminArticlesPageTest`、`AdminLoginPageTest`、`AdminSiteSettingsPageTest`、`AdminSiteThemeReplicationTest`、`AdminDistributionPageTest` 联合回归通过，共 104 tests / 743 assertions
+- GEO 生成质检与 RAG 解释阶段 1 验证：`ArticleQualityAssessmentServiceTest`、`AdminArticleGenerationTraceTest`、`RagRetrievalServiceTest` 联合通过，共 11 tests / 93 assertions；浏览器检查 `/admin/articles/31/edit` 的质量评分和 RAG 解释卡片正常渲染，无控制台错误
+- Skill Prompt 智能推荐阶段 2 验证：`AdminTasksPageTest` 与 `WorkerExecutionServicePromptTest` 联合通过，共 23 tests / 157 assertions；浏览器检查 `/admin/tasks/create` 中智能推荐卡片正常显示，可根据标题库推荐 Application Skill，无控制台错误
+- AI 知识库纠错助手阶段 3 验证：`AdminKnowledgeCorrectionTest` 通过，共 4 tests / 26 assertions；`AdminArticlesPageTest` 回归通过，共 15 tests / 88 assertions；浏览器检查 `/admin/knowledge-corrections`、知识库详情页和文章编辑页纠错入口正常渲染，无控制台错误。联合材料页回归中 `AdminMaterialsPagesTest` 仍命中历史文案断言“作者管理”，与本阶段无关，后续可单独同步测试或恢复页面文案。
+- 知识库向量化异步队列阶段 4 验证：`AdminMaterialsPagesTest` 聚焦测试通过，共 5 tests / 28 assertions，覆盖保存后 queued 状态、状态接口、Job completed/failed 写回、缺少 Embedding 模型保护和列表 UI；`AdminKnowledgeCorrectionTest` 回归通过，共 4 tests / 26 assertions；浏览器检查 `/admin/knowledge-bases` 和知识库详情页状态 badge、刷新入口和控制台错误，均正常。
+- 知识库重复与冲突检测阶段 5 验证：`AdminMaterialsPagesTest` 聚焦测试覆盖治理页鉴权、疑似重复识别、数值型事实冲突和 Collection 筛选；浏览器检查 `/admin/knowledge-bases/governance` 页面无 Server Error、无控制台错误。
+- CRM 轻量增强第一批验证：基线 `crm:pipeline-audit --json` 可生成报告；`AdminCrmPagesTest` 全量通过，共 32 tests / 292 assertions，覆盖客户总览、销售链条展示、活动类型保存/编辑和待办完成写回活动。
+- CRM 轻量增强阶段 3 验证：`AdminCrmPagesTest` 全量通过，共 33 tests / 301 assertions，覆盖商机 Kanban 阶段卡片、客户、金额、来源询盘和下一步待办展示；浏览器检查 `/admin/crm/opportunities/kanban` 桌面和移动布局无横向溢出、无控制台错误。
+- CRM 轻量增强阶段 4 验证：`AdminCrmPagesTest` 全量通过，共 34 tests / 323 assertions，覆盖询盘、商机、客户三处单据链路展示与单据/订单/售后详情链接；浏览器检查三处页面桌面和移动布局均无横向溢出、无控制台错误。截图接口本次连续超时，已记录为工具限制。
 
 ## 2026-06-12 上游功能融入
 
@@ -181,6 +199,7 @@
   - 工单可关联客户、订单、Collection、核心 Entity、知识库和 Case。
   - 支持工单内容 AI 分析，提取问题摘要、建议回复、缺失问题和关联资料建议。
   - AI 只推荐已有资料，不直接写入知识库或案例库。
+  - 工单详情页可从已关联知识库发起知识纠错候选；纠错仍需进入知识库纠错助手审核链，不会直接覆盖知识库。
 - 新增 CRM 内容候选：
   - 询盘详情页可生成标题候选和 FAQ 候选。
   - 工单详情页可生成 FAQ 候选和 Case 候选。
@@ -199,6 +218,7 @@
 - 本地 Docker 已执行迁移 `2026_06_05_040000_create_crm_order_ticket_and_content_tables`。
 - PHP / Blade 语法检查通过。
 - `AdminCrmPagesTest` 通过，覆盖订单、售后工单、内容候选审核和 CRM 来源入库。
+- 2026-06-17 阶段 5 增强验证：售后工单详情页入口、知识纠错 pending 记录、FAQ 候选和 Case 候选审核入库聚焦测试通过，2 tests / 35 assertions。
 - `AdminCrmPagesTest` + `AdminTasksPageTest` 联合回归通过。
 - 已完成后台订单、工单、工单详情、内容候选、创建任务和新增工单页面截图检查；未发现横向溢出或明显 UI 冲突。
 
@@ -238,7 +258,8 @@
 
 继续优化建议：
 
-- 后续如要做自动匹配 Skill，应新增明确的 intent 字段或分类器，并保留任务页人工覆盖入口。
+- 已实现规则版智能推荐：根据标题库名称和标题样本匹配 Comparison / Buying Guide / Application Skill。
+- 后续如要做 AI Intent Classification，应保留任务页人工覆盖入口，不要替代当前规则兜底。
 - 不建议把 Skill Prompt 当作素材分类或知识库 metadata 使用。
 
 ## 2026-06-04 上游更新吸收记录
@@ -677,7 +698,9 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 
 **背景：** 此前尝试过 dompdf/spatie-laravel-pdf 自动生成 PDF 方案和 PhpSpreadsheet Excel 导出方案，均因样式/排版问题不可用。
 
-**最终方案确定：** 保持纯 HTML 打印预览 + 浏览器手动 Ctrl+P 打印 PDF。
+**当时方案：** 先保持纯 HTML 打印预览 + 浏览器手动 Ctrl+P 打印 PDF。
+
+**当前状态更新（2026-06-16）：** 已升级为 Chromium/Puppeteer PDF 路线，详情页和打印预览页可直接下载 PDF；HTML 打印预览仍作为失败兜底。不要再按“只能手动 Ctrl+P”理解当前系统。
 
 **回滚操作：**
 - `print-document.blade.php` 回滚到 git HEAD（commit `8a7666b`），恢复稳定 A4 打印样式
@@ -744,7 +767,7 @@ crm_customers.company_name   → crm_quotes.buyer_company → 打印页 Company
 - 客户已支持多个外部联系人和主联系人；旧联系人字段保留并自动同步。
 - 询盘活动已按 `inquiry_id` 隔离，客户层活动仍可汇总查看。
 - 客户、询盘、单据、订单、售后、活动记录已启用软删除归档。
-- 单据可转换为独立的报价 / PI / CI / 装箱单 / 合同记录，并通过 `source_quote_id` 追踪来源。
+- 单据独立转换后台能力仍保留 `source_quote_id`，但前端“创建副本”入口已收敛；默认通过打印类型切换输出报价 / PI / CI / 装箱单 / 合同，避免列表重复膨胀。
 - Docker 回归测试：`AdminCrmPagesTest` 11 项、108 个断言通过；桌面与 390px 移动端已完成截图检查。
 
 ## 2026-06-14：CRM 活动记录编辑器优化

@@ -7,6 +7,8 @@ use App\Models\Article;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\DistributionChannel;
+use App\Models\AiModel;
+use App\Models\KnowledgeBase;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Services\GeoFlow\ArticleQualityAssessmentService;
@@ -290,7 +292,7 @@ class ArticleController extends Controller
     public function edit(int $articleId): View|RedirectResponse
     {
         $article = Article::query()
-            ->with(['task:id,name', 'author:id,name', 'category:id,name'])
+            ->with(['task:id,name,deleted_at', 'author:id,name', 'category:id,name'])
             ->withCount('articleImages as article_images_count')
             ->whereKey($articleId)
             ->firstOrFail();
@@ -315,6 +317,7 @@ class ArticleController extends Controller
                 'slug' => (string) $article->slug,
                 'published_at' => $article->published_at?->format('Y-m-d H:i:s'),
                 'task_name' => (string) ($article->task->name ?? ''),
+                'task_deleted' => (bool) ($article->task?->trashed() ?? false),
                 'is_hot' => (bool) ($article->is_hot ?? false),
                 'is_featured' => (bool) ($article->is_featured ?? false),
             ],
@@ -323,6 +326,8 @@ class ArticleController extends Controller
             'qualityReport' => $this->qualityAssessmentService->assess($article, $generationTrace),
             'internalLinkSuggestions' => $this->internalLinkSuggestionService->suggest($article, $generationTrace),
             'internalLinkRecords' => $article->internalLinks()->latest()->limit(20)->get(),
+            'correctionAiModelOptions' => $this->loadCorrectionAiModelOptions(),
+            'correctionKnowledgeBaseOptions' => $this->loadCorrectionKnowledgeBaseOptions($article, $generationTrace),
         ]);
     }
 
@@ -354,6 +359,71 @@ class ArticleController extends Controller
                 'applied' => (int) $result['applied'],
                 'skipped' => (int) $result['skipped'],
             ]));
+    }
+
+    /**
+     * @return list<array{id:int,name:string}>
+     */
+    private function loadCorrectionAiModelOptions(): array
+    {
+        return AiModel::query()
+            ->select(['id', 'name'])
+            ->where('status', 'active')
+            ->where(function ($query): void {
+                $query->whereNull('model_type')
+                    ->orWhere('model_type', '')
+                    ->orWhere('model_type', 'chat');
+            })
+            ->orderBy('failover_priority')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (AiModel $model): array => [
+                'id' => (int) $model->id,
+                'name' => (string) $model->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $generationTrace
+     * @return list<array{id:int,name:string}>
+     */
+    private function loadCorrectionKnowledgeBaseOptions(Article $article, array $generationTrace): array
+    {
+        $ids = collect((array) ($article->used_knowledge_base_ids ?? []))
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->all();
+
+        $knowledge = is_array($generationTrace['knowledge'] ?? null) ? $generationTrace['knowledge'] : [];
+        foreach ((array) ($knowledge['knowledge_base_ids'] ?? []) as $id) {
+            $ids[] = (int) $id;
+        }
+        foreach ((array) ($knowledge['knowledge_bases'] ?? []) as $row) {
+            if (is_array($row)) {
+                $ids[] = (int) ($row['id'] ?? 0);
+            }
+        }
+        foreach ((array) ($knowledge['chunks'] ?? []) as $row) {
+            if (is_array($row)) {
+                $ids[] = (int) ($row['knowledge_base_id'] ?? 0);
+            }
+        }
+
+        $ids = array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+
+        return KnowledgeBase::query()
+            ->whereIn('id', $ids)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(static fn (KnowledgeBase $knowledgeBase): array => [
+                'id' => (int) $knowledgeBase->id,
+                'name' => (string) $knowledgeBase->name,
+            ])
+            ->all();
     }
 
     private function attachQualityReports(LengthAwarePaginator $articles): void
@@ -566,7 +636,7 @@ class ArticleController extends Controller
             : Article::query();
 
         $query->with([
-            'task:id,name,need_review',
+            'task:id,name,need_review,deleted_at',
             'author:id,name',
             'category:id,name',
         ])->withCount([
@@ -671,13 +741,14 @@ class ArticleController extends Controller
     private function loadTaskOptions(): array
     {
         try {
-            return Task::query()
-                ->select(['id', 'name'])
+            return Task::withTrashed()
+                ->select(['id', 'name', 'deleted_at'])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Task $task): array => [
                     'id' => (int) $task->id,
                     'name' => (string) $task->name,
+                    'deleted' => (bool) $task->trashed(),
                 ])
                 ->all();
         } catch (QueryException) {
@@ -854,7 +925,7 @@ class ArticleController extends Controller
         }
 
         $articles = Article::query()
-            ->with(['task:id,need_review'])
+            ->with(['task:id,need_review,deleted_at'])
             ->select(['id', 'status', 'review_status', 'published_at', 'task_id'])
             ->whereIn('id', $articleIds)
             ->get();

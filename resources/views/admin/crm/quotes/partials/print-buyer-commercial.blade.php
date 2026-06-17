@@ -23,6 +23,9 @@
                 @if ((string) ($quote->buyer_company ?? '') !== '')
                     <div class="label">{{ $isZh ? '公司' : 'Company' }}:</div><div>{{ $quote->buyer_company }}</div>
                 @endif
+                @if ((string) ($quote->buyer_tax_number ?? '') !== '')
+                    <div class="label">{{ $isZh ? '税号' : 'Tax ID' }}:</div><div>{{ $quote->buyer_tax_number }}</div>
+                @endif
                 @if ((string) ($quote->buyer_contact ?? '') !== '')
                     <div class="label">{{ $isZh ? '联系人' : 'Contact' }}:</div><div>{{ $quote->buyer_contact }}</div>
                 @endif
@@ -49,6 +52,9 @@
             <div class="kv">
                 @if ((string) ($quote->buyer_company ?? '') !== '')
                     <div class="label">{{ $isZh ? '公司' : 'Company' }}:</div><div>{{ $quote->buyer_company }}</div>
+                @endif
+                @if ((string) ($quote->buyer_tax_number ?? '') !== '')
+                    <div class="label">{{ $isZh ? '税号' : 'Tax ID' }}:</div><div>{{ $quote->buyer_tax_number }}</div>
                 @endif
                 @if ((string) ($quote->buyer_contact ?? '') !== '')
                     <div class="label">{{ $isZh ? '联系人' : 'Contact' }}:</div><div>{{ $quote->buyer_contact }}</div>
@@ -109,6 +115,9 @@
                 @if ((string) ($quote->buyer_company ?? '') !== '')
                     <div class="label">{{ $isZh ? '公司' : 'Company' }}:</div><div>{{ $quote->buyer_company }}</div>
                 @endif
+                @if ((string) ($quote->buyer_tax_number ?? '') !== '')
+                    <div class="label">{{ $isZh ? '税号' : 'Tax ID' }}:</div><div>{{ $quote->buyer_tax_number }}</div>
+                @endif
                 @if ((string) ($quote->buyer_contact ?? '') !== '')
                     <div class="label">{{ $isZh ? '联系人' : 'Contact' }}:</div><div>{{ $quote->buyer_contact }}</div>
                 @endif
@@ -135,6 +144,9 @@
             <div class="kv">
                 @if ((string) ($quote->buyer_company ?? '') !== '')
                     <div class="label">{{ $isZh ? '公司' : 'Company' }}:</div><div>{{ $quote->buyer_company }}</div>
+                @endif
+                @if ((string) ($quote->buyer_tax_number ?? '') !== '')
+                    <div class="label">{{ $isZh ? '税号' : 'Tax ID' }}:</div><div>{{ $quote->buyer_tax_number }}</div>
                 @endif
                 @if ((string) ($quote->buyer_contact ?? '') !== '')
                     <div class="label">{{ $isZh ? '联系人' : 'Contact' }}:</div><div>{{ $quote->buyer_contact }}</div>

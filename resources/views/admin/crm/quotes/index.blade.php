@@ -7,10 +7,16 @@
                 <h1 class="text-2xl font-bold text-gray-900">单据制作</h1>
                 <p class="mt-1 text-sm text-gray-600">管理报价单、形式发票、正式发票、装箱单和合同等各类业务单据。</p>
             </div>
-            <a href="{{ route('admin.crm.quotes.create') }}" class="inline-flex w-fit items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
-                新增单据
-            </a>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ route('admin.crm.quotes.pdf-regression.index') }}" class="inline-flex w-fit items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <i data-lucide="scan-search" class="mr-2 h-4 w-4"></i>
+                    PDF 回归检查
+                </a>
+                <a href="{{ route('admin.crm.quotes.create') }}" class="inline-flex w-fit items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                    <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
+                    新增单据
+                </a>
+            </div>
         </div>
 
         @include('admin.crm.partials.nav', ['currentCrmTab' => 'quotes'])

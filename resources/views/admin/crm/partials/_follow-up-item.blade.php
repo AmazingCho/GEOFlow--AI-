@@ -6,6 +6,9 @@
     $wasEdited = $followUp->updated_at
         && $followUp->created_at
         && $followUp->updated_at->greaterThan($followUp->created_at);
+    $activityTypeOptions = \App\Services\GeoFlow\CrmActivityService::typeOptions();
+    $activityType = (string) ($followUp->activity_type ?? 'note');
+    $activityTypeLabel = $activityTypeOptions[$activityType] ?? $activityTypeOptions['note'];
 @endphp
 
 <div class="rounded-md border border-gray-200 px-4 py-3 text-sm">
@@ -28,6 +31,7 @@
                 <div class="mt-1 text-gray-500">下一步：{{ $followUp->next_action }}</div>
             @endif
             <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{{ $activityTypeLabel }}</span>
                 @if ((string) ($followUp->owner ?? '') !== '')
                     <span class="rounded-full bg-gray-100 px-2 py-0.5">负责人：{{ $followUp->owner }}</span>
                 @endif
@@ -76,7 +80,8 @@
                                 'value' => (string) $followUp->content,
                             ])
                             <div class="grid gap-3 sm:grid-cols-2">
-                                <input type="text" name="followup_type" maxlength="80" value="{{ $followUp->followup_type }}" placeholder="活动类型：电话 / 邮件 / 会议" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                @include('admin.crm.partials._activity-type-select', ['value' => $activityType])
+                                <input type="text" name="followup_type" maxlength="80" value="{{ $followUp->followup_type }}" placeholder="补充备注（可选）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                                 <input type="text" name="owner" maxlength="120" value="{{ $followUp->owner }}" placeholder="负责人" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             </div>
                             <div class="flex justify-end">

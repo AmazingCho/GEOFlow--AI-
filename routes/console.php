@@ -33,3 +33,8 @@ Schedule::exec(
 Schedule::exec(
     'find /var/www/html/storage/app/backups/ -name "daily_*.sql" -mtime +7 -delete 2>/dev/null'
 )->dailyAt('03:30')->runInBackground();
+
+/**
+ * CRM 单据 PDF 回归包清理：只清理 storage/app/pdf-regression 下的旧回归包。
+ */
+Schedule::command('crm:document-pdf-regression:prune')->dailyAt('04:10');

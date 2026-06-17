@@ -38,6 +38,12 @@ class ArticleQualityAssessmentServiceTest extends TestCase
         $this->assertContains('knowledge', collect($report['issues'])->pluck('key')->all());
         $this->assertContains('images', collect($report['issues'])->pluck('key')->all());
         $this->assertContains('faq', collect($report['issues'])->pluck('key')->all());
+        $knowledgeItem = collect($report['items'])->firstWhere('key', 'knowledge');
+        $this->assertIsArray($knowledgeItem);
+        $this->assertSame(0, (int) data_get($knowledgeItem, 'metrics.context_length'));
+        $this->assertContains('no_rag_context', data_get($knowledgeItem, 'reasons'));
+        $imageItem = collect($report['items'])->firstWhere('key', 'images');
+        $this->assertContains('no_images', data_get($imageItem, 'reasons'));
     }
 
     public function test_quality_assessment_rewards_supported_structured_articles(): void
@@ -79,6 +85,12 @@ MARKDOWN;
         $report = app(ArticleQualityAssessmentService::class)->assess($article, [
             'knowledge' => [
                 'context_length' => 1200,
+                'evidence_summary' => [
+                    'chunk_count' => 1,
+                    'average_evidence_score' => 72,
+                    'retrieval_sources' => ['fallback_embedding_hybrid'],
+                ],
+                'knowledge_bases' => [['id' => 1, 'name' => 'Quality KB']],
                 'chunks' => [['knowledge_base_name' => 'Quality KB', 'chunk_index' => 1]],
                 'entities' => [['name' => 'GEOFlow']],
                 'cases' => [['title' => 'Quality case']],
@@ -89,5 +101,11 @@ MARKDOWN;
 
         $this->assertGreaterThanOrEqual(80, $report['score']);
         $this->assertSame('good', $report['status']);
+        $knowledgeItem = collect($report['items'])->firstWhere('key', 'knowledge');
+        $this->assertSame(1, (int) data_get($knowledgeItem, 'metrics.chunk_count'));
+        $this->assertSame(72, (int) data_get($knowledgeItem, 'metrics.average_evidence_score'));
+        $factsItem = collect($report['items'])->firstWhere('key', 'facts');
+        $this->assertSame(1, (int) data_get($factsItem, 'metrics.entity_count'));
+        $this->assertSame(1, (int) data_get($factsItem, 'metrics.case_count'));
     }
 }

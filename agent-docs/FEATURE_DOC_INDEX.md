@@ -2,6 +2,17 @@
 
 本文件用于把 agent 交接文档和用户操作说明联动起来。
 
+## Agent 协作与需求转译
+
+- [用户需求理解与产品经理式转译规则](./USER_REQUIREMENT_INTERPRETATION.md)
+- [Codex 全局个性化提示词建议](./CODEX_GLOBAL_PERSONAL_PROMPT.md)
+
+适合理解：
+
+- 用户用非技术语言描述需求时，Agent 应如何先做产品经理式转译。
+- 每次优化前如何把需求拆成业务目标、影响页面、期望行为、边界保护和验收标准。
+- 如何把规则复制到 Codex 个性化提示词，并配合本地 Skill 使用。
+
 ## 总览
 
 - [新增功能总览](../功能说明文档/00-新增功能总览.md)
@@ -49,6 +60,7 @@
 - 为什么 `case_study` 不属于 knowledge_type。
 - RAG 如何使用 Entity-linked knowledge bases。
 - 知识库 AI 自动分析如何处理摘要、描述、Markdown 正文和表格参数。
+- AI 知识库纠错助手如何从知识库或文章发起 proposal、审批、应用和回滚。
 
 ## 创建任务
 
@@ -112,8 +124,9 @@
 ## 轻量 CRM
 
 - [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)
-- [CRM 销售链路 V2 优化白皮书](./CRM_SALES_PIPELINE_V2_WHITEPAPER.md)
-- [CRM 询盘与商机边界优化提示词与执行记录](./CRM_INQUIRY_OPPORTUNITY_OPTIMIZATION_PROMPT.md)
+- [CRM 单据 PDF 真实样本视觉回归记录](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md)
+- [实现状态与验证记录](./IMPLEMENTATION_STATUS.md)
+- [已知问题与风险](./KNOWN_ISSUES.md)
 
 适合理解：
 
@@ -127,5 +140,6 @@
 - 如何把询盘/工单沉淀为标题、FAQ 或 Case 内容候选。
 - 创建任务时 CRM 来源如何与 Collection 联动。
 - 跟进记录如何在客户、询盘、单据、订单和售后页面联动展示。
-- 后续如何统一客户、询盘、商机、活动、待办和单据的数据链路。
-- 商机归档、重复商机治理及每阶段代码/数据库恢复点规范。
+- CRM 销售链路 V2 的当前规则、剩余历史歧义数据和已完成验证。
+- CRM 单据 PDF 当前采用 Chromium/Puppeteer 路线，HTML 打印预览作为失败兜底。
+- 修改单据模板后如何运行 PDF 回归检查。

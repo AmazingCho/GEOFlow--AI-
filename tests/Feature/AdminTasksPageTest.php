@@ -20,6 +20,7 @@ use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\TaskRun;
+use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Jobs\ProcessGeoFlowTaskJob;
 use App\Services\GeoFlow\TagService;
@@ -88,6 +89,7 @@ class AdminTasksPageTest extends TestCase
             ->get(route('admin.tasks.create'))
             ->assertOk()
             ->assertSee(__('admin.task_create.page_heading'))
+            ->assertSee(__('admin.task_create.option.auto_skill_prompt'))
             ->assertSee(__('admin.task_create.option.no_image_library'))
             ->assertSee(__('admin.task_create.option.no_image_count'));
     }
@@ -274,6 +276,147 @@ class AdminTasksPageTest extends TestCase
             'prompt_id' => (int) $prompt->id,
             'skill_prompt_id' => (int) $skillPrompt->id,
         ]);
+    }
+
+    public function test_task_auto_recommends_skill_prompt_from_title_library_intent(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_auto_skill_prompt',
+            'password' => 'secret-123',
+            'email' => 'tasks-auto-skill-prompt@example.com',
+            'display_name' => 'Tasks Auto Skill Prompt Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Auto Skill Collection',
+            'slug' => 'auto-skill-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Comparison Titles']);
+        Title::query()->create([
+            'library_id' => (int) $titleLibrary->id,
+            'title' => 'Air-Cooled vs Water-Cooled Chiller: Which Is Better?',
+            'keyword' => 'air cooled vs water cooled chiller',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => 'Auto Skill Master',
+            'type' => 'content',
+            'content' => 'Write an article.',
+        ]);
+        $comparisonSkill = Prompt::query()->create([
+            'name' => 'GEO Skill - Comparison',
+            'type' => 'skill',
+            'content' => 'Use this skill when the title implies comparison or differences.',
+        ]);
+        Prompt::query()->create([
+            'name' => 'GEO Skill - Buying Guide',
+            'type' => 'skill',
+            'content' => 'Use this skill when the title implies how to choose.',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Auto Skill Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Auto Skill Category',
+            'slug' => 'auto-skill-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '自动推荐 Skill Prompt 的任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'skill_prompt_id' => '__auto',
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $this->assertDatabaseHas('tasks', [
+            'name' => '自动推荐 Skill Prompt 的任务',
+            'skill_prompt_id' => (int) $comparisonSkill->id,
+        ]);
+    }
+
+    public function test_task_can_explicitly_disable_auto_skill_prompt(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_disable_auto_skill',
+            'password' => 'secret-123',
+            'email' => 'tasks-disable-auto-skill@example.com',
+            'display_name' => 'Tasks Disable Auto Skill Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Disable Auto Skill Collection',
+            'slug' => 'disable-auto-skill-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Comparison Titles']);
+        Title::query()->create([
+            'library_id' => (int) $titleLibrary->id,
+            'title' => 'Pump vs Valve: Key Differences',
+            'keyword' => 'pump vs valve',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => 'Disable Auto Skill Master',
+            'type' => 'content',
+            'content' => 'Write an article.',
+        ]);
+        Prompt::query()->create([
+            'name' => 'GEO Skill - Comparison',
+            'type' => 'skill',
+            'content' => 'Use this skill when the title implies comparison or differences.',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Disable Auto Skill Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Disable Auto Skill Category',
+            'slug' => 'disable-auto-skill-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '明确不使用 Skill Prompt 的任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'skill_prompt_id' => '',
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $task = Task::query()->where('name', '明确不使用 Skill Prompt 的任务')->firstOrFail();
+        $this->assertNull($task->skill_prompt_id);
     }
 
     public function test_task_create_and_edit_forms_use_full_admin_content_width(): void
@@ -886,6 +1029,24 @@ class AdminTasksPageTest extends TestCase
             'draft_limit' => 5,
             'article_limit' => 10,
         ]);
+        $category = Category::query()->create([
+            'name' => '任务删除保留文章分类',
+            'slug' => 'task-delete-preserve-article-category',
+        ]);
+        $author = Author::query()->create([
+            'name' => '任务删除保留文章作者',
+        ]);
+        $article = Article::query()->create([
+            'title' => '任务删除后保留的文章',
+            'slug' => 'task-delete-preserved-article',
+            'excerpt' => '摘要',
+            'content' => '正文',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'task_id' => $task->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->from(route('admin.tasks.index'))
@@ -894,6 +1055,31 @@ class AdminTasksPageTest extends TestCase
             ->assertSessionHasNoErrors()
             ->assertSessionHas('message', __('admin.tasks.message.delete_success'));
 
-        $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
+        $this->assertSoftDeleted('tasks', ['id' => $task->id]);
+        $this->assertDatabaseHas('articles', [
+            'id' => $article->id,
+            'task_id' => $task->id,
+            'deleted_at' => null,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.trash'))
+            ->assertOk()
+            ->assertSee('Delete Task Without Legacy Queue')
+            ->assertSee(__('admin.tasks.trash.deleted_badge'));
+
+        $this->actingAs($admin, 'admin')
+            ->from(route('admin.tasks.trash'))
+            ->post(route('admin.tasks.restore', ['taskId' => (int) $task->id]))
+            ->assertRedirect(route('admin.tasks.trash'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('message', __('admin.tasks.message.restore_success'));
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'deleted_at' => null,
+            'status' => 'paused',
+            'schedule_enabled' => 0,
+        ]);
     }
 }

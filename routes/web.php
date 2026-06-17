@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\CrmAfterSalesTicketController;
 use App\Http\Controllers\Admin\CrmContentProposalController;
 use App\Http\Controllers\Admin\CrmInquiryController;
 use App\Http\Controllers\Admin\CrmQuoteController;
+use App\Http\Controllers\Admin\CrmDocumentPdfRegressionController;
 use App\Http\Controllers\Admin\CrmSalesOrderController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DistributionController;
@@ -35,6 +36,8 @@ use App\Http\Controllers\Admin\EntityController;
 use App\Http\Controllers\Admin\ImageLibraryController;
 use App\Http\Controllers\Admin\KeywordLibraryController;
 use App\Http\Controllers\Admin\KnowledgeBaseController;
+use App\Http\Controllers\Admin\KnowledgeCorrectionController;
+use App\Http\Controllers\Admin\KnowledgeGovernanceProposalController;
 use App\Http\Controllers\Admin\LegacyController;
 use App\Http\Controllers\Admin\MaterialsController;
 use App\Http\Controllers\Admin\SecuritySettingsController;
@@ -90,8 +93,10 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         // 任务管理（Blade 新路径）
         Route::prefix('tasks')->name('tasks.')->group(function () {
             Route::get('/', [TaskController::class, 'index'])->name('index');
+            Route::get('trash', [TaskController::class, 'trash'])->name('trash');
             Route::post('{taskId}/toggle-status', [TaskController::class, 'toggleStatus'])->name('toggle-status');
             Route::post('{taskId}/delete', [TaskController::class, 'destroyTask'])->name('delete');
+            Route::post('{taskId}/restore', [TaskController::class, 'restore'])->name('restore');
             Route::get('create', [TaskController::class, 'create'])->name('create');
             Route::post('create', [TaskController::class, 'store'])->name('store');
             Route::get('{taskId}/edit', [TaskController::class, 'edit'])->name('edit');
@@ -159,6 +164,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::get('/', [CollectionController::class, 'index'])->name('index');
             Route::get('create', [CollectionController::class, 'create'])->name('create');
             Route::post('create', [CollectionController::class, 'store'])->name('store');
+            Route::get('{collectionId}/health', [CollectionController::class, 'health'])->name('health')->whereNumber('collectionId');
             Route::get('{collectionId}/edit', [CollectionController::class, 'edit'])->name('edit')->whereNumber('collectionId');
             Route::put('{collectionId}', [CollectionController::class, 'update'])->name('update')->whereNumber('collectionId');
             Route::post('{collectionId}/default', [CollectionController::class, 'setDefault'])->name('default')->whereNumber('collectionId');
@@ -178,6 +184,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             });
             Route::prefix('opportunities')->name('opportunities.')->group(function () {
                 Route::get('/', [CrmOpportunityController::class, 'index'])->name('index');
+                Route::get('kanban', [CrmOpportunityController::class, 'kanban'])->name('kanban');
                 Route::get('create', [CrmOpportunityController::class, 'create'])->name('create');
                 Route::post('create', [CrmOpportunityController::class, 'store'])->name('store');
                 Route::post('from-inquiry/{inquiryId}', [CrmOpportunityController::class, 'storeFromInquiry'])->name('from-inquiry')->whereNumber('inquiryId');
@@ -222,6 +229,15 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('create', [CrmQuoteController::class, 'create'])->name('create');
                 Route::post('create', [CrmQuoteController::class, 'store'])->name('store');
                 Route::post('seller-profiles', [CrmQuoteController::class, 'storeSellerProfile'])->name('seller-profiles.store');
+                Route::prefix('pdf-regression')->name('pdf-regression.')->group(function () {
+                    Route::get('/', [CrmDocumentPdfRegressionController::class, 'index'])->name('index');
+                    Route::post('/', [CrmDocumentPdfRegressionController::class, 'store'])->name('store');
+                    Route::post('prune', [CrmDocumentPdfRegressionController::class, 'prune'])->name('prune');
+                    Route::get('{runId}', [CrmDocumentPdfRegressionController::class, 'show'])->name('show')->whereNumber('runId');
+                    Route::get('{runId}/artifact', [CrmDocumentPdfRegressionController::class, 'artifact'])->name('artifact')->whereNumber('runId');
+                    Route::post('{runId}/baseline', [CrmDocumentPdfRegressionController::class, 'baseline'])->name('baseline')->whereNumber('runId');
+                    Route::post('{runId}/delete', [CrmDocumentPdfRegressionController::class, 'destroy'])->name('delete')->whereNumber('runId');
+                });
                 Route::get('{quoteId}', [CrmQuoteController::class, 'show'])->name('show')->whereNumber('quoteId');
                 Route::get('{quoteId}/edit', [CrmQuoteController::class, 'edit'])->name('edit')->whereNumber('quoteId');
                 Route::put('{quoteId}', [CrmQuoteController::class, 'update'])->name('update')->whereNumber('quoteId');
@@ -332,14 +348,36 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
             Route::post('create', [KnowledgeBaseController::class, 'store'])->name('store');
             Route::post('analyze', [KnowledgeBaseController::class, 'analyze'])->name('analyze');
             Route::post('bulk', [KnowledgeBaseController::class, 'bulkUpdate'])->name('bulk');
+            Route::get('governance', [KnowledgeBaseController::class, 'governance'])->name('governance');
             Route::get('{knowledgeBaseId}/edit', [KnowledgeBaseController::class, 'edit'])->name('edit');
             Route::get('{knowledgeBaseId}/detail', [KnowledgeBaseController::class, 'detail'])->name('detail');
             Route::post('upload', [KnowledgeBaseController::class, 'uploadFile'])->name('upload');
             Route::post('{knowledgeBaseId}/chunks/refresh', [KnowledgeBaseController::class, 'refreshChunks'])->name('chunks.refresh');
+            Route::get('{knowledgeBaseId}/chunks/status', [KnowledgeBaseController::class, 'chunkStatus'])->name('chunks.status');
             Route::post('{knowledgeBaseId}/tags', [KnowledgeBaseController::class, 'updateTags'])->name('tags')->whereNumber('knowledgeBaseId');
             Route::put('{knowledgeBaseId}/detail', [KnowledgeBaseController::class, 'updateFromDetail'])->name('detail.update');
             Route::put('{knowledgeBaseId}', [KnowledgeBaseController::class, 'update'])->name('update');
             Route::post('{knowledgeBaseId}/delete', [KnowledgeBaseController::class, 'destroy'])->name('delete');
+        });
+
+        Route::prefix('knowledge-corrections')->name('knowledge-corrections.')->group(function () {
+            Route::get('/', [KnowledgeCorrectionController::class, 'index'])->name('index');
+            Route::post('/', [KnowledgeCorrectionController::class, 'store'])->name('store');
+            Route::get('{correctionId}', [KnowledgeCorrectionController::class, 'show'])->name('show')->whereNumber('correctionId');
+            Route::post('{correctionId}/approve', [KnowledgeCorrectionController::class, 'approve'])->name('approve')->whereNumber('correctionId');
+            Route::post('{correctionId}/reject', [KnowledgeCorrectionController::class, 'reject'])->name('reject')->whereNumber('correctionId');
+            Route::post('{correctionId}/apply', [KnowledgeCorrectionController::class, 'apply'])->name('apply')->whereNumber('correctionId');
+            Route::post('{correctionId}/versions/{versionId}/rollback', [KnowledgeCorrectionController::class, 'rollback'])
+                ->name('versions.rollback')
+                ->whereNumber(['correctionId', 'versionId']);
+        });
+
+        Route::prefix('knowledge-governance-proposals')->name('knowledge-governance-proposals.')->group(function () {
+            Route::post('/', [KnowledgeGovernanceProposalController::class, 'store'])->name('store');
+            Route::get('{proposalId}', [KnowledgeGovernanceProposalController::class, 'show'])->name('show')->whereNumber('proposalId');
+            Route::post('{proposalId}/apply', [KnowledgeGovernanceProposalController::class, 'apply'])->name('apply')->whereNumber('proposalId');
+            Route::post('{proposalId}/reject', [KnowledgeGovernanceProposalController::class, 'reject'])->name('reject')->whereNumber('proposalId');
+            Route::post('{proposalId}/rollback', [KnowledgeGovernanceProposalController::class, 'rollback'])->name('rollback')->whereNumber('proposalId');
         });
 
         // 素材管理：Entity DB

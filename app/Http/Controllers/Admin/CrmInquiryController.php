@@ -119,7 +119,22 @@ class CrmInquiryController extends Controller
     public function show(int $inquiryId): View
     {
         $inquiry = CrmInquiry::query()
-            ->with(['collection', 'customer.contacts', 'followUps.inquiry', 'followUps.opportunity', 'followUps.task', 'crmTasks.assignee', 'opportunities', 'entities.collection', 'knowledgeBases.collection', 'cases.collection', 'tags', 'quotes', 'salesOrders'])
+            ->with([
+                'collection',
+                'customer.contacts',
+                'followUps.inquiry',
+                'followUps.opportunity',
+                'followUps.task',
+                'crmTasks.assignee',
+                'opportunities.quotes.salesOrders.tickets',
+                'entities.collection',
+                'knowledgeBases.collection',
+                'cases.collection',
+                'tags',
+                'quotes.opportunity',
+                'quotes.salesOrders.tickets',
+                'salesOrders.tickets',
+            ])
             ->whereKey($inquiryId)
             ->firstOrFail();
 
@@ -463,6 +478,7 @@ class CrmInquiryController extends Controller
     {
         $followUp = CrmFollowUp::query()->whereKey($followUpId)->firstOrFail();
         $payload = $request->validate([
+            'activity_type' => ['nullable', Rule::in(array_keys(CrmActivityService::typeOptions()))],
             'followup_type' => ['nullable', 'string', 'max:80'],
             'content' => ['required', 'string', 'max:10000'],
             'owner' => ['nullable', 'string', 'max:120'],
@@ -470,6 +486,7 @@ class CrmInquiryController extends Controller
 
         $followUp->update([
             'followup_type' => trim((string) ($payload['followup_type'] ?? '')),
+            'activity_type' => (string) ($payload['activity_type'] ?? 'note'),
             'content' => trim((string) $payload['content']),
             'owner' => trim((string) ($payload['owner'] ?? '')),
         ]);

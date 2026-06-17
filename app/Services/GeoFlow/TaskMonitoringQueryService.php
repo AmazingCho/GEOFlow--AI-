@@ -101,6 +101,21 @@ class TaskMonitoringQueryService
     }
 
     /**
+     * 后台回收站任务列表。
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listTrashedTaskMonitoringRows(): array
+    {
+        /** @var Collection<int, Task> $tasks */
+        $tasks = Task::onlyTrashed()
+            ->orderByDesc('deleted_at')
+            ->get();
+
+        return $this->decorateTasks($tasks)->values()->all();
+    }
+
+    /**
      * @return list<array<string,mixed>>
      */
     private function listTaskMonitoringRows(): array
@@ -258,6 +273,7 @@ class TaskMonitoringQueryService
                 'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
                 'created_at' => $task->created_at?->toDateTimeString(),
                 'updated_at' => $task->updated_at?->toDateTimeString(),
+                'deleted_at' => $task->deleted_at?->toDateTimeString(),
                 'loop_count' => (int) ($task->loop_count ?? 0),
                 'created_count' => (int) ($task->created_count ?? 0),
                 'published_count' => (int) ($task->published_count ?? 0),

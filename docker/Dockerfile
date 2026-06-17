@@ -17,6 +17,8 @@ RUN set -eux; \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        fontconfig \
+        fonts-wqy-zenhei \
         git \
         libfreetype6-dev \
         libjpeg62-turbo-dev \

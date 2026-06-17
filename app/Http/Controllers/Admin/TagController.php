@@ -22,6 +22,8 @@ class TagController extends Controller
 
     private const PER_PAGE_OPTIONS = [20, 40, 80, 120];
 
+    private const STATS_CACHE_KEY = 'admin:material-tags:stats:v1';
+
     private const SCOPE_RELATIONS = [
         'keywords' => 'keywords',
         'images' => 'images',
@@ -181,19 +183,28 @@ class TagController extends Controller
         $group = trim((string) $request->query('group', ''));
 
         if ($scope === 'images') {
+            $items = $this->searchScopedTagOptions($query, $limit + 1, ['images'], 'admin.task_create.option.image_tag_count', $group);
+
             return response()->json([
-                'items' => $this->searchScopedTagOptions($query, $limit, ['images'], 'admin.task_create.option.image_tag_count', $group),
+                'items' => array_slice($items, 0, $limit),
+                'pagination' => ['has_more' => count($items) > $limit],
             ]);
         }
 
         if ($scope === 'knowledge') {
+            $items = $this->searchScopedTagOptions($query, $limit + 1, ['knowledgeBases', 'entities', 'caseRecords'], 'admin.task_create.option.knowledge_tag_count', $group);
+
             return response()->json([
-                'items' => $this->searchScopedTagOptions($query, $limit, ['knowledgeBases', 'entities', 'caseRecords'], 'admin.task_create.option.knowledge_tag_count', $group),
+                'items' => array_slice($items, 0, $limit),
+                'pagination' => ['has_more' => count($items) > $limit],
             ]);
         }
 
+        $items = $this->tagService->searchTagOptions($query, 'material', $limit + 1);
+
         return response()->json([
-            'items' => $this->tagService->searchTagOptions($query, 'material', $limit),
+            'items' => array_slice($items, 0, $limit),
+            'pagination' => ['has_more' => count($items) > $limit],
         ]);
     }
 
@@ -405,7 +416,7 @@ class TagController extends Controller
      */
     private function loadStats(): array
     {
-        return Cache::remember('admin.material_tags.stats', now()->addMinutes(5), fn (): array => [
+        return Cache::remember(self::STATS_CACHE_KEY, now()->addMinutes(5), fn (): array => [
             'total' => Tag::query()->where('type', 'material')->count(),
             'keyword_links' => (int) Tag::query()->where('type', 'material')->withCount('keywords')->get()->sum('keywords_count'),
             'image_links' => (int) Tag::query()->where('type', 'material')->withCount('images')->get()->sum('images_count'),
@@ -417,7 +428,7 @@ class TagController extends Controller
 
     private function flushStatsCache(): void
     {
-        Cache::forget('admin.material_tags.stats');
+        Cache::forget(self::STATS_CACHE_KEY);
     }
 
     /**

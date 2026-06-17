@@ -219,7 +219,12 @@ class TaskLifecycleService
     }
 
     /**
-     * 删除任务，并对齐后台删除逻辑：关联文章进入回收站后解除 task_id 绑定。
+     * 删除任务。
+     *
+     * 任务删除在业务上等同“进入回收站”：
+     * - 取消未执行的队列记录并关闭调度；
+     * - 清理任务调度/素材临时关系；
+     * - 保留已生成文章和 articles.task_id，用于后续追踪生成来源。
      *
      * @return array{id:int,name:string,deleted:bool}
      */
@@ -233,13 +238,7 @@ class TaskLifecycleService
         $taskName = (string) $task->name;
 
         DB::transaction(function () use ($taskId): void {
-            Article::query()
-                ->where('task_id', $taskId)
-                ->whereNull('deleted_at')
-                ->update([
-                    'deleted_at' => now(),
-                    'updated_at' => now(),
-                ]);
+            $this->pauseTask($taskId, '任务已删除进入回收站');
 
             foreach (['article_queue', 'task_materials', 'task_schedules'] as $table) {
                 if (Schema::hasTable($table)) {
@@ -247,14 +246,7 @@ class TaskLifecycleService
                 }
             }
 
-            Article::withTrashed()
-                ->where('task_id', $taskId)
-                ->update([
-                    'task_id' => null,
-                    'updated_at' => now(),
-                ]);
-
-            Task::query()->whereKey($taskId)->delete();
+            Task::query()->whereKey($taskId)->first()?->delete();
         });
 
         $this->taskRealtimeBroadcastService->broadcastOverview();
@@ -263,6 +255,39 @@ class TaskLifecycleService
             'id' => $taskId,
             'name' => $taskName,
             'deleted' => true,
+        ];
+    }
+
+    /**
+     * 从回收站恢复任务。
+     *
+     * 恢复后保持暂停状态，避免恢复动作立即触发新的文章生成。
+     *
+     * @return array{id:int,name:string,restored:bool}
+     */
+    public function restoreTask(int $taskId): array
+    {
+        $task = Task::onlyTrashed()->whereKey($taskId)->first(['id', 'name']);
+        if (! $task) {
+            throw new ApiException('task_not_found', '任务不存在或未在回收站', 404);
+        }
+
+        DB::transaction(function () use ($task): void {
+            $task->restore();
+            Task::query()->whereKey((int) $task->id)->update([
+                'status' => 'paused',
+                'schedule_enabled' => 0,
+                'next_run_at' => null,
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->taskRealtimeBroadcastService->broadcastOverview();
+
+        return [
+            'id' => (int) $task->id,
+            'name' => (string) $task->name,
+            'restored' => true,
         ];
     }
 

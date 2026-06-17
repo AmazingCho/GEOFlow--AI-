@@ -11,8 +11,8 @@ use App\Models\CrmQuoteItem;
 use App\Models\CrmSellerProfile;
 use App\Models\EntityRecord;
 use App\Models\Image;
+use App\Services\GeoFlow\CrmDocumentPdfService;
 use App\Support\AdminWeb;
-use Spatie\LaravelPdf\Facades\Pdf;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmOptions;
 use App\Support\GeoFlow\ImageUrlNormalizer;
@@ -32,6 +32,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
+use Throwable;
 
 class CrmQuoteController extends Controller
 {
@@ -207,6 +208,7 @@ class CrmQuoteController extends Controller
                 'title' => (string) $quote->title,
                 'buyer_contact' => (string) ($quote->buyer_contact ?? ''),
                 'buyer_company' => (string) ($quote->buyer_company ?? ''),
+                'buyer_tax_number' => (string) ($quote->buyer_tax_number ?? ''),
                 'buyer_phone' => (string) ($quote->buyer_phone ?? ''),
                 'buyer_email' => (string) ($quote->buyer_email ?? ''),
                 'buyer_address' => (string) ($quote->buyer_address ?? ''),
@@ -350,18 +352,8 @@ class CrmQuoteController extends Controller
             ->whereKey($quoteId)
             ->firstOrFail();
 
-        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
-        if (! in_array($documentType, self::DOCUMENT_TYPES, true)) {
-            $documentType = $quote->document_type ?? 'quotation';
-        }
-
-        $view = match ($documentType) {
-            'proforma_invoice' => 'admin.crm.quotes.print-proforma-invoice',
-            'invoice' => 'admin.crm.quotes.print-invoice',
-            'packing_list' => 'admin.crm.quotes.print-packing-list',
-            'contract' => 'admin.crm.quotes.print-contract',
-            default => 'admin.crm.quotes.print-quotation',
-        };
+        $documentType = $this->resolvedDocumentType($request, $quote);
+        $view = $this->printViewForDocumentType($documentType);
 
         return view($view, [
             'pageTitle' => $quote->quote_no.' - '.($this->documentTypeOptions()[$documentType] ?? $documentType),
@@ -374,37 +366,68 @@ class CrmQuoteController extends Controller
         ]);
     }
 
-        public function downloadPdf(int $quoteId, Request $request)
+    public function downloadPdf(int $quoteId, Request $request, CrmDocumentPdfService $pdfService)
     {
         $quote = CrmQuote::query()
             ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
-        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
-        if (! in_array($documentType, self::DOCUMENT_TYPES, true)) {
-            $documentType = $quote->document_type ?? 'quotation';
+        $documentType = $this->resolvedDocumentType($request, $quote);
+        $view = $this->printViewForDocumentType($documentType);
+        $fileName = $this->pdfDownloadName($quote, $documentType);
+
+        try {
+            $html = view($view, [
+                'pageTitle' => $quote->quote_no.' - '.($this->documentTypeOptions()[$documentType] ?? $documentType),
+                'activeMenu' => 'crm',
+                'adminSiteName' => AdminWeb::siteName(),
+                'quote' => $quote,
+                'seller' => $this->sellerProfile($quote),
+                'documentKind' => $documentType,
+                'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
+            ])->render();
+
+            $pdfPath = $pdfService->render($html, pathinfo($fileName, PATHINFO_FILENAME));
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $documentType])
+                ->with('error', 'PDF 生成失败，请先使用打印预览手动保存为 PDF。');
         }
 
-        $view = match ($documentType) {
-            'proforma_invoice' => 'admin.crm.quotes.pdf-proforma-invoice',
-            'invoice' => 'admin.crm.quotes.pdf-invoice',
-            'packing_list' => 'admin.crm.quotes.pdf-packing-list',
-            'contract' => 'admin.crm.quotes.pdf-contract',
-            default => 'admin.crm.quotes.pdf-quotation',
+        return response()
+            ->download($pdfPath, $fileName, ['Content-Type' => 'application/pdf'])
+            ->deleteFileAfterSend(true);
+    }
+
+    private function resolvedDocumentType(Request $request, CrmQuote $quote): string
+    {
+        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
+
+        return in_array($documentType, self::DOCUMENT_TYPES, true)
+            ? $documentType
+            : (string) ($quote->document_type ?? 'quotation');
+    }
+
+    private function printViewForDocumentType(string $documentType): string
+    {
+        return match ($documentType) {
+            'proforma_invoice' => 'admin.crm.quotes.print-proforma-invoice',
+            'invoice' => 'admin.crm.quotes.print-invoice',
+            'packing_list' => 'admin.crm.quotes.print-packing-list',
+            'contract' => 'admin.crm.quotes.print-contract',
+            default => 'admin.crm.quotes.print-quotation',
         };
+    }
 
-        $seller = $this->sellerProfile($quote);
+    private function pdfDownloadName(CrmQuote $quote, string $documentType): string
+    {
+        $stem = preg_replace('/[^A-Za-z0-9._-]+/', '-', trim((string) $quote->quote_no.'-'.$documentType));
+        $stem = trim((string) $stem, '-_.');
 
-        return Pdf::view($view, [
-            'quote' => $quote,
-            'seller' => $seller,
-            'documentKind' => $documentType,
-            'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
-        ])
-            ->format('A4')
-            ->name($quote->quote_no . ' - ' . $documentType . '.pdf')
-            ->download();
+        return ($stem !== '' ? $stem : 'crm-document').'.pdf';
     }
 
     private function formData(array $base, ?int $collectionId, ?int $customerId): array
@@ -439,6 +462,8 @@ class CrmQuoteController extends Controller
                 'beneficiary' => '',
                 'bank_name' => '',
                 'account_no' => '',
+                'bank_code' => '',
+                'branch_code' => '',
                 'swift' => '',
                 'bank_address' => '',
             ]),
@@ -461,6 +486,7 @@ class CrmQuoteController extends Controller
             'title' => ['required', 'string', 'max:200'],
             'buyer_contact' => ['nullable', 'string', 'max:200'],
             'buyer_company' => ['nullable', 'string', 'max:200'],
+            'buyer_tax_number' => ['nullable', 'string', 'max:120'],
             'buyer_phone' => ['nullable', 'string', 'max:120'],
             'buyer_email' => ['nullable', 'email', 'max:200'],
             'buyer_address' => ['nullable', 'string', 'max:10000'],
@@ -561,6 +587,7 @@ class CrmQuoteController extends Controller
             'title' => trim((string) $payload['title']),
             'buyer_contact' => trim((string) ($payload['buyer_contact'] ?? '')) ?: $customerDefaults['buyer_contact'],
             'buyer_company' => trim((string) ($payload['buyer_company'] ?? '')) ?: $customerDefaults['buyer_company'],
+            'buyer_tax_number' => trim((string) ($payload['buyer_tax_number'] ?? '')) ?: $customerDefaults['buyer_tax_number'],
             'buyer_phone' => trim((string) ($payload['buyer_phone'] ?? '')) ?: $customerDefaults['buyer_phone'],
             'buyer_email' => trim((string) ($payload['buyer_email'] ?? '')) ?: $customerDefaults['buyer_email'],
             'buyer_address' => trim((string) ($payload['buyer_address'] ?? '')) ?: $customerDefaults['buyer_address'],
@@ -764,6 +791,7 @@ class CrmQuoteController extends Controller
             'title' => '',
             'buyer_company' => '',
             'buyer_contact' => '',
+            'buyer_tax_number' => '',
             'buyer_phone' => '',
             'buyer_email' => '',
             'buyer_address' => '',
@@ -866,6 +894,7 @@ class CrmQuoteController extends Controller
             'buyer_contact' => (string) ($customer?->contact_person ?? ''),
             'buyer_address' => (string) ($customer?->address ?? ''),
             'buyer_email' => (string) ($customer?->email ?? ''),
+            'buyer_tax_number' => (string) ($customer?->tax_number ?? ''),
         ];
     }
 
@@ -1015,7 +1044,7 @@ class CrmQuoteController extends Controller
     }
 
     /**
-     * @return array<int, array{name:string,phone:string,country:string}>
+     * @return array<int, array{name:string,contact_person:string,phone:string,email:string,tax_number:string,country:string,address:string}>
      */
     private function customerProfiles(?int $collectionId): array
     {
@@ -1023,13 +1052,14 @@ class CrmQuoteController extends Controller
             ->when($collectionId !== null && $collectionId > 0, static fn ($query) => $query->where('collection_id', $collectionId))
             ->orderBy('company_name')
             ->limit(300)
-            ->get(['id', 'company_name', 'contact_person', 'phone', 'email', 'country', 'address'])
+            ->get(['id', 'company_name', 'contact_person', 'phone', 'email', 'tax_number', 'country', 'address'])
             ->mapWithKeys(static fn (CrmCustomer $customer): array => [
                 (int) $customer->id => [
                     'name' => (string) $customer->company_name,
                     'contact_person' => (string) ($customer->contact_person ?? ''),
                     'phone' => (string) ($customer->phone ?? ''),
                     'email' => (string) ($customer->email ?? ''),
+                    'tax_number' => (string) ($customer->tax_number ?? ''),
                     'country' => (string) ($customer->country ?? ''),
                     'address' => (string) ($customer->address ?? ''),
                 ],

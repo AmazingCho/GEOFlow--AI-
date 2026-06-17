@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class KnowledgeChunk extends Model
 {
@@ -41,5 +42,10 @@ class KnowledgeChunk extends Model
     public function knowledgeBase(): BelongsTo
     {
         return $this->belongsTo(KnowledgeBase::class, 'knowledge_base_id');
+    }
+
+    public function corrections(): HasMany
+    {
+        return $this->hasMany(KnowledgeCorrection::class, 'knowledge_chunk_id');
     }
 }

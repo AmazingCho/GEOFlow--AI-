@@ -20,6 +20,7 @@ use App\Models\UrlImportJob;
 use App\Models\UrlImportJobLog;
 use App\Services\GeoFlow\KnowledgeChunkSyncService;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\EntityTypes;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -72,6 +73,7 @@ class AdminMaterialsPagesTest extends TestCase
             'admin.title-libraries.index',
             'admin.image-libraries.index',
             'admin.knowledge-bases.index',
+            'admin.knowledge-bases.governance',
             'admin.url-import',
             'admin.url-import.history',
         ];
@@ -580,6 +582,259 @@ class AdminMaterialsPagesTest extends TestCase
             ->get(route('admin.materials.index'))
             ->assertOk()
             ->assertSee(__('admin.materials.governance_title'));
+    }
+
+    public function test_knowledge_governance_page_detects_duplicates_and_conflicts(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_report_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-report-admin@example.com',
+            'display_name' => 'Knowledge Report Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Automation Equipment Report',
+            'slug' => 'automation-equipment-report',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+
+        KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Product Manual Voltage A',
+            'description' => '',
+            'summary' => '',
+            'source_url' => 'https://example.com/manuals/sj4060',
+            'content' => "Voltage: 220V\nPower: 3kW\nWorking area: 300mm",
+            'character_count' => 46,
+            'word_count' => 46,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'technical_spec',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+        ]);
+        KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Product Manual Voltage B',
+            'description' => '',
+            'summary' => '',
+            'source_url' => 'https://example.com/manuals/sj4060/',
+            'content' => "Voltage: 110V\nPower: 3kW\nWorking area: 300mm",
+            'character_count' => 46,
+            'word_count' => 46,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'technical_spec',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+        ]);
+        $duplicateContent = str_repeat('SJ4060 duplicate product specification content with exact source facts. ', 3);
+        KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Duplicate Source Alpha',
+            'description' => '',
+            'summary' => '',
+            'source_url' => '',
+            'content' => $duplicateContent,
+            'character_count' => mb_strlen($duplicateContent, 'UTF-8'),
+            'word_count' => mb_strlen($duplicateContent, 'UTF-8'),
+            'file_type' => 'markdown',
+            'knowledge_type' => 'reference',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'status' => 'active',
+        ]);
+        KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'SJ4060 Duplicate Source Beta',
+            'description' => '',
+            'summary' => '',
+            'source_url' => '',
+            'content' => $duplicateContent,
+            'character_count' => mb_strlen($duplicateContent, 'UTF-8'),
+            'word_count' => mb_strlen($duplicateContent, 'UTF-8'),
+            'file_type' => 'markdown',
+            'knowledge_type' => 'reference',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.governance'))
+            ->assertOk()
+            ->assertSee(__('admin.knowledge_governance.heading'))
+            ->assertSee('SJ4060 Duplicate Source Alpha')
+            ->assertSee('SJ4060 Duplicate Source Beta')
+            ->assertSee('SJ4060 Product Manual Voltage A')
+            ->assertSee('SJ4060 Product Manual Voltage B')
+            ->assertSee('voltage')
+            ->assertSee('220v')
+            ->assertSee('110v');
+    }
+
+    public function test_knowledge_governance_page_can_filter_by_collection(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_report_filter_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-report-filter-admin@example.com',
+            'display_name' => 'Knowledge Report Filter Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $leftCollection = CollectionRecord::query()->create([
+            'name' => 'Automation Filter Left',
+            'slug' => 'automation-filter-left',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+        $rightCollection = CollectionRecord::query()->create([
+            'name' => 'Automation Filter Right',
+            'slug' => 'automation-filter-right',
+            'status' => 'active',
+            'sort_order' => 2,
+        ]);
+        $duplicateContent = str_repeat('Right collection duplicated source content. ', 4);
+
+        KnowledgeBase::query()->create([
+            'collection_id' => (int) $leftCollection->id,
+            'name' => 'Left Unique Knowledge',
+            'content' => 'Left collection unique source. Voltage: 220V',
+            'character_count' => 43,
+            'word_count' => 43,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'reference',
+            'knowledge_role' => 'supporting_context',
+            'importance' => 3,
+            'status' => 'active',
+        ]);
+        foreach (['A', 'B'] as $suffix) {
+            KnowledgeBase::query()->create([
+                'collection_id' => (int) $rightCollection->id,
+                'name' => 'Right Duplicate Knowledge '.$suffix,
+                'content' => $duplicateContent,
+                'character_count' => mb_strlen($duplicateContent, 'UTF-8'),
+                'word_count' => mb_strlen($duplicateContent, 'UTF-8'),
+                'file_type' => 'markdown',
+                'knowledge_type' => 'reference',
+                'knowledge_role' => 'supporting_context',
+                'importance' => 3,
+                'status' => 'active',
+            ]);
+        }
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.governance', ['collection_id' => (int) $leftCollection->id]))
+            ->assertOk()
+            ->assertDontSee('Right Duplicate Knowledge A')
+            ->assertDontSee('Right Duplicate Knowledge B')
+            ->assertSee(__('admin.knowledge_governance.duplicate_empty'));
+    }
+
+    public function test_knowledge_governance_ignores_spec_conflicts_between_different_products(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_report_product_scope_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-report-product-scope-admin@example.com',
+            'display_name' => 'Knowledge Report Product Scope Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Automation Product Scope',
+            'slug' => 'automation-product-scope',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+        $brand = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'Robota',
+            'entity_type' => EntityTypes::BRAND_COMPANY,
+            'description' => 'Brand entity shared by multiple products.',
+        ]);
+        $leftProduct = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'S-331R Soldering Robot',
+            'entity_type' => EntityTypes::PRODUCT_LINE,
+            'description' => 'Soldering robot product.',
+        ]);
+        $rightProduct = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'PJ180 Semi-Auto Doming Machine',
+            'entity_type' => EntityTypes::PRODUCT_MODEL,
+            'description' => 'Doming machine product.',
+        ]);
+        $leftKnowledge = KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'S-331R Product Detail',
+            'source_url' => 'https://example.com/s331r',
+            'content' => "Power: 350W\nWeight: 180kg\nVoltage: 220V",
+            'character_count' => 39,
+            'word_count' => 39,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'technical_spec',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+        ]);
+        $rightKnowledge = KnowledgeBase::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'PJ180 Product Detail',
+            'source_url' => 'https://example.com/pj180',
+            'content' => "Power: 3500W\nWeight: 90kg\nVoltage: 220V",
+            'character_count' => 40,
+            'word_count' => 40,
+            'file_type' => 'markdown',
+            'knowledge_type' => 'technical_spec',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+        ]);
+
+        DB::table('entity_material_links')->insert([
+            [
+                'entity_id' => (int) $brand->id,
+                'linkable_type' => KnowledgeBase::class,
+                'linkable_id' => (int) $leftKnowledge->id,
+                'link_role' => 'supporting_reference',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'entity_id' => (int) $leftProduct->id,
+                'linkable_type' => KnowledgeBase::class,
+                'linkable_id' => (int) $leftKnowledge->id,
+                'link_role' => 'primary_subject',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'entity_id' => (int) $brand->id,
+                'linkable_type' => KnowledgeBase::class,
+                'linkable_id' => (int) $rightKnowledge->id,
+                'link_role' => 'supporting_reference',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'entity_id' => (int) $rightProduct->id,
+                'linkable_type' => KnowledgeBase::class,
+                'linkable_id' => (int) $rightKnowledge->id,
+                'link_role' => 'primary_subject',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.governance', ['collection_id' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee(__('admin.knowledge_governance.conflict_empty'));
     }
 
     public function test_admin_can_ai_classify_knowledge_base_and_review_before_saving(): void
@@ -1331,7 +1586,63 @@ class AdminMaterialsPagesTest extends TestCase
         Queue::assertPushed(SyncKnowledgeBaseChunksJob::class, function (SyncKnowledgeBaseChunksJob $job) use ($knowledgeBase): bool {
             return $job->knowledgeBaseId === (int) $knowledgeBase->id && $job->requireRealEmbedding === false;
         });
+        $this->assertSame(KnowledgeBase::CHUNK_SYNC_QUEUED, (string) $knowledgeBase->fresh()->chunk_sync_status);
         $this->assertSame(0, $knowledgeBase->chunks()->count());
+
+        $this->actingAs($admin, 'admin')
+            ->getJson(route('admin.knowledge-bases.chunks.status', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
+            ->assertOk()
+            ->assertJsonPath('status', KnowledgeBase::CHUNK_SYNC_QUEUED)
+            ->assertJsonPath('is_active', true);
+    }
+
+    public function test_knowledge_chunk_sync_job_updates_completion_status(): void
+    {
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '异步完成知识库',
+            'description' => '',
+            'content' => "第一段内容。\n\n第二段内容。",
+            'character_count' => 12,
+            'file_type' => 'markdown',
+            'word_count' => 12,
+            'chunk_sync_status' => KnowledgeBase::CHUNK_SYNC_QUEUED,
+        ]);
+
+        $job = new SyncKnowledgeBaseChunksJob((int) $knowledgeBase->id, false);
+        $job->handle(app(KnowledgeChunkSyncService::class));
+
+        $knowledgeBase->refresh();
+        $this->assertSame(KnowledgeBase::CHUNK_SYNC_COMPLETED, (string) $knowledgeBase->chunk_sync_status);
+        $this->assertNotNull($knowledgeBase->chunk_sync_started_at);
+        $this->assertNotNull($knowledgeBase->chunk_sync_completed_at);
+        $this->assertGreaterThan(0, $knowledgeBase->chunks()->count());
+    }
+
+    public function test_knowledge_chunk_sync_job_records_failure_status(): void
+    {
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '异步失败知识库',
+            'description' => '',
+            'content' => "第一段内容。\n\n第二段内容。",
+            'character_count' => 12,
+            'file_type' => 'markdown',
+            'word_count' => 12,
+            'chunk_sync_status' => KnowledgeBase::CHUNK_SYNC_QUEUED,
+        ]);
+
+        $job = new SyncKnowledgeBaseChunksJob((int) $knowledgeBase->id, true);
+
+        try {
+            $job->handle(app(KnowledgeChunkSyncService::class));
+            $this->fail('Expected the sync job to require a real embedding model.');
+        } catch (\Throwable $exception) {
+            $job->failed($exception);
+        }
+
+        $knowledgeBase->refresh();
+        $this->assertSame(KnowledgeBase::CHUNK_SYNC_FAILED, (string) $knowledgeBase->chunk_sync_status);
+        $this->assertNotNull($knowledgeBase->chunk_sync_failed_at);
+        $this->assertStringContainsString('Embedding', (string) $knowledgeBase->chunk_sync_message);
     }
 
     public function test_admin_can_create_knowledge_base_from_multiple_uploaded_files(): void

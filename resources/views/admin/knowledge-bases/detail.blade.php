@@ -139,6 +139,16 @@
             </form>
         </div>
 
+        <div class="mb-8">
+            @include('admin.knowledge-corrections.partials.assistant-card', [
+                'sourceType' => 'knowledge_base',
+                'knowledgeBaseId' => (int) $knowledgeBase->id,
+                'aiModelOptions' => $aiModelOptions ?? [],
+                'title' => __('admin.knowledge_corrections.assistant.knowledge_title'),
+                'description' => __('admin.knowledge_corrections.assistant.knowledge_desc'),
+            ])
+        </div>
+
         <div class="bg-white shadow rounded-lg mb-6">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">{{ __('admin.knowledge_detail.tags_title') }}</h3>
@@ -153,6 +163,78 @@
                     'autoSubmit' => true,
                 ])
             </form>
+        </div>
+
+        @php
+            $syncStatus = $chunkSyncStatus ?? [];
+            $syncStatusValue = (string) ($syncStatus['status'] ?? 'idle');
+            $syncIsActive = (bool) ($syncStatus['is_active'] ?? false);
+        @endphp
+        <div
+            class="mb-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+            data-knowledge-sync-row
+            data-knowledge-sync-status="{{ $syncStatusValue }}"
+            data-knowledge-sync-status-url="{{ route('admin.knowledge-bases.chunks.status', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}"
+        >
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="text-base font-semibold text-gray-900">{{ __('admin.knowledge_bases.chunk_sync.title') }}</h3>
+                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium {{ $syncStatus['badge_class'] ?? 'bg-slate-100 text-slate-600' }}" data-knowledge-sync-badge>
+                            {{ $syncStatus['label'] ?? __('admin.knowledge_bases.chunk_sync.status_idle') }}
+                        </span>
+                        <span class="inline-flex items-center rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700" data-knowledge-sync-summary>
+                            {{ $syncStatus['summary'] ?? __('admin.knowledge_bases.vectorized_summary', ['vectorized' => 0, 'chunks' => 0]) }}
+                        </span>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-600" data-knowledge-sync-message>{{ $syncStatus['message'] ?? '' }}</p>
+                    <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                        @if (! empty($syncStatus['queued_at']))
+                            <span>{{ __('admin.knowledge_bases.chunk_sync.last_queued_at') }}：{{ $syncStatus['queued_at'] }}</span>
+                        @endif
+                        @if (! empty($syncStatus['started_at']))
+                            <span>{{ __('admin.knowledge_bases.chunk_sync.last_started_at') }}：{{ $syncStatus['started_at'] }}</span>
+                        @endif
+                        @if (! empty($syncStatus['completed_at']))
+                            <span>{{ __('admin.knowledge_bases.chunk_sync.last_completed_at') }}：{{ $syncStatus['completed_at'] }}</span>
+                        @endif
+                        @if (! empty($syncStatus['failed_at']))
+                            <span>{{ __('admin.knowledge_bases.chunk_sync.last_failed_at') }}：{{ $syncStatus['failed_at'] }}</span>
+                        @endif
+                    </div>
+                    <p class="mt-2 text-xs text-gray-500">{{ __('admin.knowledge_bases.chunk_sync.polling_hint') }}</p>
+                </div>
+                <div class="shrink-0">
+                    @if ($hasDefaultEmbeddingModel)
+                        @if ($syncIsActive)
+                            <button type="button" class="inline-flex cursor-wait items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 opacity-80" data-refresh-active-button disabled>
+                                <i data-lucide="loader-2" class="mr-2 h-4 w-4 animate-spin"></i>
+                                {{ __('admin.knowledge_bases.chunk_sync.manual_refresh_disabled') }}
+                            </button>
+                            <form method="POST" action="{{ route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" class="hidden" data-refresh-ready-form>
+                                @csrf
+                                <button type="submit" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
+                                    <i data-lucide="refresh-cw" class="mr-2 h-4 w-4"></i>
+                                    {{ __('admin.knowledge_bases.refresh_chunks') }}
+                                </button>
+                            </form>
+                        @else
+                            <form method="POST" action="{{ route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $knowledgeBase->id]) }}" data-refresh-ready-form>
+                                @csrf
+                                <button type="submit" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
+                                    <i data-lucide="refresh-cw" class="mr-2 h-4 w-4"></i>
+                                    {{ $syncStatusValue === 'failed' ? __('admin.knowledge_bases.chunk_sync.retry_failed') : __('admin.knowledge_bases.refresh_chunks') }}
+                                </button>
+                            </form>
+                        @endif
+                    @else
+                        <a href="{{ route('admin.ai.configurator') }}" class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">
+                            <i data-lucide="settings-2" class="mr-2 h-4 w-4"></i>
+                            {{ __('admin.knowledge_bases.vector_notice_configure_link') }}
+                        </a>
+                    @endif
+                </div>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -257,3 +339,73 @@
 @endsection
 
 @include('admin.partials.material-ai-analysis-script')
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const row = document.querySelector('[data-knowledge-sync-row]');
+            if (!row) {
+                return;
+            }
+
+            const applyStatus = function (data) {
+                if (!data) {
+                    return;
+                }
+
+                row.dataset.knowledgeSyncStatus = data.status || 'idle';
+
+                const badge = row.querySelector('[data-knowledge-sync-badge]');
+                if (badge) {
+                    badge.className = 'inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ' + (data.badge_class || 'bg-slate-100 text-slate-600');
+                    badge.textContent = data.label || '';
+                }
+
+                const summary = row.querySelector('[data-knowledge-sync-summary]');
+                if (summary) {
+                    summary.textContent = data.summary || '';
+                }
+
+                const message = row.querySelector('[data-knowledge-sync-message]');
+                if (message) {
+                    message.textContent = data.message || '';
+                    message.classList.toggle('hidden', !data.message);
+                }
+
+                if (!data.is_active) {
+                    const activeButton = row.querySelector('[data-refresh-active-button]');
+                    const readyForm = row.querySelector('[data-refresh-ready-form]');
+                    if (activeButton) {
+                        activeButton.classList.add('hidden');
+                    }
+                    if (readyForm) {
+                        readyForm.classList.remove('hidden');
+                    }
+                }
+
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            };
+
+            const poll = function () {
+                if (!['queued', 'running'].includes(row.dataset.knowledgeSyncStatus || '')) {
+                    return;
+                }
+
+                fetch(row.dataset.knowledgeSyncStatusUrl || '', {
+                    headers: {'Accept': 'application/json'},
+                })
+                    .then(function (response) {
+                        return response.ok ? response.json() : null;
+                    })
+                    .then(applyStatus)
+                    .catch(function () {});
+
+                window.setTimeout(poll, 5000);
+            };
+
+            poll();
+        });
+    </script>
+@endpush

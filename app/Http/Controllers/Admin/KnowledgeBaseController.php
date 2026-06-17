@@ -12,12 +12,14 @@ use App\Models\KnowledgeChunk;
 use App\Models\Tag;
 use App\Models\Task;
 use App\Services\GeoFlow\EntityMaterialLinkService;
+use App\Services\GeoFlow\KnowledgeBaseGovernanceService;
 use App\Services\GeoFlow\MaterialFormAnalysisService;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\ControlledTagGroups;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -39,6 +41,7 @@ class KnowledgeBaseController extends Controller
         private readonly TagService $tagService,
         private readonly EntityMaterialLinkService $entityMaterialLinkService,
         private readonly MaterialFormAnalysisService $materialFormAnalysisService,
+        private readonly KnowledgeBaseGovernanceService $knowledgeBaseGovernanceService,
     ) {}
 
     /**
@@ -104,6 +107,23 @@ class KnowledgeBaseController extends Controller
             'savedViewOptions' => $this->savedViewOptions(),
             'statusOptions' => $this->knowledgeStatusOptions(),
             'tagGroupOptions' => $this->tagGroupOptions(),
+        ]);
+    }
+
+    /**
+     * 知识库重复与冲突治理检查页。
+     */
+    public function governance(Request $request): View
+    {
+        $collectionId = $this->selectedCollectionId($request);
+
+        return view('admin.knowledge-bases.governance', [
+            'pageTitle' => __('admin.knowledge_governance.page_title'),
+            'activeMenu' => 'materials',
+            'adminSiteName' => AdminWeb::siteName(),
+            'collectionId' => $collectionId,
+            'collectionOptions' => CollectionOptions::all(),
+            'report' => $this->knowledgeBaseGovernanceService->report($collectionId),
         ]);
     }
 
@@ -194,6 +214,8 @@ class KnowledgeBaseController extends Controller
             'relatedTasks' => $this->loadRelatedTasks($knowledgeBaseId),
             'chunkStats' => $this->loadChunkStats($knowledgeBaseId),
             'chunkPreviewRows' => $this->loadChunkPreviewRows($knowledgeBaseId),
+            'chunkSyncStatus' => $this->chunkSyncStatusPayload($knowledgeBase),
+            'hasDefaultEmbeddingModel' => $this->hasDefaultEmbeddingModel(),
         ]);
     }
 
@@ -405,6 +427,12 @@ class KnowledgeBaseController extends Controller
                 ->withErrors(__('admin.knowledge_bases.error.content_required'));
         }
 
+        if (in_array((string) ($knowledgeBase->chunk_sync_status ?? ''), [KnowledgeBase::CHUNK_SYNC_QUEUED, KnowledgeBase::CHUNK_SYNC_RUNNING], true)) {
+            return redirect()
+                ->route('admin.knowledge-bases.index')
+                ->with('message', __('admin.knowledge_bases.message.chunk_sync_already_running'));
+        }
+
         if (! $this->hasDefaultEmbeddingModel()) {
             return redirect()
                 ->route('admin.knowledge-bases.index')
@@ -412,12 +440,14 @@ class KnowledgeBaseController extends Controller
         }
 
         try {
+            $this->markChunkSyncQueued($knowledgeBase, true);
             SyncKnowledgeBaseChunksJob::dispatch((int) $knowledgeBase->id, true)->onQueue('geoflow');
 
             return redirect()
                 ->route('admin.knowledge-bases.index')
                 ->with('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
         } catch (\Throwable $exception) {
+            $this->markChunkSyncFailed($knowledgeBase, $exception->getMessage());
             report($exception);
 
             return redirect()
@@ -426,6 +456,21 @@ class KnowledgeBaseController extends Controller
                     'message' => $exception->getMessage(),
                 ]));
         }
+    }
+
+    public function chunkStatus(int $knowledgeBaseId): JsonResponse
+    {
+        $knowledgeBase = KnowledgeBase::query()
+            ->withCount('chunks as chunk_count')
+            ->withCount([
+                'chunks as vectorized_chunk_count' => fn ($query) => $query
+                    ->whereNotNull('embedding_model_id')
+                    ->where('embedding_dimensions', '>', 0),
+            ])
+            ->whereKey($knowledgeBaseId)
+            ->firstOrFail();
+
+        return response()->json($this->chunkSyncStatusPayload($knowledgeBase));
     }
 
     public function updateTags(Request $request, int $knowledgeBaseId): RedirectResponse
@@ -564,6 +609,13 @@ class KnowledgeBaseController extends Controller
                 'status',
                 'word_count',
                 'usage_count',
+                'chunk_sync_status',
+                'chunk_sync_message',
+                'chunk_sync_requires_real_embedding',
+                'chunk_sync_queued_at',
+                'chunk_sync_started_at',
+                'chunk_sync_completed_at',
+                'chunk_sync_failed_at',
                 'created_at',
                 'updated_at',
             ])
@@ -648,6 +700,7 @@ class KnowledgeBaseController extends Controller
                 'usage_count' => (int) ($knowledgeBase->usage_count ?? 0),
                 'chunk_count' => (int) ($knowledgeBase->chunk_count ?? 0),
                 'vectorized_chunk_count' => (int) ($knowledgeBase->vectorized_chunk_count ?? 0),
+                'chunk_sync' => $this->chunkSyncStatusPayload($knowledgeBase),
                 'tags' => $knowledgeBase->tags
                     ->map(static fn ($tag): string => $tag->displayName())
                     ->filter(static fn (string $label): bool => $label !== '')
@@ -898,12 +951,15 @@ class KnowledgeBaseController extends Controller
     private function redirectAfterChunkSync(KnowledgeBase $knowledgeBase, string $content, string $routeName, array $routeParameters, string $successMessageKey): RedirectResponse
     {
         try {
+            $this->markChunkSyncQueued($knowledgeBase, false);
             SyncKnowledgeBaseChunksJob::dispatch((int) $knowledgeBase->id, false)->onQueue('geoflow');
 
             return redirect()
                 ->route($routeName, $routeParameters)
                 ->with('message', __('admin.knowledge_bases.message.chunk_sync_queued'));
         } catch (\Throwable $exception) {
+            $this->markChunkSyncFailed($knowledgeBase, $exception->getMessage());
+
             return redirect()
                 ->route($routeName, $routeParameters)
                 ->withErrors([
@@ -912,6 +968,86 @@ class KnowledgeBaseController extends Controller
                     ]),
                 ]);
         }
+    }
+
+    private function markChunkSyncQueued(KnowledgeBase $knowledgeBase, bool $requireRealEmbedding): void
+    {
+        $knowledgeBase->forceFill([
+            'chunk_sync_status' => KnowledgeBase::CHUNK_SYNC_QUEUED,
+            'chunk_sync_message' => __('admin.knowledge_bases.chunk_sync.queued_message'),
+            'chunk_sync_requires_real_embedding' => $requireRealEmbedding,
+            'chunk_sync_queued_at' => now(),
+            'chunk_sync_started_at' => null,
+            'chunk_sync_completed_at' => null,
+            'chunk_sync_failed_at' => null,
+        ])->save();
+    }
+
+    private function markChunkSyncFailed(KnowledgeBase $knowledgeBase, string $message): void
+    {
+        $knowledgeBase->forceFill([
+            'chunk_sync_status' => KnowledgeBase::CHUNK_SYNC_FAILED,
+            'chunk_sync_message' => mb_substr($message, 0, 2000, 'UTF-8'),
+            'chunk_sync_failed_at' => now(),
+        ])->save();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function chunkSyncStatusPayload(KnowledgeBase $knowledgeBase): array
+    {
+        $status = (string) ($knowledgeBase->chunk_sync_status ?? KnowledgeBase::CHUNK_SYNC_IDLE);
+        if (! in_array($status, [
+            KnowledgeBase::CHUNK_SYNC_IDLE,
+            KnowledgeBase::CHUNK_SYNC_QUEUED,
+            KnowledgeBase::CHUNK_SYNC_RUNNING,
+            KnowledgeBase::CHUNK_SYNC_COMPLETED,
+            KnowledgeBase::CHUNK_SYNC_FAILED,
+        ], true)) {
+            $status = KnowledgeBase::CHUNK_SYNC_IDLE;
+        }
+
+        $chunkCount = (int) ($knowledgeBase->chunk_count ?? $knowledgeBase->chunks()->count());
+        $vectorizedCount = (int) ($knowledgeBase->vectorized_chunk_count ?? $knowledgeBase->chunks()
+            ->whereNotNull('embedding_model_id')
+            ->where('embedding_dimensions', '>', 0)
+            ->count());
+        $displayStatus = $status === KnowledgeBase::CHUNK_SYNC_IDLE && $chunkCount > 0
+            ? 'existing'
+            : $status;
+
+        return [
+            'status' => $displayStatus,
+            'label' => __('admin.knowledge_bases.chunk_sync.status_'.$displayStatus),
+            'message' => (string) ($knowledgeBase->chunk_sync_message ?? ''),
+            'badge_class' => $this->chunkSyncBadgeClass($displayStatus),
+            'is_active' => in_array($status, [KnowledgeBase::CHUNK_SYNC_QUEUED, KnowledgeBase::CHUNK_SYNC_RUNNING], true),
+            'can_refresh' => ! in_array($status, [KnowledgeBase::CHUNK_SYNC_QUEUED, KnowledgeBase::CHUNK_SYNC_RUNNING], true),
+            'requires_real_embedding' => (bool) ($knowledgeBase->chunk_sync_requires_real_embedding ?? false),
+            'chunk_count' => $chunkCount,
+            'vectorized_chunk_count' => $vectorizedCount,
+            'summary' => __('admin.knowledge_bases.vectorized_summary', [
+                'vectorized' => $vectorizedCount,
+                'chunks' => $chunkCount,
+            ]),
+            'queued_at' => optional($knowledgeBase->chunk_sync_queued_at)->format('Y-m-d H:i:s'),
+            'started_at' => optional($knowledgeBase->chunk_sync_started_at)->format('Y-m-d H:i:s'),
+            'completed_at' => optional($knowledgeBase->chunk_sync_completed_at)->format('Y-m-d H:i:s'),
+            'failed_at' => optional($knowledgeBase->chunk_sync_failed_at)->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    private function chunkSyncBadgeClass(string $status): string
+    {
+        return match ($status) {
+            KnowledgeBase::CHUNK_SYNC_QUEUED => 'bg-blue-50 text-blue-700',
+            KnowledgeBase::CHUNK_SYNC_RUNNING => 'bg-amber-50 text-amber-700',
+            KnowledgeBase::CHUNK_SYNC_COMPLETED => 'bg-emerald-50 text-emerald-700',
+            KnowledgeBase::CHUNK_SYNC_FAILED => 'bg-red-50 text-red-700',
+            'existing' => 'bg-blue-50 text-blue-700',
+            default => 'bg-slate-100 text-slate-600',
+        };
     }
 
     /**

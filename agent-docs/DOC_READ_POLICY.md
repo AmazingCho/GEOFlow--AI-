@@ -27,6 +27,7 @@
 
 1. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
 2. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+3. [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)
 
 如果任务涉及阶段进度或已知风险，再补读：
 
@@ -44,6 +45,7 @@
 1. [README.md](./README.md)
 2. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
 3. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+4. [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)
 
 然后根据任务类型按需读取其他文档。不要默认读取全部交接文档。
 
@@ -55,6 +57,7 @@
 
 | 当前任务 | 建议读取 |
 | --- | --- |
+| 任何新功能、修复、样式调整或流程优化 | [用户需求理解与产品经理式转译规则](./USER_REQUIREMENT_INTERPRETATION.md) |
 | 修改创建任务页 | [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md) |
 | 修改 Entity / Case | [Entity 与 Case 使用说明](../功能说明文档/02-Entity与Case使用说明.md) |
 | 修改标签、标签分组、标签治理 | [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)、[标签与白名单分组使用说明](../功能说明文档/03-标签与白名单分组使用说明.md) |
@@ -62,7 +65,7 @@
 | 修改文章质量评分 | [文章质量评分与审核使用说明](../功能说明文档/06-文章质量评分与审核使用说明.md) |
 | 修改素材管理页 | [素材管理与关联使用说明](../功能说明文档/07-素材管理与关联使用说明.md) |
 | 修改 URL 智能采集 | [URL 智能采集使用说明](../功能说明文档/08-URL智能采集使用说明.md) |
-| 修改 CRM 客户、询盘、商机、活动、待办或单据链路 | [CRM 销售链路 V2 优化白皮书](./CRM_SALES_PIPELINE_V2_WHITEPAPER.md)；不要先全量读取旧 CRM 历史文档 |
+| 修改 CRM 客户、询盘、商机、活动、待办或单据链路 | [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)、[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)、[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)；不要读取已删除的旧 CRM 历史计划 |
 
 ## 场景 5：全局审计或阶段回顾
 
@@ -78,11 +81,12 @@
 
 1. [README.md](./README.md)
 2. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
-3. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
-4. [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
-5. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
-6. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
-7. [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md)
+3. [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)
+4. [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+5. [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
+6. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
+7. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+8. [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md)
 
 ## 每次完成开发后的更新规则
 
@@ -97,6 +101,7 @@
 | 架构规则变化 | [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md) |
 | 路线图或阶段变化 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) |
 | 接手摘要变化 | [AGENT_HANDOFF.md](./AGENT_HANDOFF.md) |
+| 协作方式或需求理解流程变化 | [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)、[AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) |
 | 用户操作方式变化 | 对应的 `功能说明文档/*.md` |
 
 ## 用户可使用的固定提示

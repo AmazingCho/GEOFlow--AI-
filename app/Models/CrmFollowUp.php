@@ -17,6 +17,7 @@ class CrmFollowUp extends Model
         'opportunity_id',
         'task_id',
         'followup_type',
+        'activity_type',
         'content',
         'next_action',
         'next_followup_at',

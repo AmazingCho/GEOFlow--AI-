@@ -49,6 +49,7 @@ class CrmTaskController extends Controller
     {
         $payload = $request->validate([
             'result_content' => ['nullable', 'string', 'max:10000'],
+            'activity_type' => ['nullable', Rule::in(array_keys(CrmActivityService::typeOptions()))],
             'followup_type' => ['nullable', 'string', 'max:80'],
         ]);
         $activity = $activityService->completeTask(
@@ -56,6 +57,7 @@ class CrmTaskController extends Controller
             $payload['result_content'] ?? null,
             $payload['followup_type'] ?? null,
             auth('admin')->user(),
+            $payload['activity_type'] ?? 'task_completed',
         );
 
         return back()->with('message', $activity ? '待办已完成，结果已记录到活动时间线' : '待办已完成');

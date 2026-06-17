@@ -72,7 +72,7 @@ class Article extends Model
 
     public function task(): BelongsTo
     {
-        return $this->belongsTo(Task::class, 'task_id');
+        return $this->belongsTo(Task::class, 'task_id')->withTrashed();
     }
 
     public function articleImages(): HasMany
@@ -98,6 +98,11 @@ class Article extends Model
     public function internalLinks(): HasMany
     {
         return $this->hasMany(ArticleInternalLink::class, 'article_id');
+    }
+
+    public function knowledgeCorrections(): HasMany
+    {
+        return $this->hasMany(KnowledgeCorrection::class, 'article_id');
     }
 
     /**

@@ -39,6 +39,7 @@ class CrmCustomerController extends Controller
                     ->orWhere('contact_person', 'like', '%'.$search.'%')
                     ->orWhere('phone', 'like', '%'.$search.'%')
                     ->orWhere('email', 'like', '%'.$search.'%')
+                    ->orWhere('tax_number', 'like', '%'.$search.'%')
                     ->orWhere('country', 'like', '%'.$search.'%')
                     ->orWhere('industry', 'like', '%'.$search.'%')
                     ->orWhere('website', 'like', '%'.$search.'%')
@@ -97,11 +98,14 @@ class CrmCustomerController extends Controller
     {
         $customer = CrmCustomer::query()
             ->with([
-                'collection', 'contacts', 'opportunities', 'crmTasks.assignee',
+                'collection', 'contacts',
+                'opportunities' => fn ($query) => $query->with(['sourceInquiry', 'owner', 'primaryContact', 'quotes.salesOrders.tickets'])->orderByDesc('updated_at')->limit(20),
+                'crmTasks' => fn ($query) => $query->with(['assignee', 'inquiry', 'opportunity'])->orderByRaw('due_at IS NULL')->orderBy('due_at')->latest('id')->limit(20),
                 'followUps' => fn ($query) => $query->with(['inquiry', 'opportunity', 'task'])->orderByDesc('created_at')->limit(30),
-                'inquiries' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
-                'quotes' => fn ($query) => $query->orderByDesc('created_at')->limit(20),
-                'salesOrders' => fn ($query) => $query->orderByDesc('created_at')->limit(10),
+                'inquiries' => fn ($query) => $query->with('opportunities')->orderByDesc('created_at')->limit(20),
+                'quotes' => fn ($query) => $query->with(['inquiry', 'opportunity', 'salesOrders.tickets'])->orderByDesc('created_at')->limit(20),
+                'salesOrders' => fn ($query) => $query->with(['quote', 'tickets'])->orderByDesc('created_at')->limit(10),
+                'afterSalesTickets' => fn ($query) => $query->with(['order', 'entity'])->orderByDesc('created_at')->limit(10),
             ])
             ->whereKey($customerId)
             ->firstOrFail();
@@ -134,6 +138,7 @@ class CrmCustomerController extends Controller
                 'source_channel' => (string) ($customer->source_channel ?? ''),
                 'phone' => (string) ($customer->phone ?? ''),
                 'email' => (string) ($customer->email ?? ''),
+                'tax_number' => (string) ($customer->tax_number ?? ''),
                 'contact_title' => (string) ($customer->contact_title ?? ''),
                 'owner' => (string) ($customer->owner ?? ''),
                 'status' => (string) ($customer->status ?? 'active'),
@@ -194,6 +199,7 @@ class CrmCustomerController extends Controller
             'source_channel' => ['nullable', 'string', 'max:120'],
             'phone' => ['nullable', 'string', 'max:120'],
             'email' => ['nullable', 'string', 'max:200'],
+            'tax_number' => ['nullable', 'string', 'max:120'],
             'contact_title' => ['nullable', 'string', 'max:160'],
             'owner' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', Rule::in(['active', 'lead', 'inactive', 'blocked'])],
@@ -220,6 +226,7 @@ class CrmCustomerController extends Controller
             'source_channel' => trim((string) ($payload['source_channel'] ?? '')),
             'phone' => trim((string) ($payload['phone'] ?? '')),
             'email' => trim((string) ($payload['email'] ?? '')),
+            'tax_number' => trim((string) ($payload['tax_number'] ?? '')),
             'contact_title' => trim((string) ($payload['contact_title'] ?? '')),
             'owner' => trim((string) ($payload['owner'] ?? '')),
             'status' => (string) ($payload['status'] ?? 'active'),
@@ -251,6 +258,7 @@ class CrmCustomerController extends Controller
             'source_channel' => '',
             'phone' => '',
             'email' => '',
+            'tax_number' => '',
             'contact_title' => '',
             'owner' => '',
             'status' => 'active',

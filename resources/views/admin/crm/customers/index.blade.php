@@ -93,6 +93,9 @@
                                     <td class="px-6 py-4">
                                         <div class="font-semibold text-gray-900">{{ $customer->company_name ?: $customer->contact_person }}</div>
                                         <div class="mt-1 text-sm text-gray-600">{{ $customer->contact_person ?: '未填写主联系人' }}{{ $customer->contact_title ? ' · '.$customer->contact_title : '' }}</div>
+                                        @if ((string) ($customer->tax_number ?? '') !== '')
+                                            <div class="mt-1 text-xs text-gray-500">税号：{{ $customer->tax_number }}</div>
+                                        @endif
                                         <div class="mt-1 text-sm text-gray-500">{{ trim(($customer->country ?? '').' '.($customer->address ?? '')) ?: '未填写地址' }}</div>
                                         @if ((string) ($customer->website ?? '') !== '')
                                             <a href="{{ $customer->website }}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex text-xs text-blue-600 hover:text-blue-700">{{ $customer->website }}</a>

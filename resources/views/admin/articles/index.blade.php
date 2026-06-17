@@ -12,9 +12,11 @@
     $selectedSearch = (string) ($filters['search'] ?? '');
     $selectedPerPage = (int) ($filters['per_page'] ?? 20);
     $selectedTaskName = '';
+    $selectedTaskDeleted = false;
     foreach ($tasks as $taskOption) {
         if ((int) ($taskOption['id'] ?? 0) === $selectedTaskId) {
             $selectedTaskName = (string) ($taskOption['name'] ?? '');
+            $selectedTaskDeleted = (bool) ($taskOption['deleted'] ?? false);
             break;
         }
     }
@@ -183,6 +185,9 @@
                         <div class="inline-flex items-center gap-2">
                             <i data-lucide="filter" class="h-4 w-4"></i>
                             <span>{{ __('admin.articles.filters.current_task', ['task' => $selectedTaskName !== '' ? $selectedTaskName : '#'.$selectedTaskId]) }}</span>
+                            @if($selectedTaskDeleted)
+                                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">{{ __('admin.articles.deleted_task') }}</span>
+                            @endif
                         </div>
                         <a href="{{ $clearTaskFilterUrl }}" class="inline-flex items-center font-medium text-blue-700 hover:text-blue-900">
                             <i data-lucide="x" class="mr-1 h-4 w-4"></i>
@@ -203,7 +208,9 @@
                             <select name="task_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                 <option value="">{{ __('admin.articles.filters.all_tasks') }}</option>
                                 @foreach($tasks as $task)
-                                    <option value="{{ (int) $task['id'] }}" @selected($selectedTaskId === (int) $task['id'])>{{ $task['name'] }}</option>
+                                    <option value="{{ (int) $task['id'] }}" @selected($selectedTaskId === (int) $task['id'])>
+                                        {{ $task['name'] }}@if(!empty($task['deleted'])) {{ __('admin.articles.deleted_task_suffix') }}@endif
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
@@ -466,6 +473,9 @@
                                 <td class="px-4 py-4 align-top text-sm text-gray-500">
                                     @if((string) ($article->task->name ?? '') !== '')
                                         <div class="line-clamp-2 break-words leading-5 text-blue-600" title="{{ $article->task->name }}">{{ $article->task->name }}</div>
+                                        @if($article->task?->trashed())
+                                            <span class="mt-1 inline-flex w-fit rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">{{ __('admin.articles.deleted_task') }}</span>
+                                        @endif
                                     @endif
                                     <div class="mt-1 truncate" title="{{ $article->author->name ?? '' }}">{{ $article->author->name ?? '' }}</div>
                                     @if((int) ($article->is_ai_generated ?? 0) === 1)

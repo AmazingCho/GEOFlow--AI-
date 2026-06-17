@@ -37,6 +37,7 @@
         'slug' => (string) ($articleForm['slug'] ?? ''),
         'published_at' => (string) ($articleForm['published_at'] ?? ''),
         'task_name' => (string) ($articleForm['task_name'] ?? ''),
+        'task_deleted' => (bool) ($articleForm['task_deleted'] ?? false),
         'is_hot' => old('is_hot', !empty($articleForm['is_hot']) ? '1' : '0'),
         'is_featured' => old('is_featured', !empty($articleForm['is_featured']) ? '1' : '0'),
     ];
@@ -96,6 +97,17 @@
                             };
                             $qualityItems = collect($quality['items'] ?? [])->filter(fn ($item) => is_array($item))->values();
                             $qualityIssues = collect($quality['issues'] ?? [])->filter(fn ($issue) => is_array($issue))->values()->groupBy(fn ($issue) => (string) ($issue['key'] ?? 'structure'));
+                            $formatQualityValue = static function (mixed $value): string {
+                                if (is_bool($value)) {
+                                    return $value ? __('admin.article_edit.quality.value_yes') : __('admin.article_edit.quality.value_no');
+                                }
+                                if (is_array($value)) {
+                                    $text = implode(', ', array_filter(array_map('strval', $value), static fn (string $item): bool => trim($item) !== ''));
+                                    return $text !== '' ? $text : '-';
+                                }
+                                $text = trim((string) $value);
+                                return $text !== '' ? $text : '-';
+                            };
                         @endphp
                         @if($quality !== [])
                             <div class="bg-white shadow rounded-lg">
@@ -128,16 +140,18 @@
 
                                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                                         @foreach($qualityItems as $item)
-                                            @php
-                                                $itemKey = (string) ($item['key'] ?? 'structure');
-                                                $itemStatus = (string) ($item['status'] ?? 'warning');
-                                                $itemTone = match($itemStatus) {
-                                                    'passed' => 'bg-emerald-50 text-emerald-700',
-                                                    'warning' => 'bg-amber-50 text-amber-700',
-                                                    default => 'bg-red-50 text-red-700',
-                                                };
-                                                $itemIssues = $qualityIssues->get($itemKey, collect());
-                                            @endphp
+                                                @php
+                                                    $itemKey = (string) ($item['key'] ?? 'structure');
+                                                    $itemStatus = (string) ($item['status'] ?? 'warning');
+                                                    $itemTone = match($itemStatus) {
+                                                        'passed' => 'bg-emerald-50 text-emerald-700',
+                                                        'warning' => 'bg-amber-50 text-amber-700',
+                                                        default => 'bg-red-50 text-red-700',
+                                                    };
+                                                    $itemIssues = $qualityIssues->get($itemKey, collect());
+                                                    $itemMetrics = collect($item['metrics'] ?? [])->filter(fn ($value): bool => !($value === null || $value === '' || $value === []));
+                                                    $itemReasons = collect($item['reasons'] ?? [])->map(fn ($reason) => trim((string) $reason))->filter()->values();
+                                                @endphp
                                             <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
                                                 <div class="flex items-center justify-between gap-3">
                                                     <div class="font-medium text-gray-800">{{ __('admin.articles.quality.items.'.$itemKey) }}</div>
@@ -146,6 +160,37 @@
                                                     </span>
                                                 </div>
                                                 <div class="mt-1 text-xs text-gray-500">{{ __('admin.articles.quality.status.'.(string) ($item['status'] ?? 'warning')) }} · {{ (string) ($item['detail'] ?? '') }}</div>
+                                                @if($itemMetrics->isNotEmpty())
+                                                    <div class="mt-2 flex flex-wrap gap-1.5">
+                                                        @foreach($itemMetrics->take(6) as $metricKey => $metricValue)
+                                                            @php
+                                                                $metricLabelKey = 'admin.articles.quality.metrics.'.(string) $metricKey;
+                                                                $metricLabel = __($metricLabelKey);
+                                                                if ($metricLabel === $metricLabelKey) {
+                                                                    $metricLabel = str((string) $metricKey)->replace('_', ' ')->title()->toString();
+                                                                }
+                                                            @endphp
+                                                            <span class="inline-flex max-w-full items-center rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200">
+                                                                <span class="shrink-0 text-gray-400">{{ $metricLabel }}:</span>
+                                                                <span class="ml-1 truncate">{{ $formatQualityValue($metricValue) }}</span>
+                                                            </span>
+                                                        @endforeach
+                                                    </div>
+                                                @endif
+                                                @if($itemReasons->isNotEmpty())
+                                                    <div class="mt-2 space-y-1">
+                                                        @foreach($itemReasons->take(3) as $reason)
+                                                            @php
+                                                                $reasonLabelKey = 'admin.articles.quality.reason_keys.'.(string) $reason;
+                                                                $reasonLabel = __($reasonLabelKey);
+                                                                if ($reasonLabel === $reasonLabelKey) {
+                                                                    $reasonLabel = str((string) $reason)->replace('_', ' ')->title()->toString();
+                                                                }
+                                                            @endphp
+                                                            <div class="text-[11px] leading-4 text-gray-500">- {{ $reasonLabel }}</div>
+                                                        @endforeach
+                                                    </div>
+                                                @endif
                                                 @if($itemIssues->isNotEmpty())
                                                     <div class="mt-3 space-y-2">
                                                         @foreach($itemIssues as $issue)
@@ -235,6 +280,17 @@
                             </div>
                         </div>
                     </div>
+
+                    @if($isEdit)
+                        @include('admin.knowledge-corrections.partials.assistant-card', [
+                            'sourceType' => 'article',
+                            'articleId' => (int) $articleId,
+                            'aiModelOptions' => $correctionAiModelOptions ?? [],
+                            'knowledgeBaseOptions' => $correctionKnowledgeBaseOptions ?? [],
+                            'title' => __('admin.knowledge_corrections.assistant.article_title'),
+                            'description' => __('admin.knowledge_corrections.assistant.article_desc'),
+                        ])
+                    @endif
 
                     @if($isEdit)
                         @php
@@ -332,11 +388,33 @@
                             $traceCategory = is_array($trace['category'] ?? null) ? $trace['category'] : null;
                             $traceImages = collect($trace['images'] ?? [])->filter(fn ($image) => is_array($image))->values();
                             $traceChunks = collect($traceKnowledge['chunks'] ?? [])->filter(fn ($chunk) => is_array($chunk))->values();
+                            $traceKnowledgeBases = collect($traceKnowledge['knowledge_bases'] ?? [])->filter(fn ($knowledgeBase) => is_array($knowledgeBase))->values();
                             $traceEvidenceSummary = is_array($traceKnowledge['evidence_summary'] ?? null) ? $traceKnowledge['evidence_summary'] : [];
+                            $traceContextPackage = is_array($traceKnowledge['context_package'] ?? null) ? $traceKnowledge['context_package'] : [];
+                            $traceRetrievalSources = collect($traceEvidenceSummary['retrieval_sources'] ?? [])->map(fn ($source) => trim((string) $source))->filter()->unique()->values();
+                            $traceSelectedEntityIds = collect($traceContextPackage['selected_entity_ids'] ?? $traceKnowledge['entity_filter_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values();
+                            $traceSelectedCaseIds = collect($traceContextPackage['selected_case_ids'] ?? $traceKnowledge['case_filter_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values();
+                            $traceUsedKnowledgeBaseIds = collect($traceContextPackage['used_knowledge_base_ids'] ?? $traceKnowledge['knowledge_base_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values();
                             $traceEntities = collect($traceKnowledge['entities'] ?? [])->filter(fn ($entity) => is_array($entity))->values();
                             $traceCases = collect($traceKnowledge['cases'] ?? [])->filter(fn ($case) => is_array($case))->values();
                             $traceTags = collect($traceKnowledge['tag_filters'] ?? [])->map(fn ($tag) => trim((string) $tag))->filter()->values();
                             $tracePipeline = collect($trace['pipeline'] ?? [])->filter(fn ($step) => is_array($step))->values();
+                            $formatTraceValue = static function (mixed $value): string {
+                                if (is_bool($value)) {
+                                    return $value ? __('admin.article_edit.generation_trace.value_yes') : __('admin.article_edit.generation_trace.value_no');
+                                }
+                                if (is_float($value)) {
+                                    return (string) round($value, 4);
+                                }
+                                if (is_array($value)) {
+                                    $text = implode(', ', array_filter(array_map('strval', $value), static fn (string $item): bool => trim($item) !== ''));
+                                    return $text !== '' ? $text : '-';
+                                }
+                                $text = trim((string) $value);
+                                return $text !== '' ? $text : '-';
+                            };
+                            $traceTaskName = (string) ($traceTask['name'] ?? $formData['task_name'] ?: __('admin.article_edit.info.manual_source'));
+                            $traceTaskDeleted = (bool) ($formData['task_deleted'] ?? false);
                         @endphp
                         <div class="bg-white shadow rounded-lg">
                             <div class="px-6 py-4 border-b border-gray-200">
@@ -362,7 +440,13 @@
                                 @endif
 
                                 <div class="space-y-1">
-                                    <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.task') }}:</span> {{ (string) ($traceTask['name'] ?? $formData['task_name'] ?: __('admin.article_edit.info.manual_source')) }}</div>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.task') }}:</span>
+                                        <span>{{ $traceTaskName }}</span>
+                                        @if($traceTaskDeleted)
+                                            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">{{ __('admin.articles.deleted_task') }}</span>
+                                        @endif
+                                    </div>
                                     <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.title_source') }}:</span> {{ (string) ($traceTitle['text'] ?? '-') }}</div>
                                     <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.keyword') }}:</span> {{ (string) ($traceTitle['keyword'] ?? '-') }}</div>
                                     <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.model') }}:</span> {{ (string) ($traceModel['name'] ?? '-') }}</div>
@@ -438,32 +522,136 @@
 
                                     @if($traceKnowledge !== [] || $traceChunks->isNotEmpty())
                                     <div class="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.knowledge') }}</span>
-                                            <span class="text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.context_length', ['count' => (int) ($traceKnowledge['context_length'] ?? 0)]) }}</span>
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                            <div>
+                                                <span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.knowledge') }}</span>
+                                                <p class="mt-1 text-xs leading-5 text-gray-500">{{ __('admin.article_edit.generation_trace.rag_explain_hint') }}</p>
+                                            </div>
+                                            <span class="shrink-0 text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.context_length', ['count' => (int) ($traceKnowledge['context_length'] ?? 0)]) }}</span>
                                         </div>
-                                        <div class="mt-2 text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.strategy') }}: {{ (string) ($traceKnowledge['strategy'] ?? 'none') }}</div>
-                                        @if($traceEvidenceSummary !== [])
-                                            <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-                                                <span class="rounded-full bg-white px-2 py-1 ring-1 ring-gray-200">{{ __('admin.article_edit.generation_trace.evidence_average') }}: {{ (int) ($traceEvidenceSummary['average_evidence_score'] ?? 0) }}</span>
-                                                <span class="rounded-full bg-white px-2 py-1 ring-1 ring-gray-200">{{ __('admin.article_edit.generation_trace.evidence_chunks') }}: {{ (int) ($traceEvidenceSummary['chunk_count'] ?? 0) }}</span>
+
+                                        <div class="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                                            <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                                                <div class="text-gray-400">{{ __('admin.article_edit.generation_trace.strategy') }}</div>
+                                                <div class="mt-1 truncate font-semibold text-gray-800">{{ (string) ($traceKnowledge['strategy'] ?? 'none') }}</div>
+                                            </div>
+                                            <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                                                <div class="text-gray-400">{{ __('admin.article_edit.generation_trace.evidence_average') }}</div>
+                                                <div class="mt-1 font-semibold text-gray-800">{{ (int) ($traceEvidenceSummary['average_evidence_score'] ?? 0) }}</div>
+                                            </div>
+                                            <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                                                <div class="text-gray-400">{{ __('admin.article_edit.generation_trace.evidence_chunks') }}</div>
+                                                <div class="mt-1 font-semibold text-gray-800">{{ $traceChunks->count() }}</div>
+                                            </div>
+                                            <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                                                <div class="text-gray-400">{{ __('admin.article_edit.generation_trace.used_knowledge_bases') }}</div>
+                                                <div class="mt-1 font-semibold text-gray-800">{{ max($traceKnowledgeBases->count(), $traceUsedKnowledgeBaseIds->count()) }}</div>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                            @if($traceRetrievalSources->isNotEmpty())
+                                                @foreach($traceRetrievalSources as $source)
+                                                    @php
+                                                        $sourceLabelKey = 'admin.article_edit.generation_trace.retrieval_sources.'.(string) $source;
+                                                        $sourceLabel = __($sourceLabelKey);
+                                                        if ($sourceLabel === $sourceLabelKey) {
+                                                            $sourceLabel = (string) $source;
+                                                        }
+                                                    @endphp
+                                                    <span class="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">{{ $sourceLabel }}</span>
+                                                @endforeach
+                                            @endif
+                                            @if($traceSelectedEntityIds->isNotEmpty())
+                                                <span class="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-700">{{ __('admin.article_edit.generation_trace.selected_entities') }}: {{ $traceSelectedEntityIds->implode(', ') }}</span>
+                                            @endif
+                                            @if($traceSelectedCaseIds->isNotEmpty())
+                                                <span class="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">{{ __('admin.article_edit.generation_trace.selected_cases') }}: {{ $traceSelectedCaseIds->implode(', ') }}</span>
+                                            @endif
+                                            @if((bool) ($traceKnowledge['cross_collection_mode'] ?? false))
+                                                <span class="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">{{ __('admin.article_edit.generation_trace.cross_collection') }}</span>
+                                            @endif
+                                        </div>
+
+                                        @if($traceKnowledgeBases->isNotEmpty())
+                                            <div class="mt-3">
+                                                <div class="text-xs font-medium text-gray-500">{{ __('admin.article_edit.generation_trace.knowledge_bases_used') }}</div>
+                                                <div class="mt-2 flex flex-wrap gap-1.5">
+                                                    @foreach($traceKnowledgeBases->take(8) as $knowledgeBase)
+                                                        <span class="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
+                                                            <span class="truncate">{{ (string) ($knowledgeBase['name'] ?? '-') }}</span>
+                                                            <span class="ml-1 text-gray-400">#{{ (int) ($knowledgeBase['id'] ?? 0) }}</span>
+                                                        </span>
+                                                    @endforeach
+                                                </div>
                                             </div>
                                         @endif
+
                                         @if($traceChunks->isNotEmpty())
                                             <div class="mt-3 space-y-2">
                                                 @foreach($traceChunks->take(5) as $chunk)
                                                     <div class="rounded border border-gray-200 bg-white p-2">
-                                                        <div class="flex flex-wrap items-center gap-2">
-                                                            <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                            <div class="min-w-0">
+                                                                <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                                <div class="mt-1 flex flex-wrap gap-1.5">
+                                                                    @if((string) ($chunk['knowledge_type'] ?? '') !== '')
+                                                                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{{ __('admin.article_edit.generation_trace.knowledge_type') }}: {{ (string) $chunk['knowledge_type'] }}</span>
+                                                                    @endif
+                                                                    @if((string) ($chunk['knowledge_role'] ?? '') !== '')
+                                                                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{{ __('admin.article_edit.generation_trace.knowledge_role') }}: {{ (string) $chunk['knowledge_role'] }}</span>
+                                                                    @endif
+                                                                    @if(isset($chunk['importance']))
+                                                                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{{ __('admin.article_edit.generation_trace.importance') }}: {{ (int) $chunk['importance'] }}</span>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex shrink-0 flex-wrap gap-1.5">
                                                             @if(isset($chunk['evidence_score']))
                                                                 <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{{ __('admin.article_edit.generation_trace.evidence_score') }} {{ (int) $chunk['evidence_score'] }}</span>
                                                             @endif
                                                             @if((string) ($chunk['retrieval_source'] ?? '') !== '')
-                                                                <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{{ (string) $chunk['retrieval_source'] }}</span>
+                                                                @php
+                                                                    $chunkSource = (string) $chunk['retrieval_source'];
+                                                                    $chunkSourceLabelKey = 'admin.article_edit.generation_trace.retrieval_sources.'.$chunkSource;
+                                                                    $chunkSourceLabel = __($chunkSourceLabelKey);
+                                                                    if ($chunkSourceLabel === $chunkSourceLabelKey) {
+                                                                        $chunkSourceLabel = $chunkSource;
+                                                                    }
+                                                                @endphp
+                                                                <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{{ $chunkSourceLabel }}</span>
                                                             @endif
+                                                            </div>
                                                         </div>
                                                         @if(!empty($chunk['match_reasons']) && is_array($chunk['match_reasons']))
-                                                            <div class="mt-1 text-[11px] text-gray-400">{{ __('admin.article_edit.generation_trace.match_reasons') }}: {{ implode(' · ', array_map('strval', $chunk['match_reasons'])) }}</div>
+                                                            <div class="mt-2 flex flex-wrap gap-1.5">
+                                                                <span class="text-[11px] font-medium text-gray-400">{{ __('admin.article_edit.generation_trace.match_reasons') }}:</span>
+                                                                @foreach($chunk['match_reasons'] as $reason)
+                                                                    @php
+                                                                        $reasonKey = (string) $reason;
+                                                                        $reasonLabelKey = 'admin.article_edit.generation_trace.match_reason_labels.'.$reasonKey;
+                                                                        $reasonLabel = __($reasonLabelKey);
+                                                                        if ($reasonLabel === $reasonLabelKey) {
+                                                                            $reasonLabel = str($reasonKey)->replace('_', ' ')->title()->toString();
+                                                                        }
+                                                                    @endphp
+                                                                    <span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-100">{{ $reasonLabel }}</span>
+                                                                @endforeach
+                                                            </div>
+                                                        @endif
+                                                        @if(!empty($chunk['score_components']) && is_array($chunk['score_components']))
+                                                            <div class="mt-2 grid grid-cols-2 gap-1.5 text-[11px] text-gray-500 md:grid-cols-4">
+                                                                @foreach($chunk['score_components'] as $componentKey => $componentValue)
+                                                                    @php
+                                                                        $componentLabelKey = 'admin.article_edit.generation_trace.score_components.'.(string) $componentKey;
+                                                                        $componentLabel = __($componentLabelKey);
+                                                                        if ($componentLabel === $componentLabelKey) {
+                                                                            $componentLabel = str((string) $componentKey)->replace('_', ' ')->title()->toString();
+                                                                        }
+                                                                    @endphp
+                                                                    <span class="rounded bg-gray-50 px-2 py-1">{{ $componentLabel }}: {{ $formatTraceValue($componentValue) }}</span>
+                                                                @endforeach
+                                                            </div>
                                                         @endif
                                                         <div class="mt-1 line-clamp-2 text-xs text-gray-500">{{ (string) ($chunk['preview'] ?? '') }}</div>
                                                     </div>
@@ -476,12 +664,42 @@
                                     @if($traceEntities->isNotEmpty() || $traceCases->isNotEmpty())
                                         <div class="space-y-2">
                                             <div class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.entity_case') }}</div>
-                                            @foreach($traceEntities->take(4) as $entity)
-                                                <div class="text-xs text-gray-600">Entity: {{ (string) ($entity['name'] ?? '-') }}</div>
-                                            @endforeach
-                                            @foreach($traceCases->take(4) as $case)
-                                                <div class="text-xs text-gray-600">Case: {{ (string) ($case['title'] ?? '-') }}</div>
-                                            @endforeach
+                                            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                                @foreach($traceEntities->take(6) as $entity)
+                                                    <div class="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs">
+                                                        <div class="flex flex-wrap items-center gap-1.5">
+                                                            <span class="font-semibold text-violet-900">Entity: {{ (string) ($entity['name'] ?? '-') }}</span>
+                                                            @if((string) ($entity['type'] ?? '') !== '')
+                                                                <span class="rounded-full bg-white px-2 py-0.5 font-medium text-violet-700 ring-1 ring-violet-100">{{ (string) $entity['type'] }}</span>
+                                                            @endif
+                                                            @if(isset($entity['linkable']))
+                                                                <span class="rounded-full bg-white px-2 py-0.5 font-medium text-violet-700 ring-1 ring-violet-100">
+                                                                    {{ __('admin.article_edit.generation_trace.linkable') }}: {{ $formatTraceValue((bool) $entity['linkable']) }}
+                                                                </span>
+                                                            @endif
+                                                        </div>
+                                                        @if((string) ($entity['role'] ?? '') !== '')
+                                                            <div class="mt-1 leading-5 text-violet-800">{{ (string) $entity['role'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                                @foreach($traceCases->take(6) as $case)
+                                                    <div class="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs">
+                                                        <div class="flex flex-wrap items-center gap-1.5">
+                                                            <span class="font-semibold text-amber-900">Case: {{ (string) ($case['title'] ?? '-') }}</span>
+                                                            @if((string) ($case['type'] ?? '') !== '')
+                                                                <span class="rounded-full bg-white px-2 py-0.5 font-medium text-amber-700 ring-1 ring-amber-100">{{ (string) $case['type'] }}</span>
+                                                            @endif
+                                                            @if((string) ($case['entity_name'] ?? '') !== '')
+                                                                <span class="rounded-full bg-white px-2 py-0.5 font-medium text-amber-700 ring-1 ring-amber-100">{{ __('admin.article_edit.generation_trace.linked_entity') }}: {{ (string) $case['entity_name'] }}</span>
+                                                            @endif
+                                                        </div>
+                                                        @if((string) ($case['role'] ?? '') !== '')
+                                                            <div class="mt-1 leading-5 text-amber-800">{{ (string) $case['role'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
                                         </div>
                                     @endif
 

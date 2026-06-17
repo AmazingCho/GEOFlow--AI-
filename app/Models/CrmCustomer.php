@@ -24,6 +24,7 @@ class CrmCustomer extends Model
         'source_channel',
         'phone',
         'email',
+        'tax_number',
         'contact_title',
         'owner',
         'status',

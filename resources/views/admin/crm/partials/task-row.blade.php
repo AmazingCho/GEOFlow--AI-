@@ -13,7 +13,8 @@
                 <form method="POST" action="{{ route('admin.crm.tasks.complete', ['taskId' => $task->id]) }}" class="mt-3 space-y-3">
                     @csrf
                     <textarea name="result_content" rows="4" placeholder="完成结果（可选，填写后会生成活动记录）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"></textarea>
-                    <input type="text" name="followup_type" maxlength="80" value="待办结果" placeholder="活动类型" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                    @include('admin.crm.partials._activity-type-select', ['value' => 'task_completed'])
+                    <input type="text" name="followup_type" maxlength="80" value="待办结果" placeholder="补充备注（可选）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                     <button type="submit" class="inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">确认完成</button>
                 </form>
             </div>

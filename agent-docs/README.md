@@ -12,6 +12,7 @@
 
 1. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
 2. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+3. [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)
 
 只有需要阶段细节、风险细节或架构判断时，再读取：
 
@@ -48,10 +49,13 @@
 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | 已完成、部分完成、未完成事项 |
 | [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) | 已知缺陷、风险和容易误判的问题 |
 | [DOC_READ_POLICY.md](./DOC_READ_POLICY.md) | 文档读取策略，避免每次任务全量读取造成 token 浪费 |
+| [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md) | 非技术表达优先、产品经理式需求转译和基础优化流程 |
+| [CODEX_GLOBAL_PERSONAL_PROMPT.md](./CODEX_GLOBAL_PERSONAL_PROMPT.md) | 可复制到 Codex 个性化提示词的全局协作规则 |
 | [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) | 每个 agent 开发前后必须遵守的交接规则 |
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
-| [CRM_SALES_PIPELINE_V2_WHITEPAPER.md](./CRM_SALES_PIPELINE_V2_WHITEPAPER.md) | CRM 客户、询盘、商机、活动、待办和单据统一链路的后续实施白皮书 |
+| [MAINLINE_REMAINING_OPTIMIZATION_PLAN.md](./MAINLINE_REMAINING_OPTIMIZATION_PLAN.md) | 当前尚未执行的主线剩余优化计划 |
+| [CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md) | CRM 单据 PDF 五类真实样本视觉回归记录 |
 
 ## 每次开发后按需更新
 
@@ -61,6 +65,7 @@
 - 新风险或缺陷：[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
 - 架构边界变化：[ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
 - 接手摘要明显过期：[AGENT_BRIEF.md](./AGENT_BRIEF.md) 和 [AGENT_HANDOFF.md](./AGENT_HANDOFF.md)
+- 协作方式、需求理解或基础优化流程变化：[USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md) 和 [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md)
 
 如果新增或改变了用户操作方式，还要同步更新 `功能说明文档` 中对应说明。
 

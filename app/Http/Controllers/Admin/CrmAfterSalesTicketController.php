@@ -124,6 +124,7 @@ class CrmAfterSalesTicketController extends Controller
             'activeMenu' => 'crm',
             'adminSiteName' => AdminWeb::siteName(),
             'ticket' => $ticket,
+            'aiModelOptions' => $this->analysisService->modelOptions(),
         ]);
     }
 

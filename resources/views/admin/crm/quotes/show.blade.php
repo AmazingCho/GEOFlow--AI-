@@ -31,7 +31,10 @@
                     </select>
                     <i data-lucide="chevron-down" class="pointer-events-none absolute right-2 h-4 w-4 text-gray-400"></i>
                 </div>
-                <form method="POST" action="{{ route('admin.crm.quotes.convert',['quoteId'=>$quote->id]) }}" class="flex items-center">@csrf<select name="document_type" class="rounded-l-md border border-r-0 border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"><option value="proforma_invoice">转形式发票</option><option value="invoice">转正式发票</option><option value="packing_list">转装箱单</option><option value="contract">转合同</option><option value="quotation">转报价单</option></select><button class="rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">创建副本</button></form>
+                <a href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => (string) ($quote->document_type ?? 'quotation')]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" onclick="this.classList.add('opacity-70'); this.querySelector('[data-label]').textContent='生成中...';">
+                    <i data-lucide="download" class="mr-2 h-4 w-4"></i>
+                    <span data-label>下载 PDF</span>
+                </a>
                 <a href="{{ route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     <i data-lucide="pencil" class="mr-2 h-4 w-4"></i>
                     编辑
@@ -142,6 +145,7 @@
                     <dl class="mt-4 space-y-3 text-sm">
                         <div><dt class="text-gray-500">客户</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->customer?->contact_person ?: $quote->customer?->company_name ?? '未关联' }}</dd></div>
                         <div><dt class="text-gray-500">买方</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->buyer_company ?: '未填写' }}</dd></div>
+                        <div><dt class="text-gray-500">买方税号</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->buyer_tax_number ?: '未填写' }}</dd></div>
                         <div><dt class="text-gray-500">负责人</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->owner ?: '未指定' }}</dd></div>
                         <div><dt class="text-gray-500">业务容器</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->collection?->name ?? '未指定' }}</dd></div>
                         <div>

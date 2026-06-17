@@ -39,6 +39,11 @@ class CaseRecord extends Model
         return $this->belongsToMany(EntityRecord::class, 'case_record_entity', 'case_record_id', 'entity_id')->withTimestamps();
     }
 
+    public function entity(): BelongsTo
+    {
+        return $this->belongsTo(EntityRecord::class, 'entity_id');
+    }
+
     public function collection(): BelongsTo
     {
         return $this->belongsTo(CollectionRecord::class, 'collection_id');

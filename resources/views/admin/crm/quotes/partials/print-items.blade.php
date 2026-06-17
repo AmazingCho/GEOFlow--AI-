@@ -1,3 +1,8 @@
+@php
+    $items = $items ?? $quote->items;
+    $startIndex = (int) ($startIndex ?? 0);
+@endphp
+
 <h2>{{ $label('items', 'Items') }}</h2>
 <table>
     <thead>
@@ -26,8 +31,8 @@
         @endif
     </thead>
     <tbody>
-        @php $index = 0; @endphp
-        @foreach ($quote->items as $item)
+        @php $index = $startIndex; @endphp
+        @foreach ($items as $item)
             @php
                 $index++;
                 $itemImageUrl = $item->image

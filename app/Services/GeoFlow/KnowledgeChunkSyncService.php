@@ -94,6 +94,48 @@ class KnowledgeChunkSyncService
     }
 
     /**
+     * 刷新单个已确认修改的知识片段向量，避免纠错应用时重建整库切片。
+     */
+    public function refreshSingleChunk(KnowledgeChunk $chunk, bool $requireRealEmbedding = false): void
+    {
+        $chunkContent = trim((string) ($chunk->content ?? ''));
+        if ($chunkContent === '') {
+            return;
+        }
+
+        $embeddingMetadata = $this->resolveEmbeddingMetadata();
+        $embeddingDocumentTitle = $this->resolveEmbeddingDocumentTitle((int) $chunk->knowledge_base_id);
+        $generatedEmbeddings = $this->generateEmbeddingsForChunks(
+            [$chunkContent],
+            $embeddingMetadata,
+            $requireRealEmbedding,
+            $embeddingDocumentTitle
+        );
+
+        if ($requireRealEmbedding && count($generatedEmbeddings) !== 1) {
+            throw new \RuntimeException(__('admin.knowledge_bases.error.embedding_sync_failed'));
+        }
+
+        $fallbackVector = $this->buildFallbackVector($chunkContent, 256);
+        $realEmbedding = $generatedEmbeddings[0] ?? null;
+        $isRealEmbedding = is_array($realEmbedding);
+        $embeddingJson = $isRealEmbedding
+            ? json_encode($realEmbedding['vector'] ?? [], JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION)
+            : json_encode($fallbackVector, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+
+        $chunk->forceFill([
+            'content_hash' => hash('sha256', $chunkContent),
+            'source_hash' => hash('sha256', (string) ($chunk->section_path ?? '').'|'.$chunkContent),
+            'token_count' => $this->estimateTokenCount($chunkContent),
+            'embedding_json' => $embeddingJson ?: '[]',
+            'embedding_model_id' => $isRealEmbedding ? (int) ($realEmbedding['model_id'] ?? 0) : null,
+            'embedding_dimensions' => $isRealEmbedding ? (int) ($realEmbedding['dimensions'] ?? 0) : 0,
+            'embedding_provider' => $isRealEmbedding ? (string) ($realEmbedding['provider'] ?? '') : '',
+            'embedding_vector' => $isRealEmbedding ? ($realEmbedding['vector_literal'] ?? null) : null,
+        ])->save();
+    }
+
+    /**
      * 构建知识库切片：默认使用结构化规则切片；配置语义模型时仅让 LLM 规划 block 边界，
      * 最终 chunk 文本仍由本地原文重组，避免模型改写知识内容。
      *

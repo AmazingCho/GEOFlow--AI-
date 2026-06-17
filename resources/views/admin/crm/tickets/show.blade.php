@@ -94,6 +94,77 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-900">知识纠错候选</h2>
+                            <p class="mt-1 text-sm leading-6 text-gray-600">把这个售后问题提交为知识库纠错建议。系统只生成待审核记录，不会直接覆盖知识库内容。</p>
+                        </div>
+                        @if($ticket->knowledgeBases->isNotEmpty())
+                            <a href="{{ route('admin.knowledge-corrections.index', ['knowledge_base_id' => (int) $ticket->knowledgeBases->first()->id]) }}" class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                <i data-lucide="list-checks" class="mr-2 h-4 w-4"></i>
+                                纠错记录
+                            </a>
+                        @endif
+                    </div>
+
+                    @if($ticket->knowledgeBases->isEmpty())
+                        <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                            该工单还没有关联知识库。请先编辑工单并关联目标知识库，再从这里发起纠错建议。
+                        </div>
+                    @else
+                        @php
+                            $defaultCorrectionDescription = trim(implode("\n\n", array_filter([
+                                '来源售后工单 #'.(int) $ticket->id.'：'.(string) $ticket->title,
+                                (string) ($ticket->issue_description ?? '') !== '' ? '客户问题：'.(string) $ticket->issue_description : '',
+                                (string) ($ticket->reply_points ?? '') !== '' ? '建议回复：'.(string) $ticket->reply_points : '',
+                                (string) ($ticket->resolution ?? '') !== '' ? '处理结果：'.(string) $ticket->resolution : '',
+                                '请检查关联知识库中是否存在过时、不完整或错误的说明，并生成待审核纠错建议。',
+                            ])));
+                            $inputClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500';
+                        @endphp
+                        <form method="POST" action="{{ route('admin.knowledge-corrections.store') }}" class="mt-5 space-y-4 rounded-lg border border-orange-100 bg-orange-50/60 p-4">
+                            @csrf
+                            <input type="hidden" name="source_type" value="knowledge_base">
+
+                            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-800">目标知识库</label>
+                                    <select name="knowledge_base_id" required class="{{ $inputClass }}">
+                                        @foreach($ticket->knowledgeBases as $knowledgeBase)
+                                            <option value="{{ (int) $knowledgeBase->id }}">{{ $knowledgeBase->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-2 text-xs leading-5 text-gray-500">只允许选择当前工单已关联的知识库，避免把售后问题提交到错误来源。</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-800">AI 模型</label>
+                                    <select name="ai_model_id" class="{{ $inputClass }}">
+                                        <option value="0">自动选择模型</option>
+                                        @foreach(($aiModelOptions ?? []) as $modelOption)
+                                            <option value="{{ (int) ($modelOption['id'] ?? 0) }}">{{ (string) ($modelOption['name'] ?? '') }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-2 text-xs leading-5 text-gray-500">模型不可用时会生成安全回退提案，仍需人工审核。</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-800">纠错说明 *</label>
+                                <textarea name="error_description" rows="6" required class="{{ $inputClass }}" placeholder="描述这个工单暴露出的知识库问题">{{ old('error_description', $defaultCorrectionDescription) }}</textarea>
+                            </div>
+
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <p class="text-xs leading-5 text-gray-500">提交后会进入知识库纠错助手，管理员确认后才会应用到知识片段。</p>
+                                <button type="submit" class="inline-flex h-10 items-center justify-center rounded-md border border-transparent bg-orange-600 px-4 text-sm font-medium text-white hover:bg-orange-700">
+                                    <i data-lucide="sparkles" class="mr-2 h-4 w-4"></i>
+                                    发起知识纠错
+                                </button>
+                            </div>
+                        </form>
+                    @endif
+                </section>
             </div>
 
             @if ($ticket->order?->inquiry?->customer?->followUps?->isNotEmpty())

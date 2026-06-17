@@ -14,10 +14,28 @@ use Illuminate\Validation\ValidationException;
 
 final class CrmActivityService
 {
+    public const ACTIVITY_TYPES = [
+        'note' => '普通记录',
+        'call' => '电话沟通',
+        'email' => '邮件往来',
+        'meeting' => '会议沟通',
+        'chat' => '在线聊天',
+        'document' => '单据沟通',
+        'task_completed' => '待办完成',
+        'system' => '系统记录',
+    ];
+
+    /** @return array<string, string> */
+    public static function typeOptions(): array
+    {
+        return self::ACTIVITY_TYPES;
+    }
+
     /** @return array<string, mixed> */
     public function rules(): array
     {
         return [
+            'activity_type' => ['nullable', Rule::in(array_keys(self::ACTIVITY_TYPES))],
             'followup_type' => ['nullable', 'string', 'max:80'],
             'content' => ['required', 'string', 'max:10000'],
             'owner' => ['nullable', 'string', 'max:120'],
@@ -63,6 +81,7 @@ final class CrmActivityService
                 'opportunity_id' => (int) ($opportunity?->id ?? 0) ?: null,
                 'task_id' => $task?->id,
                 'followup_type' => trim((string) ($payload['followup_type'] ?? '')),
+                'activity_type' => $this->normalizeActivityType($payload['activity_type'] ?? null),
                 'content' => trim((string) $payload['content']),
                 'owner' => trim((string) ($payload['owner'] ?? $admin?->display_name ?? $admin?->username ?? '')),
                 'status' => 'done',
@@ -72,9 +91,9 @@ final class CrmActivityService
         });
     }
 
-    public function completeTask(CrmTask $task, ?string $resultContent, ?string $followupType, ?Admin $admin = null): ?CrmFollowUp
+    public function completeTask(CrmTask $task, ?string $resultContent, ?string $followupType, ?Admin $admin = null, ?string $activityType = null): ?CrmFollowUp
     {
-        return DB::transaction(function () use ($task, $resultContent, $followupType, $admin): ?CrmFollowUp {
+        return DB::transaction(function () use ($task, $resultContent, $followupType, $admin, $activityType): ?CrmFollowUp {
             $task->update(['status' => 'done', 'completed_at' => now()]);
             $content = trim((string) $resultContent);
             if ($content === '') {
@@ -87,6 +106,7 @@ final class CrmActivityService
                 'opportunity_id' => (int) ($task->opportunity_id ?? 0) ?: null,
                 'task_id' => (int) $task->id,
                 'followup_type' => trim((string) $followupType) ?: '待办结果',
+                'activity_type' => $this->normalizeActivityType($activityType ?: 'task_completed'),
                 'content' => $content,
                 'owner' => trim((string) ($admin?->display_name ?? $admin?->username ?? '')),
                 'status' => 'done',
@@ -105,5 +125,12 @@ final class CrmActivityService
         if ($inquiry && $opportunity && (int) $opportunity->source_inquiry_id !== (int) $inquiry->id) {
             throw ValidationException::withMessages(['opportunity_id' => '活动询盘与商机来源不一致。']);
         }
+    }
+
+    private function normalizeActivityType(mixed $activityType): string
+    {
+        $type = trim((string) $activityType);
+
+        return array_key_exists($type, self::ACTIVITY_TYPES) ? $type : 'note';
     }
 }

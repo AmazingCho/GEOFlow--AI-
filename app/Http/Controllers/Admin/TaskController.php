@@ -19,6 +19,7 @@ use App\Models\Task;
 use App\Models\TitleLibrary;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Services\GeoFlow\EntityMaterialLinkService;
+use App\Services\GeoFlow\SkillPromptRecommendationService;
 use App\Services\GeoFlow\TagService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
@@ -51,6 +52,7 @@ class TaskController extends Controller
         private readonly TaskMonitoringQueryService $taskMonitoringQueryService,
         private readonly DistributionOrchestrator $distributionOrchestrator,
         private readonly EntityMaterialLinkService $entityMaterialLinkService,
+        private readonly SkillPromptRecommendationService $skillPromptRecommendationService,
         private readonly TagService $tagService,
     ) {}
 
@@ -86,6 +88,46 @@ class TaskController extends Controller
             'taskI18n' => $this->taskI18n(),
             'taskRealtime' => $this->taskRealtimeConfig(),
         ]);
+    }
+
+    /**
+     * 任务回收站：只展示已删除任务，允许恢复，不提供彻底删除入口。
+     */
+    public function trash(): View
+    {
+        try {
+            $tasks = $this->taskMonitoringQueryService->listTrashedTaskMonitoringRows();
+            $error = null;
+        } catch (Throwable $e) {
+            $tasks = [];
+            $error = __('admin.tasks.message.query_failed', ['message' => $e->getMessage()]);
+        }
+
+        return view('admin.tasks.trash', [
+            'pageTitle' => __('admin.tasks.trash.page_title'),
+            'activeMenu' => 'tasks',
+            'adminSiteName' => AdminWeb::siteName(),
+            'tasks' => $tasks,
+            'legacyError' => $error,
+        ]);
+    }
+
+    /**
+     * 从回收站恢复任务。
+     */
+    public function restore(int $taskId): RedirectResponse
+    {
+        if ($taskId <= 0) {
+            return back()->withErrors(__('admin.tasks.message.restore_failed', ['message' => __('admin.tasks.trash.invalid_task')]));
+        }
+
+        try {
+            $this->taskLifecycleService->restoreTask($taskId);
+
+            return back()->with('message', __('admin.tasks.message.restore_success'));
+        } catch (Throwable $e) {
+            return back()->withErrors(__('admin.tasks.message.restore_failed', ['message' => $e->getMessage()]));
+        }
     }
 
     /**
@@ -469,11 +511,12 @@ class TaskController extends Controller
             ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
 
-        $skillPrompts = Prompt::query()
-            ->select(['id', 'name'])
+        $skillPromptRows = Prompt::query()
+            ->select(['id', 'name', 'content'])
             ->where('type', 'skill')
             ->orderBy('name')
-            ->get()
+            ->get();
+        $skillPrompts = $skillPromptRows
             ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
 
@@ -577,6 +620,10 @@ class TaskController extends Controller
             'titleLibraries' => $titleLibraries,
             'prompts' => $prompts,
             'skillPrompts' => $skillPrompts,
+            'skillPromptRecommendations' => $this->skillPromptRecommendationService->recommendForTitleLibraries(
+                collect($titleLibraries)->pluck('id')->map(static fn ($id): int => (int) $id)->all(),
+                $skillPromptRows
+            ),
             'aiModels' => $aiModels,
             'imageLibraries' => $imageLibraries,
             'imageTags' => $imageTags,
@@ -626,7 +673,7 @@ class TaskController extends Controller
             'crm_source_id' => ['nullable', 'integer', 'min:1'],
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'content')],
-            'skill_prompt_id' => ['nullable', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'skill')],
+            'skill_prompt_id' => ['nullable'],
             'ai_model_id' => ['required', 'integer', 'min:1'],
             'author_id' => ['nullable', 'integer', 'min:0'],
             'image_library_id' => ['nullable', 'integer', 'min:1'],
@@ -657,6 +704,7 @@ class TaskController extends Controller
         }
 
         $payload = $request->validate($rules);
+        $this->assertSkillPromptSelection($payload);
         $this->assertCrmSourceExists($payload);
 
         return $payload;
@@ -682,7 +730,7 @@ class TaskController extends Controller
             'image_count' => (int) ($payload['image_count'] ?? 0),
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
-            'skill_prompt_id' => isset($payload['skill_prompt_id']) ? (int) $payload['skill_prompt_id'] : null,
+            'skill_prompt_id' => $this->resolveSkillPromptId($payload),
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
             'knowledge_base_id' => isset($payload['knowledge_base_id']) ? (int) $payload['knowledge_base_id'] : null,
@@ -704,6 +752,54 @@ class TaskController extends Controller
             'auto_keywords' => $request->boolean('auto_keywords') ? 1 : 0,
             'auto_description' => $request->boolean('auto_description') ? 1 : 0,
         ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function assertSkillPromptSelection(array $payload): void
+    {
+        $rawValue = $payload['skill_prompt_id'] ?? '';
+        if (is_array($rawValue) || is_object($rawValue)) {
+            throw ValidationException::withMessages([
+                'skill_prompt_id' => __('admin.task_create.error.skill_prompt_invalid'),
+            ]);
+        }
+
+        $value = trim((string) $rawValue);
+        if ($value === '' || $value === SkillPromptRecommendationService::AUTO_VALUE) {
+            return;
+        }
+
+        if (! ctype_digit($value) || (int) $value <= 0 || ! Prompt::query()->whereKey((int) $value)->where('type', 'skill')->exists()) {
+            throw ValidationException::withMessages([
+                'skill_prompt_id' => __('admin.task_create.error.skill_prompt_invalid'),
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function resolveSkillPromptId(array $payload): ?int
+    {
+        $rawValue = $payload['skill_prompt_id'] ?? '';
+        if (is_array($rawValue) || is_object($rawValue)) {
+            return null;
+        }
+
+        $value = trim((string) $rawValue);
+        if ($value === '') {
+            return null;
+        }
+
+        if ($value === SkillPromptRecommendationService::AUTO_VALUE) {
+            $recommendation = $this->skillPromptRecommendationService->recommendForTitleLibrary((int) ($payload['title_library_id'] ?? 0));
+
+            return isset($recommendation['skill_prompt_id']) ? (int) $recommendation['skill_prompt_id'] : null;
+        }
+
+        return ctype_digit($value) ? (int) $value : null;
     }
 
     /**

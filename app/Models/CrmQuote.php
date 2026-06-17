@@ -23,6 +23,7 @@ class CrmQuote extends Model
         'document_type',
         'title',
         'buyer_company',
+        'buyer_tax_number',
         'buyer_contact',
         'buyer_phone',
         'buyer_email',

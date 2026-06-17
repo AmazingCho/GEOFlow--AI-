@@ -89,11 +89,25 @@
                                         + (int) ($collection->keyword_libraries_count ?? 0)
                                         + (int) ($collection->title_libraries_count ?? 0)
                                         + (int) ($collection->image_libraries_count ?? 0);
+                                    $healthSummary = $healthSummaries[(int) $collection->id] ?? ['score' => 0, 'status' => 'critical', 'failed_count' => 0];
+                                    $healthClass = match ((string) ($healthSummary['status'] ?? 'critical')) {
+                                        'good' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                                        'warning' => 'bg-amber-50 text-amber-700 ring-amber-100',
+                                        default => 'bg-red-50 text-red-700 ring-red-100',
+                                    };
                                 @endphp
                                 <tr>
                                     <td class="px-6 py-4">
-                                        <div class="text-sm font-semibold text-gray-900">{{ $collection->name }}</div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <div class="text-sm font-semibold text-gray-900">{{ $collection->name }}</div>
+                                            <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 {{ $healthClass }}">
+                                                {{ __('admin.collections.health.score_badge', ['score' => (int) ($healthSummary['score'] ?? 0)]) }}
+                                            </span>
+                                        </div>
                                         <div class="mt-1 text-xs text-gray-500">{{ $collection->slug }}</div>
+                                        @if((int) ($healthSummary['failed_count'] ?? 0) > 0)
+                                            <div class="mt-1 text-xs text-gray-500">{{ __('admin.collections.health.failed_hint', ['count' => (int) $healthSummary['failed_count']]) }}</div>
+                                        @endif
                                         @if ((string) ($collection->description ?? '') !== '')
                                             <div class="mt-2 max-w-2xl text-sm leading-6 text-gray-600">{{ $collection->description }}</div>
                                         @endif
@@ -118,6 +132,10 @@
                                     </td>
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex flex-wrap justify-end gap-2">
+                                            <a href="{{ route('admin.collections.health', ['collectionId' => (int) $collection->id]) }}" class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                                                <i data-lucide="activity" class="mr-1 h-4 w-4"></i>
+                                                {{ __('admin.collections.health.action') }}
+                                            </a>
                                             <form method="POST" action="{{ route('admin.collections.default', ['collectionId' => (int) $collection->id]) }}" class="inline-flex">
                                                 @csrf
                                                 <button type="submit" class="inline-flex items-center rounded border px-3 py-1.5 text-xs font-medium {{ (int) \App\Support\AdminWeb::defaultCollectionId() === (int) $collection->id ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50' }}" title="{{ (int) \App\Support\AdminWeb::defaultCollectionId() === (int) $collection->id ? '取消默认' : '设为默认业务容器' }}">

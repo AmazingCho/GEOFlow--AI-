@@ -57,6 +57,40 @@ class CrmOpportunityController extends Controller
         ]);
     }
 
+    public function kanban(Request $request): View
+    {
+        $collectionId = (int) $request->query('collection_id', 0);
+        $rows = CrmOpportunity::query()
+            ->with([
+                'customer',
+                'sourceInquiry',
+                'tasks' => static fn ($query) => $query
+                    ->where('status', '<>', 'done')
+                    ->orderByRaw('due_at IS NULL')
+                    ->orderBy('due_at')
+                    ->latest('id'),
+            ])
+            ->when($collectionId > 0, static fn ($query) => $query->where('collection_id', $collectionId))
+            ->latest('updated_at')
+            ->get();
+
+        return view('admin.crm.opportunities.kanban', [
+            'pageTitle' => '商机看板',
+            'activeMenu' => 'crm',
+            'adminSiteName' => AdminWeb::siteName(),
+            'opportunities' => $rows->groupBy('stage'),
+            'stages' => self::STAGES,
+            'collectionId' => $collectionId,
+            'collectionOptions' => CollectionOptions::all(),
+            'summary' => [
+                'total' => $rows->count(),
+                'open' => $rows->filter(static fn (CrmOpportunity $opportunity): bool => ! in_array((string) $opportunity->stage, ['won', 'lost'], true))->count(),
+                'amount' => $rows->sum(static fn (CrmOpportunity $opportunity): float => (float) ($opportunity->amount ?? 0)),
+                'open_tasks' => $rows->sum(static fn (CrmOpportunity $opportunity): int => $opportunity->tasks->count()),
+            ],
+        ]);
+    }
+
     public function create(Request $request): View
     {
         $inquiryId = (int) $request->query('inquiry_id', 0);
@@ -104,12 +138,15 @@ class CrmOpportunityController extends Controller
                 'sourceInquiry.entities',
                 'sourceInquiry.knowledgeBases',
                 'sourceInquiry.cases',
+                'sourceInquiry.quotes.salesOrders.tickets',
+                'sourceInquiry.salesOrders.tickets',
                 'tasks' => static fn ($query) => $query
                     ->orderByRaw('due_at IS NULL')
                     ->orderBy('due_at')
                     ->latest('id'),
                 'tasks.assignee',
                 'quotes.inquiry',
+                'quotes.salesOrders.tickets',
                 'activities' => static fn ($query) => $query->with(['inquiry', 'opportunity', 'task'])->latest('created_at'),
             ])
             ->findOrFail($opportunityId);

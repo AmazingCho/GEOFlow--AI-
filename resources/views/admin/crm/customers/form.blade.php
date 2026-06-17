@@ -119,6 +119,10 @@
                             <input type="email" name="email" maxlength="200" value="{{ old('email', (string) ($customerForm['email'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="客户邮箱 / 联系邮箱">
                         </div>
                         <div>
+                            <label class="mb-2 block text-sm font-medium text-gray-700">税号</label>
+                            <input type="text" name="tax_number" maxlength="120" value="{{ old('tax_number', (string) ($customerForm['tax_number'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="VAT / Tax ID / ABN">
+                        </div>
+                        <div>
                             <label class="mb-2 block text-sm font-medium text-gray-700">职位</label>
                             <input type="text" name="contact_title" maxlength="160" value="{{ old('contact_title', (string) ($customerForm['contact_title'] ?? '')) }}" class="{{ $fieldClass }}" placeholder="采购经理 / 工程负责人">
                         </div>

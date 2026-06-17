@@ -6,9 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Task extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'tasks';
 
     protected $fillable = [
@@ -87,6 +90,7 @@ class Task extends Model
             'next_publish_at' => 'datetime',
             'last_success_at' => 'datetime',
             'last_error_at' => 'datetime',
+            'deleted_at' => 'datetime',
             'schedule_enabled' => 'integer',
             'max_retry_count' => 'integer',
         ];

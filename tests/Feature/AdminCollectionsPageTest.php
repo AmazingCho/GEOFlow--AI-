@@ -9,10 +9,12 @@ use App\Models\EntityRecord;
 use App\Models\ImageLibrary;
 use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
+use App\Models\KnowledgeChunk;
 use App\Models\TitleLibrary;
 use App\Support\GeoFlow\CaseTypes;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AdminCollectionsPageTest extends TestCase
@@ -211,6 +213,92 @@ class AdminCollectionsPageTest extends TestCase
                 ->assertSee('search=demo', false)
                 ->assertSee('collection_id='.(int) $collection->id, false);
         }
+    }
+
+    public function test_collection_health_page_reports_readiness_and_list_badge(): void
+    {
+        $admin = $this->admin('collection_health_admin');
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Healthy Collection Test',
+            'slug' => 'healthy-collection-test',
+            'description' => '',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+        $entity = EntityRecord::query()->create([
+            'name' => 'SJ4060',
+            'entity_type' => 'product_model',
+            'collection_id' => (int) $collection->id,
+        ]);
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => 'SJ4060 Manual',
+            'description' => '',
+            'content' => 'SJ4060 product source content.',
+            'collection_id' => (int) $collection->id,
+        ]);
+        DB::table('entity_material_links')->insert([
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'primary',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        KnowledgeChunk::query()->create([
+            'knowledge_base_id' => (int) $knowledgeBase->id,
+            'chunk_index' => 0,
+            'content' => 'SJ4060 chunk.',
+            'content_hash' => sha1('SJ4060 chunk.'),
+            'embedding_json' => json_encode([0.1, 0.2]),
+            'embedding_dimensions' => 2,
+            'embedding_provider' => 'test',
+        ]);
+        TitleLibrary::query()->create([
+            'name' => 'SJ4060 Titles',
+            'collection_id' => (int) $collection->id,
+        ]);
+        ImageLibrary::query()->create([
+            'name' => 'SJ4060 Images',
+            'collection_id' => (int) $collection->id,
+        ]);
+        CaseRecord::query()->create([
+            'title' => 'SJ4060 Case',
+            'case_type' => CaseTypes::APPLICATION_SCENARIO,
+            'entity_id' => (int) $entity->id,
+            'collection_id' => (int) $collection->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.collections.index'))
+            ->assertOk()
+            ->assertSee(route('admin.collections.health', ['collectionId' => (int) $collection->id]), false)
+            ->assertSee(__('admin.collections.health.score_badge', ['score' => 100]));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.collections.health', ['collectionId' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee(__('admin.collections.health.heading'))
+            ->assertSee(__('admin.collections.health.status.good'))
+            ->assertSee(__('admin.collections.health.no_penalty'));
+    }
+
+    public function test_empty_collection_health_page_shows_high_risk(): void
+    {
+        $admin = $this->admin('empty_collection_health_admin');
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Empty Health Collection',
+            'slug' => 'empty-health-collection',
+            'description' => '',
+            'status' => 'active',
+            'sort_order' => 1,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.collections.health', ['collectionId' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee(__('admin.collections.health.status.critical'))
+            ->assertSee(__('admin.collections.health.penalty', ['points' => 20]))
+            ->assertSee(__('admin.collections.health.checks.has_entity.label'));
     }
 
     private function admin(string $username = 'collection_admin'): Admin

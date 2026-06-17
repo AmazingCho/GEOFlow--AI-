@@ -18,6 +18,12 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 
 所有新增功能应保持增量、向后兼容，优先保护已有业务流程和用户数据。
 
+## 用户协作方式
+
+用户通常用业务语言、页面现象、片段 HTML、截图线索或不完整描述来提出需求，不要求使用技术术语。
+
+每次动手前，先按 [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md) 做产品经理式转译：理解业务目标、影响页面、期望行为、边界保护和验收标准。不要把描述不清直接当作阻塞；只有涉及不可逆删除、数据迁移、权限安全、外部发布、费用调用，或多个业务方向无法判断时，才停下来问用户。
+
 ## 核心架构规则
 
 - Collection 是顶层业务容器，不让标签承担 Collection 职责。
@@ -27,7 +33,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - Tag 只描述可复用属性，分组由白名单控制，避免无限扩展。
 - 关键词库和图片库不使用库级标签；标题库可以保留库级标签。
 - 知识库不使用 `case_study` 作为资料类型，避免和 Case DB 重复。
-- Prompt Skill System v1 是 Master Prompt + 可选 Skill Prompt，不自动匹配意图。
+- Prompt Skill System v1 是 Master Prompt + 可选 Skill Prompt；创建任务页支持规则版智能推荐，但必须保留不使用和手动覆盖。
 
 详细边界见 [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)。
 
@@ -41,8 +47,9 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 商机来自询盘或无来源直接创建；同一询盘只能有一个活动商机。商机归档不会删除待办、活动或单据。
 - 单据保存会校验并归一化客户、询盘、商机和 Collection 销售链，冲突组合会拒绝保存。
 - `crm:pipeline-audit` 默认只读，`--apply` 只修复唯一候选历史断链；当前真实数据已从 16 项降至 8 项，剩余项需人工判断。
-- 单据制作支持报价单、PI、CI、装箱单和合同，并可从已有单据转换出带来源关系的独立记录。
-- HTML 打印预览是当前稳定输出方案；自动 PDF/Excel 导出没有前端入口，不要误判为已完成能力。
+- 单据制作支持报价单、PI、CI、装箱单和合同；当前推荐通过打印类型切换输出，不在前端创建独立副本，避免单据列表膨胀。
+- CRM 单据 PDF 已采用 Chromium/Puppeteer 路线，复用 HTML 打印模板生成 A4 PDF；详情页和打印预览页已有“下载 PDF”入口，HTML 打印预览仍是失败兜底。后台“PDF 回归检查”可生成五类真实样本回归包、设置视觉基线并做截图 diff。Excel 导出不作为主流程。
+- 打印模板已支持动态明细分页和动态 `Page X of Y`，长报价单、长 PI 会自动拆分第一页、续页、末页；PI 银行页会按总页数顺延。
 - 不同素材的自动 tag 推荐已按用户要求移除；保留手动选择既有标签和白名单标签分组治理。
 - Knowledge / Entity / Case 的 AI 自动分析已统一使用 `MaterialAnalysisPromptRules`。
 - URL 智能采集创建任务页可选择 AI 分析模型；不选时自动选择并保留 failover。
@@ -51,7 +58,9 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 网站设置页已有模板工厂 / 站点模板复刻入口，支持 3 个参考页面生成隔离草稿、预览、迭代、发布和打包。
 - 分发首页最近日志已分页；后台登录页已有首次部署默认账号提示。
 - 当前本地浏览器后台入口是 `/admin`，`/geo_admin` 可能 404；遇到入口问题先查环境配置、缓存和容器挂载。
-- 任务回收站、AI 知识库纠错助手仍未实现。
+- AI 知识库纠错助手已完成核心闭环：AI 只生成纠错提案，管理员确认后才应用；应用会刷新对应知识片段 embedding 并保存版本，可从版本记录回滚。
+- 知识库切片/向量化已完成异步队列状态增强：列表页和详情页可看到 queued/running/completed/failed，后台 Job 会写回时间与错误，失败可重试。
+- 任务回收站仍未实现。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。
 
@@ -60,6 +69,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 不要每次全量读取 `agent-docs` 或 `功能说明文档`。
 
 - 普通新任务：读本文件 + 本次涉及的代码文件。
+- 新功能/修复/优化：先按 [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md) 转译需求。
 - 架构判断：再读 [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)。
 - 阶段/进度判断：再读 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) 和 [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)。
 - 具体功能使用方式：按 [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) 只读相关功能说明。
@@ -81,7 +91,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 
 - 不要把标签重新设计成 Collection。
 - 不要恢复不同素材的自动 tag 推荐，除非用户重新确认。
-- 不要让 Skill Prompt 承担素材分类、标签或知识库 metadata 职责。
+- 不要让 Skill Prompt 承担素材分类、标签或知识库 metadata 职责；智能推荐只用于文章结构策略兜底。
 - 不要让模板复刻流程直接覆盖现有主题文件；必须先生成草稿、预览、确认再发布。
 - UI 改动要复用已有组件，并遵守 GEOFlow UI skill 中的输入框、下拉、border 规则。
 - 涉及 Laravel 测试时，注意 APP_KEY 和 Docker 环境，见 GEOFlow testing skill。

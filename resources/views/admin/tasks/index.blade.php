@@ -62,7 +62,11 @@
                 <h1 class="text-2xl font-bold text-gray-900">{{ __('admin.tasks.page_title') }}</h1>
                 <p class="mt-1 text-sm text-gray-600">{{ __('admin.tasks.page_subtitle') }}</p>
             </div>
-            <div class="flex space-x-3">
+            <div class="flex flex-wrap justify-end gap-3">
+                <a href="{{ route('admin.tasks.trash') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                    {{ __('admin.tasks.trash.entry') }}
+                </a>
                 <a href="{{ route('admin.tasks.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
                     <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
                     {{ __('admin.button.create_task') }}

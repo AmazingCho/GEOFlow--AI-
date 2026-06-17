@@ -10,6 +10,7 @@
 
 1. [AGENT_BRIEF.md](./AGENT_BRIEF.md)
 2. [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)
+3. [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md)
 
 只有当前任务需要阶段细节、风险细节或架构判断时，再读取：
 
@@ -19,6 +20,17 @@
 - [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
 
 如果涉及具体功能，再读取 [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) 中对应的功能说明。
+
+## 需求理解前置规则
+
+任何新功能、修复、样式调整或流程优化，都先按 [USER_REQUIREMENT_INTERPRETATION.md](./USER_REQUIREMENT_INTERPRETATION.md) 做产品经理式需求转译。
+
+执行时遵守：
+
+1. 用户可以用非技术语言描述问题，Agent 负责转成页面、对象、流程、验收标准和技术任务。
+2. 不要因为措辞不专业或描述不完整就要求用户补技术细节；先从代码、页面和文档中自行定位。
+3. 如果需求可能影响现有数据、删除语义、发布行为、权限安全或费用调用，必须先明确风险并询问。
+4. 如果需求可以合理推断，就直接执行，并在最终说明中用业务语言解释结果。
 
 ## 开发中必须检查
 
@@ -112,4 +124,3 @@
 `php -l file.blade.php` 只能检查纯 PHP 语法，不能检查 Blade 指令（`@if`、`@php`、`@push` 等）的编译结果。Blade 编译错误只在页面访问时才会暴露。
 
 **正确做法：** 通过 `php artisan test --filter=EntityPageTest` 或 `php artisan tinker --execute="view('...')->render()"` 实际编译一次 Blade 模板来验证。
-

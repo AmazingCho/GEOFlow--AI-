@@ -92,6 +92,14 @@
         || count($selectedImageTagFilters) > 0;
     $hasDistributionConfiguration = count($selectedDistributionChannelIds) > 0
         || $publishScope !== 'local_and_distribution';
+    $autoSkillPromptValue = \App\Services\GeoFlow\SkillPromptRecommendationService::AUTO_VALUE;
+    $selectedSkillPromptValue = (string) old('skill_prompt_id', $isEdit ? (string) ($taskForm['skill_prompt_id'] ?? '') : $autoSkillPromptValue);
+    $skillPromptRecommendations = $formOptions['skillPromptRecommendations'] ?? [];
+    $skillPromptIntentLabels = [
+        'comparison' => $t('task_create.skill_recommendation.intent.comparison'),
+        'buying_guide' => $t('task_create.skill_recommendation.intent.buying_guide'),
+        'application' => $t('task_create.skill_recommendation.intent.application'),
+    ];
     $fieldClass = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
     $compactFieldClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
 @endphp
@@ -280,12 +288,25 @@
                             <div class="order-3">
                                 <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
                                 <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
-                                    <option value="">{{ $t('task_create.option.no_skill_prompt') }}</option>
+                                    <option value="{{ $autoSkillPromptValue }}" @selected($selectedSkillPromptValue === $autoSkillPromptValue)>{{ $t('task_create.option.auto_skill_prompt') }}</option>
+                                    <option value="" @selected($selectedSkillPromptValue === '')>{{ $t('task_create.option.no_skill_prompt') }}</option>
                                     @foreach (($formOptions['skillPrompts'] ?? []) as $prompt)
-                                        <option value="{{ $prompt['id'] }}" @selected((string) old('skill_prompt_id', (string) ($taskForm['skill_prompt_id'] ?? '')) === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                        <option value="{{ $prompt['id'] }}" @selected($selectedSkillPromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
                                     @endforeach
                                 </select>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
+                                <div
+                                    data-skill-prompt-recommendation
+                                    data-recommendations='@json($skillPromptRecommendations)'
+                                    data-intent-labels='@json($skillPromptIntentLabels)'
+                                    class="mt-3 hidden rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+                                >
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="rounded-full bg-blue-600 px-2 py-0.5 font-semibold text-white">{{ $t('task_create.skill_recommendation.badge') }}</span>
+                                        <span data-skill-recommendation-title class="font-semibold"></span>
+                                    </div>
+                                    <p data-skill-recommendation-reason class="mt-1 leading-5 text-blue-800"></p>
+                                </div>
                             </div>
                             <div class="order-2 lg:col-span-2">
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
@@ -681,6 +702,10 @@
             }
 
             const titleLibrarySelect = document.getElementById('title_library_id');
+            const skillPromptSelect = document.getElementById('skill_prompt_id');
+            const skillPromptRecommendationPanel = document.querySelector('[data-skill-prompt-recommendation]');
+            const skillPromptRecommendationTitle = document.querySelector('[data-skill-recommendation-title]');
+            const skillPromptRecommendationReason = document.querySelector('[data-skill-recommendation-reason]');
             const knowledgeBaseSelect = document.getElementById('knowledge_base_id');
             const imageLibrarySelect = document.getElementById('image_library_id');
             const crmSourceTypeSelect = document.getElementById('crm_source_type');
@@ -705,6 +730,14 @@
             if (!form) {
                 return;
             }
+
+            const autoSkillPromptValue = @json($autoSkillPromptValue);
+            const skillPromptRecommendations = skillPromptRecommendationPanel
+                ? JSON.parse(skillPromptRecommendationPanel.getAttribute('data-recommendations') || '{}')
+                : {};
+            const skillPromptIntentLabels = skillPromptRecommendationPanel
+                ? JSON.parse(skillPromptRecommendationPanel.getAttribute('data-intent-labels') || '{}')
+                : {};
 
             const requiredFields = [
                 { id: 'task_name', label: @json($t('task_create.field.task_name')) },
@@ -731,6 +764,38 @@
 
                 if (submitButton) {
                     submitButton.disabled = missing.length > 0;
+                }
+            }
+
+            function syncSkillPromptRecommendation() {
+                if (!skillPromptSelect || !skillPromptRecommendationPanel || !titleLibrarySelect) {
+                    return;
+                }
+
+                const selectedLibraryId = String(titleLibrarySelect.value || '').trim();
+                const recommendation = skillPromptRecommendations[selectedLibraryId];
+                const shouldShow = String(skillPromptSelect.value || '') === autoSkillPromptValue && recommendation;
+                skillPromptRecommendationPanel.classList.toggle('hidden', !shouldShow);
+                if (!shouldShow) {
+                    return;
+                }
+
+                const intentLabel = skillPromptIntentLabels[recommendation.intent] || recommendation.intent || '';
+                const confidence = recommendation.confidence ? ` · ${recommendation.confidence}%` : '';
+                if (skillPromptRecommendationTitle) {
+                    skillPromptRecommendationTitle.textContent = `${recommendation.skill_prompt_name || ''}${confidence}`;
+                }
+
+                const samples = Array.isArray(recommendation.sample_titles)
+                    ? recommendation.sample_titles.filter(Boolean).slice(0, 2).join(' / ')
+                    : '';
+                if (skillPromptRecommendationReason) {
+                    skillPromptRecommendationReason.textContent = samples
+                        ? @json($t('task_create.skill_recommendation.reason_with_samples'))
+                            .replace('__INTENT__', intentLabel)
+                            .replace('__SAMPLES__', samples)
+                        : @json($t('task_create.skill_recommendation.reason_without_samples'))
+                            .replace('__INTENT__', intentLabel);
                 }
             }
 
@@ -854,6 +919,7 @@
                 syncNativeSelectByCollection(titleLibrarySelect, true);
                 syncNativeSelectByCollection(knowledgeBaseSelect, true);
                 syncCrmSourceOptions();
+                syncSkillPromptRecommendation();
                 window.setTimeout(syncImageLibrariesByEntities, 0);
             }
 
@@ -960,6 +1026,8 @@
             });
             collectionSelect?.addEventListener('change', syncContextOptionsByCollection);
             crossCollectionCheckbox?.addEventListener('change', syncContextOptionsByCollection);
+            titleLibrarySelect?.addEventListener('change', syncSkillPromptRecommendation);
+            skillPromptSelect?.addEventListener('change', syncSkillPromptRecommendation);
             crmSourceTypeSelect?.addEventListener('change', syncCrmSourceOptions);
             needReviewCheckbox.addEventListener('change', togglePublishInterval);
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
@@ -1013,6 +1081,7 @@
 
             syncImageLibrariesByEntities();
             syncContextOptionsByCollection();
+            syncSkillPromptRecommendation();
             togglePublishInterval();
             handleCategoryModeChange();
             syncDraftLimitMax();

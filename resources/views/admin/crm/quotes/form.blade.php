@@ -191,6 +191,10 @@
                         <label class="mb-2 block text-sm font-medium text-gray-700">公司名</label>
                         <input type="text" name="buyer_company" maxlength="200" value="{{ old('buyer_company', (string) ($quoteForm['buyer_company'] ?? '')) }}" class="{{ $inputClass }}">
                     </div>
+                    <div class="lg:col-span-3">
+                        <label class="mb-2 block text-sm font-medium text-gray-700">税号</label>
+                        <input type="text" name="buyer_tax_number" maxlength="120" value="{{ old('buyer_tax_number', (string) ($quoteForm['buyer_tax_number'] ?? '')) }}" class="{{ $inputClass }}" placeholder="VAT / Tax ID / ABN">
+                    </div>
                     <div class="lg:col-span-2">
                         <label class="mb-2 block text-sm font-medium text-gray-700">电话</label>
                         <input type="text" name="buyer_phone" maxlength="120" value="{{ old('buyer_phone', (string) ($quoteForm['buyer_phone'] ?? '')) }}" class="{{ $inputClass }}">
@@ -239,7 +243,7 @@
                             </div>
                         </div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">Bank Account JSON</label>
-                        <textarea name="bank_account_json" rows="8" class="{{ $textareaClass }} font-mono text-xs" data-json-template-field>{{ $bankAccountJsonValue }}</textarea>
+                        <textarea name="bank_account_json" rows="10" class="{{ $textareaClass }} font-mono text-xs" data-json-template-field>{{ $bankAccountJsonValue }}</textarea>
                         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                             <label class="inline-flex items-center gap-2 text-sm text-gray-600">
                                 <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" data-profile-default>
@@ -674,6 +678,7 @@
                 const fields = {
                     buyer_contact: profile.contact_person || '',
                     buyer_company: profile.name || '',
+                    buyer_tax_number: profile.tax_number || '',
                     buyer_phone: profile.phone || '',
                     buyer_email: profile.email || '',
                     buyer_country: profile.country || '',

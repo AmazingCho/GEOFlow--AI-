@@ -118,6 +118,27 @@
                     <div class="mt-4 whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">{{ $inquiry->raw_message ?: '暂无原文' }}</div>
                 </section>
 
+                @php
+                    $inquiryChainOrders = $inquiry->salesOrders
+                        ->merge($inquiry->quotes->flatMap(static fn ($quote) => $quote->salesOrders))
+                        ->unique('id')
+                        ->values();
+                    $inquiryChainTickets = $inquiryChainOrders
+                        ->flatMap(static fn ($order) => $order->tickets)
+                        ->unique('id')
+                        ->values();
+                @endphp
+                @include('admin.crm.partials._document-chain', [
+                    'title' => '单据链路',
+                    'description' => '从当前询盘追踪关联商机、单据、订单和售后工单，避免同一客户项目被拆散查看。',
+                    'chainCustomer' => $inquiry->customer,
+                    'chainInquiry' => $inquiry,
+                    'chainOpportunities' => $inquiry->opportunities,
+                    'chainQuotes' => $inquiry->quotes,
+                    'chainOrders' => $inquiryChainOrders,
+                    'chainTickets' => $inquiryChainTickets,
+                ])
+
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -189,7 +210,8 @@
                         @csrf
                         @include('admin.crm.partials._markdown-editor', ['fieldName' => 'content', 'rows' => 4, 'placeholder' => '跟进内容（支持 Markdown）'])
                         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <input type="text" name="followup_type" placeholder="活动类型：电话 / 邮件 / 会议" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            @include('admin.crm.partials._activity-type-select')
+                            <input type="text" name="followup_type" maxlength="80" placeholder="补充备注（可选）" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                         </div>
                         @include('admin.crm.partials._activity-next-task-fields')
                         <input type="hidden" name="owner" value="{{ $inquiry->assigned_to ?? '' }}">

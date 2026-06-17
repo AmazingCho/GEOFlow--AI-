@@ -33,6 +33,16 @@ class KnowledgeBase extends Model
         'archive',
     ];
 
+    public const CHUNK_SYNC_IDLE = 'idle';
+
+    public const CHUNK_SYNC_QUEUED = 'queued';
+
+    public const CHUNK_SYNC_RUNNING = 'running';
+
+    public const CHUNK_SYNC_COMPLETED = 'completed';
+
+    public const CHUNK_SYNC_FAILED = 'failed';
+
     protected $fillable = [
         'collection_id',
         'name',
@@ -50,6 +60,13 @@ class KnowledgeBase extends Model
         'file_path',
         'word_count',
         'usage_count',
+        'chunk_sync_status',
+        'chunk_sync_message',
+        'chunk_sync_requires_real_embedding',
+        'chunk_sync_queued_at',
+        'chunk_sync_started_at',
+        'chunk_sync_completed_at',
+        'chunk_sync_failed_at',
     ];
 
     protected function casts(): array
@@ -61,12 +78,22 @@ class KnowledgeBase extends Model
             'importance' => 'integer',
             'word_count' => 'integer',
             'usage_count' => 'integer',
+            'chunk_sync_requires_real_embedding' => 'boolean',
+            'chunk_sync_queued_at' => 'datetime',
+            'chunk_sync_started_at' => 'datetime',
+            'chunk_sync_completed_at' => 'datetime',
+            'chunk_sync_failed_at' => 'datetime',
         ];
     }
 
     public function chunks(): HasMany
     {
         return $this->hasMany(KnowledgeChunk::class, 'knowledge_base_id');
+    }
+
+    public function corrections(): HasMany
+    {
+        return $this->hasMany(KnowledgeCorrection::class, 'knowledge_base_id');
     }
 
     public function collection(): BelongsTo

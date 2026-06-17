@@ -64,13 +64,36 @@ class AdminArticleGenerationTraceTest extends TestCase
                             'retrieval_sources' => ['fallback_embedding_hybrid'],
                         ],
                         'tag_filters' => ['行业:制造业'],
+                        'knowledge_bases' => [
+                            [
+                                'id' => 11,
+                                'name' => 'Trace Knowledge',
+                                'knowledge_type' => 'product_manual',
+                                'knowledge_role' => 'primary_source',
+                                'importance' => 5,
+                            ],
+                        ],
+                        'context_package' => [
+                            'selected_entity_ids' => [5],
+                            'selected_case_ids' => [6],
+                            'used_knowledge_base_ids' => [11],
+                        ],
                         'chunks' => [
                             [
+                                'knowledge_base_id' => 11,
                                 'knowledge_base_name' => 'Trace Knowledge',
+                                'knowledge_type' => 'product_manual',
+                                'knowledge_role' => 'primary_source',
+                                'importance' => 5,
                                 'chunk_index' => 2,
                                 'evidence_score' => 72,
                                 'retrieval_source' => 'fallback_embedding_hybrid',
                                 'match_reasons' => ['keyword_overlap', 'source_priority'],
+                                'score_components' => [
+                                    'vector' => 0.25,
+                                    'lexical' => 0.5,
+                                    'metadata' => 0.05,
+                                ],
                                 'preview' => 'Trace knowledge preview',
                             ],
                         ],
@@ -117,8 +140,12 @@ class AdminArticleGenerationTraceTest extends TestCase
             ->assertSee('Trace Model')
             ->assertSee('Trace Knowledge')
             ->assertSee(__('admin.article_edit.generation_trace.evidence_score'))
-            ->assertSee('fallback_embedding_hybrid')
-            ->assertSee('keyword_overlap')
+            ->assertSee(__('admin.article_edit.generation_trace.rag_explain_hint'))
+            ->assertSee(__('admin.article_edit.generation_trace.knowledge_bases_used'))
+            ->assertSee(__('admin.article_edit.generation_trace.used_knowledge_bases'))
+            ->assertSee(__('admin.article_edit.generation_trace.retrieval_sources.fallback_embedding_hybrid'))
+            ->assertSee(__('admin.article_edit.generation_trace.match_reason_labels.keyword_overlap'))
+            ->assertSee(__('admin.article_edit.generation_trace.score_components.vector'))
             ->assertSee('Trace Entity')
             ->assertSee('Trace Case')
             ->assertSee('trace-image.png')

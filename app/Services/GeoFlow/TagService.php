@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
 
 class TagService
 {
+    private const STATS_CACHE_KEY = 'admin:material-tags:stats:v1';
+
     /**
      * @return list<array{group_name:string,name:string}>
      */
@@ -380,6 +382,6 @@ class TagService
 
     private function flushTagStatsCache(): void
     {
-        Cache::forget('admin.material_tags.stats');
+        Cache::forget(self::STATS_CACHE_KEY);
     }
 }
