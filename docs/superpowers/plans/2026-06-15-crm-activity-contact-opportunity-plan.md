@@ -1,66 +1,24 @@
-# CRM Activity, Contact, and Opportunity Implementation Plan
+# CRM Activity, Contact, and Opportunity Plan - Archived Completion Report
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+更新时间：2026-06-19
+状态：已完成归档，不再作为待执行计划
 
-**Goal:** Fix optional contact creation, make historical CRM activities editable and visibly deletable, and remove duplicated next-step entry from opportunities.
+## 结论
 
-**Architecture:** Keep the existing `crm_follow_ups`, `crm_tasks`, and `crm_opportunities` tables for backward compatibility. Normalize optional contact strings at the controller boundary, expose one shared activity update route, and treat CRM tasks as the single source of truth for future opportunity actions.
+这份计划原本用于修复 CRM 联系人可选字段、活动记录编辑/删除、商机下一步来源边界。相关核心工作已经完成并写入 `agent-docs/IMPLEMENTATION_STATUS.md`、`agent-docs/KNOWN_ISSUES.md` 和 changelog。
 
-**Tech Stack:** Laravel, Eloquent, Blade, Tailwind CSS, PostgreSQL, PHPUnit feature tests.
+## 已完成内容
 
----
+| 模块 | 状态 | 当前规则 |
+| --- | --- | --- |
+| 外部联系人可选字段 | 已完成 | 创建/编辑联系人时可选字符串字段在控制器边界归一化，避免 PostgreSQL 非空字段报错 |
+| 活动记录编辑/删除 | 已完成 | 客户和询盘详情页的历史活动支持编辑与软删除；只读时间线仍保持只读 |
+| 商机下一步来源 | 已完成 | 未来动作统一来自 `crm_tasks`；商机不再维护独立手写 next-step 字段作为提醒来源 |
+| 文档与验证 | 已完成 | CRM 责任边界已同步到 agent docs；相关 CRM 回归测试已通过 |
 
-### Task 1: Contact Optional Fields
+## 后续注意
 
-**Files:**
-- Modify: `tests/Feature/AdminCrmPagesTest.php`
-- Modify: `app/Http/Controllers/Admin/CrmContactController.php`
-
-- [x] Add a failing feature test that creates a contact with only `name` and expects optional string columns to persist as empty strings.
-- [x] Run the focused test and confirm the current PostgreSQL not-null failure.
-- [x] Normalize nullable validated strings before create/update.
-- [x] Run the focused test and confirm it passes.
-
-### Task 2: Activity Editing and Deletion
-
-**Files:**
-- Modify: `tests/Feature/AdminCrmPagesTest.php`
-- Modify: `routes/web.php`
-- Modify: `app/Http/Controllers/Admin/CrmInquiryController.php`
-- Modify: `resources/views/admin/crm/partials/_follow-up-item.blade.php`
-- Modify: `resources/views/admin/crm/customers/show.blade.php`
-- Modify: `resources/views/admin/crm/inquiries/show.blade.php`
-
-- [x] Add a failing feature test for activity update and soft deletion.
-- [x] Add a shared activity update route and validated update action.
-- [x] Add an inline edit form using the shared lightweight Markdown editor.
-- [x] Keep edit controls limited to customer and inquiry detail pages; other timelines remain read-only.
-- [x] Make edit/delete controls visible without relying on hover.
-- [x] Run focused and full CRM tests.
-
-### Task 3: Opportunity Next Action Source
-
-**Files:**
-- Modify: `tests/Feature/AdminCrmPagesTest.php`
-- Modify: `app/Http/Controllers/Admin/CrmOpportunityController.php`
-- Modify: `resources/views/admin/crm/opportunities/form.blade.php`
-
-- [x] Add a failing test proving opportunities no longer render manual next-step inputs and show the first open CRM task.
-- [x] Remove `next_step` and `next_step_at` from active form validation and inquiry conversion payloads while retaining database columns for compatibility.
-- [x] Order opportunity tasks by due date and show the first unfinished task as the current next action.
-- [x] Keep the existing task creation and task list UI as the editing surface.
-- [x] Run CRM regression tests and visually inspect customer, inquiry, and opportunity pages.
-
-### Task 4: Documentation and Verification
-
-**Files:**
-- Modify: `docs/CHANGELOG.md`
-- Modify: `docs/CHANGELOG_en.md`
-- Modify: `agent-docs/IMPLEMENTATION_STATUS.md`
-- Modify: `agent-docs/KNOWN_ISSUES.md`
-
-- [x] Document the contact root cause and the activity/task/opportunity responsibility boundary.
-- [x] Run PHP lint for changed PHP and Blade files.
-- [x] Run `AdminCrmPagesTest` with the current Docker `APP_KEY`.
-- [x] Clear Laravel and compiled Blade caches.
-- [x] Verify the changed pages in the local browser at desktop width.
+- 已发生沟通继续写入活动记录。
+- 未来动作继续写入 `crm_tasks`。
+- 不要把活动记录和待办重新合并成一个字段。
+- 如需扩展自动活动流，应单独规划状态变更、单据创建、订单推进和邮件事件的记录规则。

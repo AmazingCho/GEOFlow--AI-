@@ -4,6 +4,19 @@
 
 ## 2026-06-19
 
+### Codex 业务录入助手 API Phase 2-6
+
+- 新增 AI 录入草稿箱数据层：`ai_intake_drafts` 和 `ai_intake_actions`，用于保存 Codex / AI 生成的待审核业务录入建议。
+- 新增 `assistant:write` API scope，以及 `POST /api/v1/assistant/intake-drafts/validate`、`POST /api/v1/assistant/intake-drafts`、`GET /api/v1/assistant/intake-drafts/{id}`。
+- 草稿创建接口复用现有统一响应信封、Request-Id 和 `X-Idempotency-Key` 幂等机制；重复提交同一草稿不会重复创建记录。
+- 新增后台“AI 录入草稿箱”，超级管理员可查看原始输入、AI 摘要、动作内容、风险、置信度、治理提醒，并执行应用或拒绝。
+- 管理员应用草稿后，支持创建低风险 CRM 记录：客户、询盘、活动记录、待办和售后工单草稿。
+- 知识库和 Case 动作只会创建 `crm_content_proposals` 内容候选，不会直接覆盖知识库正文或直接写入 Case DB。
+- 新增基础治理提醒：缺少 Collection、疑似重复客户、低置信度草稿和低置信度动作；草稿列表支持按状态、风险和来源筛选。
+- 新增本地调用脚本 `scripts/codex-intake.mjs`，可通过环境变量中的 API Token 调用 context search、create draft 和 show draft。
+- 新增用户说明文档 `功能说明文档/12-Codex业务录入助手API使用说明.md`，并同步更新 Agent 文档、白皮书和实现状态。
+- 验证：`AssistantIntakeDraftApiTest` 通过，共 7 tests / 73 assertions；新增 PHP、Blade 文件语法检查通过；容器内 `node --check scripts/codex-intake.mjs` 通过。
+
 ### Codex 业务录入助手 API Phase 0-1
 
 - 完成 Codex 业务录入助手的 API 能力审计，确认现有 API 已具备 Bearer Token、scope、统一响应信封、Request-Id 和幂等写操作基础。

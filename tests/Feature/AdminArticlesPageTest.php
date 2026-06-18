@@ -204,6 +204,10 @@ class AdminArticlesPageTest extends TestCase
         $this->assertStringContainsString('style=', $html);
         $this->assertStringContainsString('<h2', $html);
         $this->assertStringContainsString('<strong', $html);
+        $this->assertStringContainsString('class="table-scroll"', $html);
+        $this->assertStringContainsString('overflow-x: auto;', $html);
+        $this->assertStringNotContainsString('article-table-wrap', $html);
+        $this->assertStringNotContainsString('article-table', $html);
         $this->assertStringContainsString('<table', $html);
         $this->assertStringNotContainsString('<script', $html);
     }

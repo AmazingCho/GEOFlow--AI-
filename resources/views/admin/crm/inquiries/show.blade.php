@@ -16,7 +16,8 @@
     $priorityLabels = ['low' => '低', 'normal' => '普通', 'high' => '高', 'urgent' => '紧急'];
     $conversionOpenTaskCount = $inquiry->crmTasks->filter(static fn ($task) => (string) $task->status !== 'done' && !$task->opportunity_id)->count();
     $conversionDocumentCount = $inquiry->quotes->whereNull('opportunity_id')->count();
-    $conversionConfirmText = '确认转为商机？系统会补关联 '.$conversionOpenTaskCount.' 个未完成待办和 '.$conversionDocumentCount.' 份已有单据，不会复制记录。';
+    $conversionActivityCount = $inquiry->followUps->whereNull('opportunity_id')->count();
+    $conversionConfirmText = '确认转为商机？系统会补关联 '.$conversionOpenTaskCount.' 个未完成待办、'.$conversionDocumentCount.' 份已有单据和 '.$conversionActivityCount.' 条活动记录，不会复制记录。';
 @endphp
 
 @section('content')
@@ -169,9 +170,10 @@
                         @endforelse
                     </div>
                     @if ($inquiry->opportunities->isEmpty())
-                        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div class="mt-4 grid gap-3 sm:grid-cols-3">
                             <div class="rounded-md border border-blue-100 bg-blue-50 px-4 py-3"><div class="text-xs font-medium text-blue-700">将补关联的未完成待办</div><div class="mt-1 text-xl font-semibold text-blue-950">{{ $conversionOpenTaskCount }}</div></div>
                             <div class="rounded-md border border-purple-100 bg-purple-50 px-4 py-3"><div class="text-xs font-medium text-purple-700">将补关联的已有单据</div><div class="mt-1 text-xl font-semibold text-purple-950">{{ $conversionDocumentCount }}</div></div>
+                            <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3"><div class="text-xs font-medium text-slate-700">将补关联的活动记录</div><div class="mt-1 text-xl font-semibold text-slate-950">{{ $conversionActivityCount }}</div></div>
                         </div>
                     @endif
                 </section>

@@ -121,7 +121,7 @@ class CrmOpportunityController extends Controller
         $result = $conversionService->convert($inquiry, $this->payloadFromInquiry($inquiry), auth('admin')->user());
         $opportunity = $result['opportunity'];
         $message = $result['created']
-            ? sprintf('已创建商机，并关联 %d 个未完成待办、%d 份已有单据', $result['linked_tasks'], $result['linked_documents'])
+            ? sprintf('已创建商机，并关联 %d 个未完成待办、%d 份已有单据、%d 条活动记录', $result['linked_tasks'], $result['linked_documents'], $result['linked_activities'])
             : '该询盘已存在关联商机';
 
         return redirect()

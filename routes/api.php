@@ -11,6 +11,7 @@
 
 use App\Http\Controllers\Api\V1\ArticleController;
 use App\Http\Controllers\Api\V1\AssistantContextController;
+use App\Http\Controllers\Api\V1\AssistantIntakeDraftController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\JobController;
@@ -32,6 +33,13 @@ Route::prefix('v1')
 
             // assistant:read — AI 录入助手只读上下文搜索（不写入业务数据）
             Route::get('assistant/context/search', [AssistantContextController::class, 'search'])
+                ->middleware('api.scope:assistant:read');
+            Route::post('assistant/intake-drafts/validate', [AssistantIntakeDraftController::class, 'validateDraft'])
+                ->middleware('api.scope:assistant:write');
+            Route::post('assistant/intake-drafts', [AssistantIntakeDraftController::class, 'store'])
+                ->middleware('api.scope:assistant:write');
+            Route::get('assistant/intake-drafts/{draft}', [AssistantIntakeDraftController::class, 'show'])
+                ->whereNumber('draft')
                 ->middleware('api.scope:assistant:read');
 
             // tasks:* — 任务 CRUD、启停、入队、子 Job 列表

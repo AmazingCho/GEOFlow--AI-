@@ -65,7 +65,7 @@
 | 首次部署登录提示 | 已完成 | 默认管理员首次成功登录前显示初始账号提示，可通过环境变量关闭 |
 | 功能说明文档 | 已完成 | 已创建 `功能说明文档/` |
 | Agent 交接文档 | 已完成 | 已创建 `agent-docs/` |
-| Codex 业务录入助手 API Phase 0-1 | 已完成核心功能 | 已完成 API 能力审计并新增只读 `GET /api/v1/assistant/context/search`，支持 `assistant:read` scope 和 Collection 限定，返回客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库和 Case 候选；暂不写入业务数据 |
+| Codex 业务录入助手 API Phase 0-6 | 已完成核心功能 | 已完成 API 能力审计、只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒；Codex 仍只创建草稿，最终业务表写入必须由管理员确认 |
 
 ## 部分完成，建议继续检查
 
@@ -141,6 +141,8 @@
 - CRM 轻量增强第一批验证：基线 `crm:pipeline-audit --json` 可生成报告；`AdminCrmPagesTest` 全量通过，共 32 tests / 292 assertions，覆盖客户总览、销售链条展示、活动类型保存/编辑和待办完成写回活动。
 - CRM 轻量增强阶段 3 验证：`AdminCrmPagesTest` 全量通过，共 33 tests / 301 assertions，覆盖商机 Kanban 阶段卡片、客户、金额、来源询盘和下一步待办展示；浏览器检查 `/admin/crm/opportunities/kanban` 桌面和移动布局无横向溢出、无控制台错误。
 - CRM 轻量增强阶段 4 验证：`AdminCrmPagesTest` 全量通过，共 34 tests / 323 assertions，覆盖询盘、商机、客户三处单据链路展示与单据/订单/售后详情链接；浏览器检查三处页面桌面和移动布局均无横向溢出、无控制台错误。截图接口本次连续超时，已记录为工具限制。
+- Codex 业务录入助手 API Phase 0-1 验证：`AssistantContextApiTest` 与 `ApiV1ContractTest` 联合通过，共 17 tests / 108 assertions；接口为只读上下文搜索，不写入 CRM 或素材业务表。
+- Codex 业务录入助手 API Phase 2-6 验证：`AssistantIntakeDraftApiTest` 通过，共 7 tests / 73 assertions，覆盖 `assistant:write` scope、草稿创建、草稿预检、幂等创建、后台草稿箱审核应用、知识库/Case 内容候选和重复客户/低置信度/缺 Collection 治理提醒；PHP/Blade lint 通过，容器内 `node --check scripts/codex-intake.mjs` 通过。
 
 ## 2026-06-12 上游功能融入
 

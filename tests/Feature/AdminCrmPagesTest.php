@@ -299,7 +299,7 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('Chain after-sales issue');
         $opportunityContent = $opportunityResponse->getContent();
         $chainPosition = strpos($opportunityContent, '单据链路');
-        $asidePosition = strpos($opportunityContent, '<aside class="space-y-6">');
+        $asidePosition = strpos($opportunityContent, '<aside class="space-y-6');
         $this->assertNotFalse($chainPosition);
         $this->assertNotFalse($asidePosition);
         $this->assertLessThan($asidePosition, $chainPosition);
@@ -1420,12 +1420,20 @@ class AdminCrmPagesTest extends TestCase
             'currency' => 'USD',
             'status' => 'draft',
         ]);
+        $activity = CrmFollowUp::query()->create([
+            'customer_id' => $customer->id,
+            'inquiry_id' => $inquiry->id,
+            'activity_type' => 'note',
+            'content' => 'Existing inquiry activity',
+            'status' => 'done',
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.inquiries.show', ['inquiryId' => $inquiry->id]))
             ->assertOk()
             ->assertSee('将补关联的未完成待办')
-            ->assertSee('将补关联的已有单据');
+            ->assertSee('将补关联的已有单据')
+            ->assertSee('将补关联的活动记录');
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.crm.opportunities.from-inquiry', ['inquiryId' => $inquiry->id]))
@@ -1435,8 +1443,10 @@ class AdminCrmPagesTest extends TestCase
         $this->assertDatabaseHas('crm_tasks', ['id' => $openTask->id, 'opportunity_id' => $opportunity->id]);
         $this->assertDatabaseHas('crm_tasks', ['id' => $doneTask->id, 'opportunity_id' => null]);
         $this->assertDatabaseHas('crm_quotes', ['id' => $document->id, 'opportunity_id' => $opportunity->id]);
+        $this->assertDatabaseHas('crm_follow_ups', ['id' => $activity->id, 'opportunity_id' => $opportunity->id]);
         $this->assertSame(2, CrmTask::query()->where('inquiry_id', $inquiry->id)->count());
         $this->assertSame(1, CrmQuote::query()->where('inquiry_id', $inquiry->id)->count());
+        $this->assertSame(1, CrmFollowUp::query()->where('inquiry_id', $inquiry->id)->count());
     }
 
     public function test_new_tasks_keep_inquiry_and_opportunity_sales_chain(): void

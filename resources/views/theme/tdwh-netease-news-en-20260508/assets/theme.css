@@ -698,7 +698,7 @@
     color: #555;
 }
 
-.ne-prose .article-table-wrap {
+.ne-prose .table-scroll {
     max-width: 100%;
     overflow-x: auto;
     border: 1px solid var(--ne-line);
@@ -706,7 +706,7 @@
 }
 
 .ne-prose table,
-.ne-prose .article-table {
+.ne-prose .table-scroll table {
     width: max(680px, 100%);
     border-collapse: collapse;
     font-size: 15px;

@@ -60,7 +60,8 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 当前本地浏览器后台入口是 `/admin`，`/geo_admin` 可能 404；遇到入口问题先查环境配置、缓存和容器挂载。
 - AI 知识库纠错助手已完成核心闭环：AI 只生成纠错提案，管理员确认后才应用；应用会刷新对应知识片段 embedding 并保存版本，可从版本记录回滚。
 - 知识库切片/向量化已完成异步队列状态增强：列表页和详情页可看到 queued/running/completed/failed，后台 Job 会写回时间与错误，失败可重试。
-- 任务回收站仍未实现。
+- 任务回收站已完成核心功能：任务删除为软删除，已生成文章与来源任务关系保留；恢复后任务保持暂停。如需永久删除，必须先确认数据保留策略。
+- Codex 业务录入助手 API Phase 0-6 已完成核心功能：已新增只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒。仍不能跳过草稿箱直接写 CRM、知识库或 Case 最终业务表。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。
 

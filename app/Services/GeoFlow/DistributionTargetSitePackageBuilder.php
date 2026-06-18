@@ -265,7 +265,7 @@ h2{font-size:22px;margin:0 0 10px}h2 a{color:#111827;text-decoration:none}h2 a:h
 .content ul,.content ol{margin:0 0 1.2em 1.25em;padding:0}.content li{margin:.35em 0}.content strong{font-weight:700;color:#111827}.content a{color:#2563eb;text-decoration:underline;text-underline-offset:3px}
 .content img{display:block;max-width:100%;height:auto;border-radius:8px;margin:24px auto}.content blockquote{margin:1.4em 0;padding:14px 18px;border-left:4px solid #dbeafe;background:#f8fafc;color:#374151}
 .content pre{overflow:auto;border-radius:8px;background:#111827;color:#f9fafb;padding:16px;margin:1.4em 0}.content code{border-radius:4px;background:#f3f4f6;padding:2px 5px;font-size:.92em}.content pre code{background:transparent;padding:0;color:inherit}
-.content .article-table-wrap{overflow-x:auto;margin:1.4em 0;border:1px solid #e5e7eb;border-radius:8px}.content .article-table{width:100%;border-collapse:collapse;background:#fff}.content .article-table th,.content .article-table td{border-bottom:1px solid #e5e7eb;padding:10px 12px;text-align:left;vertical-align:top}.content .article-table th{background:#f9fafb;color:#111827;font-weight:700}
+.content .table-scroll{overflow-x:auto;margin:1.4em 0;border:1px solid #e5e7eb;border-radius:8px}.content .table-scroll table{width:100%;border-collapse:collapse;background:#fff}.content .table-scroll th,.content .table-scroll td{border-bottom:1px solid #e5e7eb;padding:10px 12px;text-align:left;vertical-align:top}.content .table-scroll th{background:#f9fafb;color:#111827;font-weight:700}
 .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px;padding-top:22px;border-top:1px solid #e5e7eb}.tags span{display:inline-flex;border:1px solid #e5e7eb;background:#f9fafb;color:#4b5563;border-radius:999px;padding:5px 10px;font-size:13px}
 .empty{padding:52px;text-align:center;color:#6b7280}.back{display:inline-block;margin:28px 0 18px;color:#4b5563;text-decoration:none}
 footer{border-top:1px solid #e5e7eb;color:#6b7280;font-size:13px;padding:24px 0 36px}
@@ -555,7 +555,7 @@ function markdownTableToHtml(array $rows): string
 
     $header = markdownTableCells((string) $rows[0]);
     $bodyRows = array_slice($rows, 2);
-    $html = '<div class="article-table-wrap"><table class="article-table"><thead><tr>';
+    $html = '<div class="table-scroll" style="overflow-x: auto;"><table><thead><tr>';
     foreach ($header as $cell) {
         $html .= '<th>'.inlineMarkdown($cell).'</th>';
     }

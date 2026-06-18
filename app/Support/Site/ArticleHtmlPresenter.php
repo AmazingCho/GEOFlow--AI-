@@ -11,6 +11,8 @@ use League\CommonMark\GithubFlavoredMarkdownConverter;
  */
 final class ArticleHtmlPresenter
 {
+    private const TABLE_SCROLL_STYLE = 'overflow-x: auto;';
+
     /**
      * 将 Markdown 转为 HTML（剥离不安全 HTML 输入）。
      */
@@ -91,12 +93,24 @@ final class ArticleHtmlPresenter
 
     private static function decorateRenderedHtml(string $html): string
     {
-        $html = preg_replace('/<table>/u', '<div class="article-table-wrap"><table class="article-table">', $html) ?? $html;
+        $html = preg_replace_callback(
+            '/<table\b([^>]*)>/iu',
+            static fn (array $matches): string => self::responsiveTableOpenTag((string) ($matches[1] ?? '')),
+            $html
+        ) ?? $html;
         $html = preg_replace('/<\/table>/u', '</table></div>', $html) ?? $html;
         $html = preg_replace('/<p>\s*(<img\b[^>]*>)\s*<\/p>/u', '$1', $html) ?? $html;
         $html = preg_replace('/<img\b(?![^>]*\bloading=)/u', '<img loading="lazy"', $html) ?? $html;
         $html = preg_replace('/<img\b(?![^>]*\bdecoding=)/u', '<img decoding="async"', $html) ?? $html;
 
         return $html;
+    }
+
+    private static function responsiveTableOpenTag(string $attributes): string
+    {
+        $attributes = trim($attributes);
+        $tableAttributes = $attributes !== '' ? ' '.$attributes : '';
+
+        return '<div class="table-scroll" style="'.self::TABLE_SCROLL_STYLE.'"><table'.$tableAttributes.'>';
     }
 }

@@ -1,5 +1,7 @@
 # GEOFlow 网站模板复刻 Agent 实施方案
 
+> 状态：已完成核心功能的历史实施方案。当前后台已有模板工厂 / 站点模板复刻入口，支持 3 个参考页面生成隔离草稿、预览、迭代、发布、打包和归档。本文保留为设计背景，最新状态请以 `agent-docs/IMPLEMENTATION_STATUS.md`、`agent-docs/AGENT_BRIEF.md` 和 `功能说明文档/11-文章编辑器与模板复刻使用说明.md` 为准。
+
 ## 1. 背景与目标
 
 当前后台的「网站设置 - 网站模板」已经支持从内置主题中选择前台模板，主题目录位于 `resources/views/theme/{主题目录名}`，并通过 `manifest.json`、Blade 页面、partials 和独立 CSS 组成一套可切换的前台展示层。

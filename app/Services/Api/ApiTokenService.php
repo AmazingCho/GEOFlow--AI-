@@ -174,6 +174,7 @@ class ApiTokenService
     {
         return [
             'assistant:read',
+            'assistant:write',
             'catalog:read',
             'tasks:read',
             'tasks:write',

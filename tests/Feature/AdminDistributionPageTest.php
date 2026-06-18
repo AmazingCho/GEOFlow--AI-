@@ -1036,7 +1036,8 @@ class AdminDistributionPageTest extends TestCase
         $this->assertStringContainsString("preg_match('~^(?:https?://|/|#)~i'", $frontController);
         $this->assertStringNotContainsString("preg_match('#^(https?://|/|#)#i'", $frontController);
         $this->assertStringContainsString("article['content_html']", $frontController);
-        $this->assertStringContainsString('article-table-wrap', $frontController);
+        $this->assertStringContainsString('class="table-scroll"', $frontController);
+        $this->assertStringNotContainsString('article-table-wrap', $frontController);
         $this->assertStringContainsString('class="tags"', $frontController);
         $this->assertStringContainsString('.content h2', $siteCss);
         $this->assertStringContainsString('function activeTheme', $frontController);
@@ -1809,7 +1810,9 @@ MD,
             && $request->url() === 'https://example.com/geoflow-agent/v1/articles'
             && str_contains((string) $request['article']['content_html'], '<h2>核心摘要</h2>')
             && str_contains((string) $request['article']['content_html'], '<strong>提及率</strong>')
-            && str_contains((string) $request['article']['content_html'], '<div class="article-table-wrap"><table class="article-table">')
+            && str_contains((string) $request['article']['content_html'], '<div class="table-scroll" style="overflow-x: auto;"><table>')
+            && ! str_contains((string) $request['article']['content_html'], 'article-table-wrap')
+            && ! str_contains((string) $request['article']['content_html'], 'article-table')
             && str_contains((string) $request['article']['content_html'], 'src="/storage/uploads/images/2026/04/demo.png"')
             && ! str_contains((string) $request['article']['content_html'], '<h1>已发布分发文章</h1>'));
     }

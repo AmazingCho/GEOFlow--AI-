@@ -1,5 +1,7 @@
 # GEOFlow 多平台分发功能一期方案
 
+> 状态：长期架构参考，不是当前待执行计划。GEOFlow 当前分发管理已具备渠道、队列、日志、目标站 Agent、WordPress REST 等核心能力；最新实现状态请以 `docs/CHANGELOG.md`、`agent-docs/IMPLEMENTATION_STATUS.md` 和实际代码为准。本文保留用于后续 Provider 扩展思路，不应直接覆盖现有分发链路。
+
 > 目标：在不影响 GEOFlow 现有站内生成、审核、发布链路的前提下，新增一套可扩展的多平台分发能力。站内发布仍是主链路，外部分发作为独立队列处理，避免外部平台 API 失败拖垮内容生产。
 
 ## 1. 功能定位

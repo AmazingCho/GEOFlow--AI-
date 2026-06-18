@@ -1,5 +1,7 @@
 # Entity-to-Entity 关联 — CRM 侧价值及实现清单
 
+> 状态：长期增强规划 / 部分基础能力已存在。`entity_relations` 与 `relation_types` 基础表、Entity 编辑页手动关系入口已存在；本文描述的 CRM 侧自动推荐、单据明细联动、订单建议行、售后关联卡片等能力不要视为已完成，也不要在没有用户明确确认时一次性执行。当前已完成状态以 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) 为准。
+
 本文档基于 `entity关联强化思路.txt` 中的路线，详细列出 Entity-to-Entity 关系表建成后，CRM 管线每一步的具体价值、触发时机和实现细节。
 
 ---

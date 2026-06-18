@@ -33,7 +33,9 @@ MD);
 
         $this->assertStringContainsString('<h2>二级标题</h2>', $html);
         $this->assertStringContainsString('<h3>三级标题</h3>', $html);
-        $this->assertStringContainsString('<div class="article-table-wrap"><table class="article-table">', $html);
+        $this->assertStringContainsString('<div class="table-scroll" style="overflow-x: auto;"><table>', $html);
+        $this->assertStringNotContainsString('article-table-wrap', $html);
+        $this->assertStringNotContainsString('article-table', $html);
         $this->assertStringContainsString('src="/storage/uploads/images/2026/04/demo.png"', $html);
         $this->assertStringNotContainsString('333.png', $html);
         $this->assertStringContainsString('type="checkbox"', $html);
@@ -64,7 +66,10 @@ MD);
         $this->get(route('site.article', $article->slug))
             ->assertOk()
             ->assertSee('src="/storage/uploads/images/2026/04/demo.png"', false)
-            ->assertSee('<table class="article-table">', false)
+            ->assertSee('class="table-scroll"', false)
+            ->assertSee('<table>', false)
+            ->assertDontSee('article-table-wrap', false)
+            ->assertDontSee('article-table', false)
             ->assertDontSee('333.png', false);
     }
 

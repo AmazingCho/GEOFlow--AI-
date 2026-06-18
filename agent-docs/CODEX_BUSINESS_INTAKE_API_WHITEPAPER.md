@@ -1,19 +1,25 @@
 # Codex 业务录入助手 API 白皮书
 
 更新时间：2026-06-19  
-状态：Phase 0 / Phase 1 已进入实现与验证阶段  
+状态：Phase 0-6 已完成核心功能；后续可继续扩展 CRM 专用 API、单动作编辑和更细治理规则
 目标模块：GEOFlow API、轻量 CRM、知识库、Case DB、售后、订单、Agent 协作流程
 
 ## 0. 当前实施状态
 
 截至 2026-06-19：
 
-- Phase 0 已完成初步审计：现有 `/api/v1` 已具备 Bearer Token、scope、统一响应信封、Request-Id 和幂等写操作基础；缺口集中在 CRM 写入 API、Assistant 草稿箱、预检 / 确认 / 应用流程和专用审计。
-- Phase 1 已新增只读上下文搜索的实现方向：`GET /api/v1/assistant/context/search`，scope 为 `assistant:read`。
-- Phase 1 的接口只允许读取候选上下文，不创建、不更新、不删除任何业务数据。
+- Phase 0 已完成审计：现有 `/api/v1` 已具备 Bearer Token、scope、统一响应信封、Request-Id 和幂等写操作基础。
+- Phase 1 已完成只读上下文搜索：`GET /api/v1/assistant/context/search`，scope 为 `assistant:read`。
+- Phase 2 已完成 AI 录入草稿箱：`POST /api/v1/assistant/intake-drafts` 和 `POST /api/v1/assistant/intake-drafts/validate`，scope 为 `assistant:write`。
+- Phase 3 已完成低风险 CRM 应用：超级管理员在后台确认后，可创建客户、询盘、活动记录、待办和售后工单草稿。
+- Phase 4 已完成知识库 / Case Proposal：AI 只创建 `crm_content_proposals` 候选，不直接覆盖知识库正文或直接写 Case。
+- Phase 5 已完成 Codex 本地调用脚本：`scripts/codex-intake.mjs` 可封装 search、create、show。
+- Phase 6 已完成基础治理提醒：支持 Collection 缺失、重复客户、低置信度草稿/动作等提醒，并可按风险筛选草稿。
+- Assistant 写接口只允许创建 reviewable draft；最终业务表写入必须由后台管理员确认。
 - 当前搜索范围覆盖：客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库、Case。
 - 搜索支持 `collection_id` 限定，避免跨业务容器误匹配。
-- 后续 Phase 2 才允许创建 `ai_intake_drafts` 草稿箱；不要跳过草稿箱直接写 CRM 业务表。
+- 已通过 `AssistantContextApiTest` 与 `ApiV1ContractTest` 联合验证，共 17 tests / 108 assertions。
+- 后续扩展仍必须遵守草稿箱边界；不要新增“Codex 直接写最终业务表”的捷径。
 
 ## 1. 产品目标
 
@@ -610,6 +616,8 @@ articles:publish
 
 ### Phase 2：AI 录入草稿箱
 
+状态：已完成核心功能。
+
 目标：Codex 可以创建草稿，但不直接入库。
 
 要做：
@@ -625,6 +633,8 @@ articles:publish
 - 后台可以看到每个动作的风险、置信度和关联对象。
 
 ### Phase 3：低风险 CRM 应用
+
+状态：已完成核心功能。
 
 目标：管理员确认后，系统可以创建低风险 CRM 记录。
 
@@ -652,6 +662,8 @@ articles:publish
 
 ### Phase 4：知识库 / Case Proposal
 
+状态：已完成核心功能。
+
 目标：把售后、询盘和客户沟通沉淀为知识库或 Case 候选。
 
 要做：
@@ -669,6 +681,8 @@ articles:publish
 
 ### Phase 5：Codex 本地调用适配
 
+状态：已完成核心功能。
+
 目标：让 Codex 能通过稳定脚本调用 GEOFlow API。
 
 要做：
@@ -684,6 +698,8 @@ articles:publish
 - Token 不出现在文档和聊天记录里。
 
 ### Phase 6：治理与质量增强
+
+状态：已完成基础治理提醒。
 
 目标：避免 AI 草稿箱变成新的混乱来源。
 
@@ -759,13 +775,20 @@ UI 需要：
 
 ## 18. 推荐下一步
 
-如果后续要进入开发，建议从 Phase 0 和 Phase 1 开始。
+Phase 0-6 已完成核心功能。后续如继续开发，建议从以下方向中选择：
 
-第一条开发提示词可以是：
+1. 单个 action 的后台编辑后应用。
+2. `ai_intake_matches` 候选匹配解释表。
+3. 更多 CRM API：客户、询盘、商机、订单、售后只读/写入接口。
+4. 重复售后、重复 Case、重复知识库 proposal 的更细检测。
+5. 长期未处理草稿清理策略和批量归档。
+
+后续增强提示词可以是：
 
 ```text
-基于 agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md，先执行 Phase 0 和 Phase 1。
-目标是审计现有 API 和 CRM 数据结构，新增只读 Assistant Context Search API。
-不要新增最终写入业务表的能力。
-完成后更新白皮书中的实现状态，并提供 API 示例、scope 说明和测试结果。
+基于 agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md，继续增强 Codex 业务录入助手 API。
+优先实现单个 action 的后台编辑后应用，以及 ai_intake_matches 候选匹配解释。
+所有增强必须保持“Codex 只创建草稿，管理员确认后才写最终业务表”的边界。
+不得新增直接覆盖知识库正文、直接关闭售后、直接修改订单金额或直接发布内容的捷径。
+完成后更新白皮书、IMPLEMENTATION_STATUS、功能说明文档，并提供 API 示例、scope 说明和测试结果。
 ```

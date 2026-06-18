@@ -38,6 +38,7 @@
 - [素材系统推荐使用方法](../功能说明文档/09-素材系统推荐使用方法.md)
 - [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)
 - [文章编辑器与模板复刻使用说明](../功能说明文档/11-文章编辑器与模板复刻使用说明.md)
+- [Codex 业务录入助手 API 使用说明](../功能说明文档/12-Codex业务录入助手API使用说明.md)
 
 ## 本目录文件职责
 
@@ -55,7 +56,8 @@
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
 | [CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md) | Codex / AI 通过 GEOFlow API 创建客户、订单、售后、Case、知识库录入草稿的规划白皮书 |
-| [MAINLINE_REMAINING_OPTIMIZATION_PLAN.md](./MAINLINE_REMAINING_OPTIMIZATION_PLAN.md) | 当前尚未执行的主线剩余优化计划 |
+| [MAINLINE_REMAINING_OPTIMIZATION_PLAN.md](./MAINLINE_REMAINING_OPTIMIZATION_PLAN.md) | 主线剩余优化的已完成归档报告，不再作为待执行清单 |
+| [Entity-to-Entity关联CRM侧实现清单.md](./Entity-to-Entity关联CRM侧实现清单.md) | Entity 关系在 CRM 场景中的长期增强规划，当前不是已完成主线 |
 | [CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md) | CRM 单据 PDF 五类真实样本视觉回归记录 |
 
 ## 每次开发后按需更新
@@ -79,4 +81,5 @@
 - 不同素材的自动 tag 推荐已移除；不要在未确认需求前恢复。
 - 文章创建/编辑页已接入 Vditor Markdown 编辑器，可复制 Markdown 或公众号/微信格式 HTML。
 - 网站设置页已有模板工厂 / 站点模板复刻入口；当前本地浏览器后台入口优先使用 `/admin`。
+- Codex 业务录入助手 API Phase 0-6 已完成核心功能：只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒均已落地；仍不要新增绕过草稿箱的直接写入捷径。
 - 上游 System Update Center 准备度补丁尚未接入，后续应单独规划。

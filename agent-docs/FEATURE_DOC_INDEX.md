@@ -126,6 +126,7 @@
 ## 轻量 CRM
 
 - [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)
+- [Codex 业务录入助手 API 使用说明](../功能说明文档/12-Codex业务录入助手API使用说明.md)
 - [CRM 单据 PDF 真实样本视觉回归记录](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md)
 - [Codex 业务录入助手 API 白皮书](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md)
 - [实现状态与验证记录](./IMPLEMENTATION_STATUS.md)
@@ -146,3 +147,4 @@
 - CRM 销售链路 V2 的当前规则、剩余历史歧义数据和已完成验证。
 - CRM 单据 PDF 当前采用 Chromium/Puppeteer 路线，HTML 打印预览作为失败兜底。
 - 修改单据模板后如何运行 PDF 回归检查。
+- Codex 如何通过 API 创建 AI 录入草稿，管理员如何在后台草稿箱确认后再写入 CRM 或内容候选。

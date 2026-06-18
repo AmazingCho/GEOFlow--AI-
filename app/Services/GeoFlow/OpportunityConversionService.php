@@ -3,6 +3,7 @@
 namespace App\Services\GeoFlow;
 
 use App\Models\Admin;
+use App\Models\CrmFollowUp;
 use App\Models\CrmInquiry;
 use App\Models\CrmOpportunity;
 use App\Models\CrmQuote;
@@ -15,7 +16,7 @@ final class OpportunityConversionService
 {
     /**
      * @param array<string, mixed> $attributes
-     * @return array{opportunity:CrmOpportunity,created:bool,linked_tasks:int,linked_documents:int}
+     * @return array{opportunity:CrmOpportunity,created:bool,linked_tasks:int,linked_documents:int,linked_activities:int}
      */
     public function convert(CrmInquiry $inquiry, array $attributes = [], ?Admin $admin = null): array
     {
@@ -32,6 +33,7 @@ final class OpportunityConversionService
                     'created' => false,
                     'linked_tasks' => 0,
                     'linked_documents' => 0,
+                    'linked_activities' => 0,
                 ];
             }
             if ((int) ($lockedInquiry->customer_id ?? 0) <= 0) {
@@ -62,6 +64,10 @@ final class OpportunityConversionService
                 ->where('inquiry_id', $lockedInquiry->id)
                 ->whereNull('opportunity_id')
                 ->update(['opportunity_id' => $opportunity->id]);
+            $linkedActivities = CrmFollowUp::query()
+                ->where('inquiry_id', $lockedInquiry->id)
+                ->whereNull('opportunity_id')
+                ->update(['opportunity_id' => $opportunity->id]);
 
             if (! in_array((string) $lockedInquiry->status, ['quoted', 'won', 'lost', 'closed'], true)) {
                 $lockedInquiry->update(['status' => 'converted']);
@@ -77,6 +83,7 @@ final class OpportunityConversionService
                         'inquiry_id' => (int) $lockedInquiry->id,
                         'linked_tasks' => (int) $linkedTasks,
                         'linked_documents' => (int) $linkedDocuments,
+                        'linked_activities' => (int) $linkedActivities,
                     ],
                 ]);
             }
@@ -86,6 +93,7 @@ final class OpportunityConversionService
                 'created' => true,
                 'linked_tasks' => (int) $linkedTasks,
                 'linked_documents' => (int) $linkedDocuments,
+                'linked_activities' => (int) $linkedActivities,
             ];
         });
     }

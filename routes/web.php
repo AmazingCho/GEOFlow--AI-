@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\ArticleController;
 use App\Http\Controllers\Admin\ArticleEditorAssetController;
+use App\Http\Controllers\Admin\AssistantIntakeDraftController;
 use App\Http\Controllers\Admin\AuthorController;
 use App\Http\Controllers\Admin\CaseController;
 use App\Http\Controllers\Admin\CategoryController;
@@ -508,6 +509,12 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
 
         // 超级管理员功能
         Route::middleware('admin.super')->group(function () {
+            Route::prefix('assistant/intake-drafts')->name('assistant-intake-drafts.')->group(function () {
+                Route::get('/', [AssistantIntakeDraftController::class, 'index'])->name('index');
+                Route::get('{draftId}', [AssistantIntakeDraftController::class, 'show'])->name('show')->whereNumber('draftId');
+                Route::post('{draftId}/apply', [AssistantIntakeDraftController::class, 'apply'])->name('apply')->whereNumber('draftId');
+                Route::post('{draftId}/reject', [AssistantIntakeDraftController::class, 'reject'])->name('reject')->whereNumber('draftId');
+            });
             Route::prefix('admin-users')->name('admin-users.')->group(function () {
                 Route::get('/', [AdminUserController::class, 'index'])->name('index');
                 Route::post('create', [AdminUserController::class, 'store'])->name('store');

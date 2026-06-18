@@ -94,7 +94,7 @@ final class WeChatArticleHtmlExporter
                 'th' => 'border:1px solid #e5e7eb;background:#f9fafb;color:#111827;padding:9px 10px;font-weight:700;text-align:left;font-size:14px;line-height:1.6;',
                 'td' => 'border:1px solid #e5e7eb;color:#374151;padding:9px 10px;text-align:left;font-size:14px;line-height:1.6;',
                 'hr' => 'border:none;border-top:1px solid #e5e7eb;margin:24px 0;',
-                'div' => $this->isTableWrapper($node) ? 'overflow-x:auto;margin:16px 0;' : '',
+                'div' => $this->isTableWrapper($node) ? 'overflow-x: auto;' : '',
                 default => '',
             };
 
@@ -109,6 +109,7 @@ final class WeChatArticleHtmlExporter
         $allowed = match ($tag) {
             'a' => ['href', 'title', 'target', 'rel'],
             'img' => ['src', 'alt', 'title', 'width', 'height'],
+            'div' => ['class'],
             'td', 'th' => ['colspan', 'rowspan'],
             'section' => ['data-geoflow-export'],
             default => [],

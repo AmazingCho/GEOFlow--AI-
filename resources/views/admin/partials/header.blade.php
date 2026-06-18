@@ -185,6 +185,10 @@
         'admin.api-tokens.index' => 'admin_users',
         'admin.api-tokens.store' => 'admin_users',
         'admin.api-tokens.revoke' => 'admin_users',
+        'admin.assistant-intake-drafts.index' => 'admin_users',
+        'admin.assistant-intake-drafts.show' => 'admin_users',
+        'admin.assistant-intake-drafts.apply' => 'admin_users',
+        'admin.assistant-intake-drafts.reject' => 'admin_users',
         'admin.admin-activity-logs' => 'admin_users',
     ];
     $routeName = request()->route()?->getName();
@@ -316,6 +320,10 @@
                             <a href="{{ route('admin.api-tokens.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <i data-lucide="key-round" class="w-4 h-4 inline mr-2"></i>
                                 {{ __('admin.nav.api_tokens') }}
+                            </a>
+                            <a href="{{ route('admin.assistant-intake-drafts.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i data-lucide="inbox" class="w-4 h-4 inline mr-2"></i>
+                                AI 录入草稿箱
                             </a>
                         @endif
                         <div class="border-t border-gray-100"></div>

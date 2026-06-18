@@ -1,6 +1,6 @@
 # GEOFlow 分发管理统一实施方案
 
-> **给 Agent 执行者：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务逐步执行。本文中的步骤使用复选框（`- [ ]`）语法，便于执行时跟踪进度。
+> 状态：历史实施方案 / 已完成核心闭环归档。当前分发管理实现状态请以 `docs/CHANGELOG.md`、`agent-docs/IMPLEMENTATION_STATUS.md` 和实际代码为准。本文保留用于理解设计背景和 Provider 扩展边界，不再作为需要逐项执行的计划文件。
 
 **目标：** 将 GEOFlow 的内容分发能力建设为 Agent 优先、异步执行、可扩展 Provider 的内容同步层，并确保远端分发失败不会阻塞或回滚本地文章发布。
 
@@ -1422,9 +1422,9 @@ Tests: 151 passed (705 assertions)
 - [x] 文章列表显示分发状态摘要。
 - [x] 任务列表显示分发状态摘要。
 
-后续继续完成：
+后续参考项：
 
-- [ ] Agent PHP 示例。
+- Agent PHP 示例可作为目标站接入体验增强单独规划；不要把它和当前分发核心闭环混为未完成阻塞。
 
 阶段 2 的验收标准：
 
@@ -1532,12 +1532,14 @@ UI：
 - longtask 生成的骨架文档：`docs/AcceptanceCriteria.md`、`docs/Architecture.md`、`docs/Assumptions.md`、`docs/BenchmarkReport.md`、`docs/DecisionLog.md`、`docs/DefinitionOfDone.md`、`docs/DeliveryReport.md`、`docs/DeploymentReport.md`、`docs/Documentation.md`、`docs/EvalReport.md`、`docs/Implement.md`、`docs/LongTaskSummary.md`、`docs/OutOfScope.md`、`docs/Plan.md`、`docs/ProductBrief.md`、`docs/TechnologyDecision.md`、`docs/TestStrategy.md`、`docs/UIAudit.md`、`docs/UISpec.md`
 - 单独的未跟踪草案 `docs/distribution/distribution-management-agent-plan.md`，除非项目明确希望保留历史草案。
 
-## 15. 发布检查清单
+## 15. 历史发布检查参考
 
-- [ ] `vendor/bin/pint --dirty --format agent`
-- [ ] `php artisan test --compact tests/Feature/AdminDistributionPageTest.php tests/Feature/AdminTasksPageTest.php tests/Feature/AdminArticlesPageTest.php`
-- [ ] `php artisan route:list --except-vendor --path=distribution`
-- [ ] `php artisan test --compact`
-- [ ] `git diff --check`
-- [ ] `git status --short --branch`
-- [ ] 选择性暂存，避开 `.longtask/`、`.env`、storage/log/cache/upload 文件，以及 longtask 生成的骨架文档。
+这些命令是历史实施阶段的检查参考，不代表当前存在待执行项：
+
+- `vendor/bin/pint --dirty --format agent`
+- `php artisan test --compact tests/Feature/AdminDistributionPageTest.php tests/Feature/AdminTasksPageTest.php tests/Feature/AdminArticlesPageTest.php`
+- `php artisan route:list --except-vendor --path=distribution`
+- `php artisan test --compact`
+- `git diff --check`
+- `git status --short --branch`
+- 选择性暂存，避开 `.longtask/`、`.env`、storage/log/cache/upload 文件，以及 longtask 生成的骨架文档。
