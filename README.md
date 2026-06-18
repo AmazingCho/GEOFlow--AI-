@@ -104,6 +104,14 @@ GEOFlow 2.0 重点变化包括：
 - **标签选择器优化**：素材编辑和任务创建中的标签选择采用搜索式交互，减少大量标签时的页面拥挤。
 - **库级标签规则调整**：关键词库和图片库不再保留库级标签，避免误解为库内素材自动继承；标题库保留库级标签。
 
+### API 与 AI 业务录入助手
+
+- **REST API 基础能力**：`/api/v1` 已支持 Bearer Token、scope 权限、统一 JSON 响应信封、Request-Id 追踪和写操作幂等键，便于外部工具或本地 agent 受控接入。
+- **Codex 业务录入助手规划**：新增 `agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md`，规划通过 Codex / AI 把客户、询盘、订单、售后、Case、知识库补充等自然语言思考整理为可审核草稿。
+- **Assistant Context Search API**：新增只读接口 `GET /api/v1/assistant/context/search`，通过 `assistant:read` scope 查询客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库和 Case 候选。
+- **Collection 安全边界**：上下文搜索支持 `collection_id` 限定，避免跨业务容器误匹配；客户候选也可通过关联询盘、订单、售后等业务链路命中。
+- **不直接写入业务数据**：当前阶段 API 只做上下文检索，不会创建、更新或删除 CRM / Case / 知识库数据；后续写入必须先进入 AI 录入草稿箱，并由管理员确认后应用。
+
 ### 审核、质量评分与兼容性
 
 - **文章质量评分**：文章列表和编辑页显示质量评分与问题建议，辅助优先审核低分文章。

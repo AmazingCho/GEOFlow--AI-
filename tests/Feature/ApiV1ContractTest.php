@@ -245,7 +245,7 @@ class ApiV1ContractTest extends TestCase
             ->assertJsonPath('data.deleted', true)
             ->assertJsonPath('data.id', $task->id);
 
-        $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
+        $this->assertSoftDeleted('tasks', ['id' => $task->id]);
     }
 
     public function test_task_create_accepts_omitted_optional_material_fields(): void

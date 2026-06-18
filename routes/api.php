@@ -10,6 +10,7 @@
  */
 
 use App\Http\Controllers\Api\V1\ArticleController;
+use App\Http\Controllers\Api\V1\AssistantContextController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\JobController;
@@ -28,6 +29,10 @@ Route::prefix('v1')
         Route::middleware(['api.auth'])->group(function (): void {
             // catalog:read — 下拉元数据（模型、提示词、库、作者、分类等）
             Route::get('catalog', [CatalogController::class, 'show'])->middleware('api.scope:catalog:read');
+
+            // assistant:read — AI 录入助手只读上下文搜索（不写入业务数据）
+            Route::get('assistant/context/search', [AssistantContextController::class, 'search'])
+                ->middleware('api.scope:assistant:read');
 
             // tasks:* — 任务 CRUD、启停、入队、子 Job 列表
             Route::get('tasks', [TaskController::class, 'index'])->middleware('api.scope:tasks:read');

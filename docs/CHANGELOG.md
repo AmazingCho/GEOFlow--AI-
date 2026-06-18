@@ -2,6 +2,18 @@
 
 该文档记录公开仓库可见功能的持续更新。后续每次推送到 GitHub 时，同步更新本文件和英文版 `CHANGELOG_en.md`。
 
+## 2026-06-19
+
+### Codex 业务录入助手 API Phase 0-1
+
+- 完成 Codex 业务录入助手的 API 能力审计，确认现有 API 已具备 Bearer Token、scope、统一响应信封、Request-Id 和幂等写操作基础。
+- 新增 `assistant:read` API scope，用于未来给 Codex / AI 助手授予最小只读上下文权限。
+- 新增只读接口 `GET /api/v1/assistant/context/search`，可按关键词和 Collection 搜索客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库和 Case 候选对象。
+- 搜索接口只返回上下文候选，不创建、不更新、不删除任何 CRM、知识库或 Case 数据，为后续 AI 录入草稿箱提供安全前置步骤。
+- 客户搜索支持通过关联询盘、商机、单据、订单和售后命中，适配用户输入“产品型号 / 问题描述”而非客户名的真实使用场景。
+- 更新 `agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md`，标记 Phase 0 / Phase 1 实施状态，并明确 Phase 2 才能进入草稿箱写入。
+- 验证：新增 `AssistantContextApiTest` 通过，共 4 tests / 24 assertions；`ApiV1ContractTest` 通过，共 13 tests / 84 assertions。同步修正任务删除 API 契约测试为软删除语义，匹配现有任务回收站行为。
+
 ## 2026-06-17
 
 ### 主线 Phase 1：任务回收站

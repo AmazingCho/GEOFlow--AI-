@@ -2,6 +2,18 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-19
+
+### Codex Business Intake API Phase 0-1
+
+- Completed the API capability audit for the Codex Business Intake Assistant. The existing API already provides Bearer tokens, scopes, a unified response envelope, Request-Id propagation, and idempotent write foundations.
+- Added the `assistant:read` API scope for future least-privilege read-only Codex / AI assistant access.
+- Added the read-only `GET /api/v1/assistant/context/search` endpoint to search candidate customers, contacts, inquiries, opportunities, documents, orders, after-sales tickets, Entities, knowledge bases, and Cases by keyword plus optional Collection.
+- The endpoint only returns context candidates. It does not create, update, or delete any CRM, knowledge-base, or Case data, making it a safe prerequisite for the future AI intake draft inbox.
+- Customer search can now match through related inquiries, opportunities, documents, orders, and tickets, covering real inputs such as product models or problem descriptions instead of only customer names.
+- Updated `agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md` with the Phase 0 / Phase 1 implementation state and clarified that Phase 2 is where draft creation should begin.
+- Verification: new `AssistantContextApiTest` passed with 4 tests / 24 assertions; `ApiV1ContractTest` passed with 13 tests / 84 assertions. The task-delete API contract assertion was updated to soft-delete semantics to match the existing task trash behavior.
+
 ## 2026-06-17
 
 ### Mainline Phase 1: Task Trash

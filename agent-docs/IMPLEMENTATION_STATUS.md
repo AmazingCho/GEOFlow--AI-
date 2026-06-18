@@ -65,6 +65,7 @@
 | 首次部署登录提示 | 已完成 | 默认管理员首次成功登录前显示初始账号提示，可通过环境变量关闭 |
 | 功能说明文档 | 已完成 | 已创建 `功能说明文档/` |
 | Agent 交接文档 | 已完成 | 已创建 `agent-docs/` |
+| Codex 业务录入助手 API Phase 0-1 | 已完成核心功能 | 已完成 API 能力审计并新增只读 `GET /api/v1/assistant/context/search`，支持 `assistant:read` scope 和 Collection 限定，返回客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库和 Case 候选；暂不写入业务数据 |
 
 ## 部分完成，建议继续检查
 

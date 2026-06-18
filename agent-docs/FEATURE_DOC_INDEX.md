@@ -6,12 +6,14 @@
 
 - [用户需求理解与产品经理式转译规则](./USER_REQUIREMENT_INTERPRETATION.md)
 - [Codex 全局个性化提示词建议](./CODEX_GLOBAL_PERSONAL_PROMPT.md)
+- [Codex 业务录入助手 API 白皮书](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md)
 
 适合理解：
 
 - 用户用非技术语言描述需求时，Agent 应如何先做产品经理式转译。
 - 每次优化前如何把需求拆成业务目标、影响页面、期望行为、边界保护和验收标准。
 - 如何把规则复制到 Codex 个性化提示词，并配合本地 Skill 使用。
+- 如何把用户关于客户、订单、售后、Case 和知识库的自然语言思考整理为可审核的 AI 录入草稿，并通过 GEOFlow API 安全入库。
 
 ## 总览
 
@@ -125,6 +127,7 @@
 
 - [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)
 - [CRM 单据 PDF 真实样本视觉回归记录](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md)
+- [Codex 业务录入助手 API 白皮书](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md)
 - [实现状态与验证记录](./IMPLEMENTATION_STATUS.md)
 - [已知问题与风险](./KNOWN_ISSUES.md)
 
