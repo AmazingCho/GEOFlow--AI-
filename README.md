@@ -282,7 +282,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d app web que
 
 - 前台 / 后台统一经 `web`（Nginx）访问
 - PHP 由 `app`（php-fpm）解析
-- **默认管理员**：生产 `init` 服务会在迁移后执行一次 `db:seed`，只在目标用户名不存在时写入默认后台账号；重复执行不会覆盖已有账号或密码
+- **默认管理员与提示词预设**：生产 `init` 服务会在迁移后执行一次 `db:seed`，只在目标用户名不存在时写入默认后台账号，并同步发布包内置提示词预设；重复执行不会覆盖已有账号或用户自建提示词
 - 详细说明见 `docs/deployment/DEPLOYMENT.md`
 
 ### 方式二：本地 PHP 服务器
@@ -303,7 +303,7 @@ php artisan key:generate
 
 # 3. 数据库与存储
 php artisan migrate --force
-php artisan db:seed --force    # 可选：写入默认管理员等
+php artisan db:seed --force    # 可选：写入默认管理员，并同步内置提示词预设
 php artisan storage:link
 
 # 4. 开发用 HTTP（仅本地调试；生产请用 Nginx + PHP-FPM，站点根目录 public/）
@@ -350,7 +350,7 @@ chmod -R ug+rwx storage bootstrap/cache
 | 用户名 | `GEOFLOW_ADMIN_USERNAME`，默认 `admin` |
 | 密码 | 本地开发默认 `password`；生产环境请设置 `GEOFLOW_ADMIN_PASSWORD`。若生产环境留空且账号尚不存在，seed 会生成一次性随机密码并输出到初始化日志 |
 
-补充规则：`AdminUserSeeder` 只在目标用户名不存在时创建账号；重复执行不会覆盖已有用户名、邮箱或密码。若账号已存在，即使生产环境 `GEOFLOW_ADMIN_PASSWORD` 为空，也不会重新生成或打印密码。
+补充规则：`AdminUserSeeder` 只在目标用户名不存在时创建账号；重复执行不会覆盖已有用户名、邮箱或密码。若账号已存在，即使生产环境 `GEOFLOW_ADMIN_PASSWORD` 为空，也不会重新生成或打印密码。`PromptPresetSeeder` 会按 `type + name` 同步仓库内置提示词预设，并兼容旧默认名称；它不会删除用户自己新增的其他提示词。
 
 ### 管理员登录失败锁定与手动解锁
 

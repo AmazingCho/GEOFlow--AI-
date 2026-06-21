@@ -2,6 +2,16 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-06-21
+
+### Packaged Admin Prompt Presets
+
+- Exported the 13 prompts from the current local admin deployment into repository-packaged presets, covering content prompts, skill prompts, and the keyword-generation prompt.
+- Added `PromptPresetSeeder`; running `db:seed` now syncs packaged prompt presets by `type + name` without deleting user-created prompts.
+- Added compatibility aliases for legacy default prompt names so fresh installs can migrate old defaults to the current admin names instead of creating duplicate similar prompts.
+- `DatabaseSeeder` now initializes both the default admin account and packaged prompt presets, covering Docker init, manual installs, and future release packages.
+- Verification: `PromptPresetSeederTest` passed with 2 tests / 17 assertions; `AdminAiPromptsPageTest`, `AdminTasksPageTest`, and `WorkerExecutionServicePromptTest` passed with 25 tests / 174 assertions in total; running `PromptPresetSeeder` against the local Docker PostgreSQL deployment kept the prompt catalog at 13 rows.
+
 ## 2026-06-19
 
 ### Codex Business Intake API Phase 2-6

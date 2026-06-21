@@ -219,7 +219,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d app web que
 
 - Frontend and admin both enter through `web` (Nginx)
 - PHP is executed by `app` (php-fpm)
-- **Default admin:** the production `init` service runs `db:seed` after migrations to create the default admin account; repeated runs do not overwrite an existing `admin` user.
+- **Default admin and prompt presets:** the production `init` service runs `db:seed` after migrations to create the default admin account and sync packaged prompt presets; repeated runs do not overwrite an existing `admin` user or user-created prompts.
 - See `../../docs/deployment/DEPLOYMENT.md` for details
 
 ### Option 2: Local PHP stack
@@ -236,7 +236,7 @@ composer install --no-interaction --prefer-dist
 php artisan key:generate
 
 php artisan migrate --force
-php artisan db:seed --force    # optional: default admin, etc.
+php artisan db:seed --force    # optional: default admin and packaged prompt presets
 php artisan storage:link
 
 php artisan serve --host=127.0.0.1 --port=8080
@@ -280,7 +280,7 @@ chmod -R ug+rwx storage bootstrap/cache
 | Username | `GEOFLOW_ADMIN_USERNAME`, default `admin` |
 | Password | Local/dev default `password`; in production set `GEOFLOW_ADMIN_PASSWORD`. If it is empty and the account does not exist yet, the seeder generates a one-time random password in the init / `db:seed` logs. |
 
-The seeder only creates the account when the target username does not exist. Repeated runs never overwrite an existing username, email, or password.
+The admin seeder only creates the account when the target username does not exist. Repeated runs never overwrite an existing username, email, or password. `PromptPresetSeeder` syncs packaged prompts by `type + name`, supports legacy default-name aliases, and does not delete additional prompts created by users.
 
 ### Admin login lockout and manual unlock
 
