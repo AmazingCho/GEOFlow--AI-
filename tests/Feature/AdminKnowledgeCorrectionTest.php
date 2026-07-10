@@ -167,6 +167,50 @@ class AdminKnowledgeCorrectionTest extends TestCase
             ->assertSee(__('admin.knowledge_corrections.assistant.article_title'));
     }
 
+    public function test_article_edit_keeps_correction_and_article_save_forms_independent(): void
+    {
+        $admin = $this->admin();
+        [$knowledgeBase] = $this->knowledgeBaseWithChunk();
+        $category = Category::query()->create(['name' => 'News', 'slug' => 'news']);
+        $author = Author::query()->create(['name' => 'Author']);
+        $article = Article::query()->create([
+            'title' => 'Independent article form',
+            'slug' => 'independent-article-form',
+            'content' => 'Draft body',
+            'category_id' => (int) $category->id,
+            'author_id' => (int) $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+            'used_knowledge_base_ids' => [(int) $knowledgeBase->id],
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.edit', ['articleId' => (int) $article->id]))
+            ->assertOk();
+
+        $html = (string) $response->getContent();
+        preg_match_all('/<form\b[^>]*>|<\/form>/i', $html, $formTags);
+
+        $depth = 0;
+        $maxDepth = 0;
+        foreach ($formTags[0] as $formTag) {
+            if (str_starts_with(strtolower($formTag), '</form')) {
+                $depth--;
+            } else {
+                $depth++;
+                $maxDepth = max($maxDepth, $depth);
+            }
+        }
+
+        $this->assertSame(0, $depth, 'Article edit page has unbalanced form tags.');
+        $this->assertSame(1, $maxDepth, 'Article edit page must not render nested forms.');
+        $this->assertMatchesRegularExpression(
+            '/<textarea[^>]*name="error_description"[^>]*form="article-correction-form-'.(int) $article->id.'"[^>]*>/i',
+            $html
+        );
+        $this->assertStringContainsString('id="article-correction-form-'.(int) $article->id.'"', $html);
+    }
+
     private function admin(): Admin
     {
         return Admin::query()->create([

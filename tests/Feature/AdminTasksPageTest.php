@@ -94,6 +94,92 @@ class AdminTasksPageTest extends TestCase
             ->assertSee(__('admin.task_create.option.no_image_count'));
     }
 
+    public function test_task_create_page_uses_safe_defaults_and_progressive_disclosure(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_safe_defaults_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-safe-defaults@example.com',
+            'display_name' => 'Tasks Safe Defaults Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        Category::query()->create([
+            'name' => '任务安全默认分类',
+            'slug' => 'task-safe-default-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.create'))
+            ->assertOk()
+            ->assertSee('value="local_only" checked', false)
+            ->assertSee('name="need_review" value="1" checked', false)
+            ->assertSee('data-task-workflow-summary', false)
+            ->assertSee('data-advanced-generation-settings', false)
+            ->assertSee('data-entity-filter-status', false)
+            ->assertSee('data-case-filter-status', false)
+            ->assertSee('data-publish-risk', false)
+            ->assertSee('data-task-action-bar', false)
+            ->assertDontSee('lg:sticky lg:bottom-3', false);
+    }
+
+    public function test_task_creation_without_publish_fields_uses_safe_defaults(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_safe_submit_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-safe-submit@example.com',
+            'display_name' => 'Tasks Safe Submit Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Safe Submit Collection',
+            'slug' => 'safe-submit-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Safe Submit Titles']);
+        $prompt = Prompt::query()->create([
+            'name' => 'Safe Submit Prompt',
+            'type' => 'content',
+            'content' => 'Write {{title}}.',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Safe Submit Model',
+            'model_id' => 'safe-submit-model',
+            'model_type' => 'chat',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Safe Submit Category',
+            'slug' => 'safe-submit-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '安全默认任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'article_limit' => 1,
+                'draft_limit' => 1,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $this->assertDatabaseHas('tasks', [
+            'name' => '安全默认任务',
+            'publish_scope' => 'local_only',
+            'need_review' => 1,
+        ]);
+    }
+
     public function test_active_task_is_enqueued_immediately_after_creation_when_async_queue_is_enabled(): void
     {
         Config::set('queue.default', 'redis');
@@ -275,6 +361,73 @@ class AdminTasksPageTest extends TestCase
             'name' => '带 Skill Prompt 的任务',
             'prompt_id' => (int) $prompt->id,
             'skill_prompt_id' => (int) $skillPrompt->id,
+        ]);
+    }
+
+    public function test_task_can_be_created_with_optional_style_prompt(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_with_style_prompt',
+            'password' => 'secret-123',
+            'email' => 'tasks-with-style-prompt@example.com',
+            'display_name' => 'Tasks Style Prompt Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $collection = CollectionRecord::query()->create([
+            'name' => 'Style Prompt Collection',
+            'slug' => 'style-prompt-collection',
+            'status' => 'active',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create(['name' => 'Style Prompt Titles']);
+        $prompt = Prompt::query()->create([
+            'name' => 'Style Prompt Master',
+            'type' => 'content',
+            'content' => 'Write an article.',
+            'status' => 'active',
+        ]);
+        $stylePrompt = Prompt::query()->create([
+            'name' => 'Style - Engineering Advisor',
+            'type' => 'style',
+            'content' => 'Use concise engineering advisor language.',
+            'status' => 'active',
+        ]);
+        $aiModel = AiModel::query()->create([
+            'name' => 'Style Prompt Model',
+            'model_id' => 'test-chat',
+            'model_type' => 'chat',
+            'api_url' => 'https://ai.test/v1',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-key'),
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => 'Style Prompt Category',
+            'slug' => 'style-prompt-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '带 Style Prompt 的任务',
+                'collection_id' => (int) $collection->id,
+                'title_library_id' => (int) $titleLibrary->id,
+                'prompt_id' => (int) $prompt->id,
+                'style_prompt_id' => (int) $stylePrompt->id,
+                'ai_model_id' => (int) $aiModel->id,
+                'fixed_category_id' => (int) $category->id,
+                'status' => 'paused',
+                'publish_scope' => 'local_only',
+                'article_limit' => 3,
+                'draft_limit' => 2,
+                'publish_interval' => 60,
+                'category_mode' => 'fixed',
+                'model_selection_mode' => 'fixed',
+            ])
+            ->assertRedirect(route('admin.tasks.index'));
+
+        $this->assertDatabaseHas('tasks', [
+            'name' => '带 Style Prompt 的任务',
+            'prompt_id' => (int) $prompt->id,
+            'style_prompt_id' => (int) $stylePrompt->id,
         ]);
     }
 
@@ -493,7 +646,7 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('data-distribution-channel-input', false)
             ->assertSee('syncDistributionChannelsByScope', false)
             ->assertSee('disabled data-distribution-channel-input', false)
-            ->assertDontSee('value="1" checked', false);
+            ->assertDontSee('name="distribution_channel_ids[]" value="1" checked', false);
     }
 
     public function test_local_only_task_submission_ignores_distribution_channel_ids(): void

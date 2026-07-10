@@ -83,9 +83,11 @@
         $continuationItemsCapacity = 36;
         $finalItemsCapacity = 22;
     } elseif ($hasVisibleItemImages) {
-        $singlePageCapacity = 20;
-        $firstItemsCapacity = 28;
-        $continuationItemsCapacity = 34;
+        $singlePageCapacity = 36;
+        // Image thumbnails are fixed at 48px. Let item-only first pages fit up to 8 compact image rows,
+        // but keep the single-page threshold lower so summary/terms do not get squeezed into overflow.
+        $firstItemsCapacity = 44;
+        $continuationItemsCapacity = 42;
         $finalItemsCapacity = 22;
     } elseif ($isInvoice) {
         $singlePageCapacity = 24;
@@ -138,35 +140,44 @@
         $count = $items->count();
 
         if ($count === 0) {
-            return [[
-                'items' => $items,
-                'start_index' => 0,
-                'is_first' => true,
-                'is_final' => true,
-            ]];
+            return [
+                'pages' => [[
+                    'items' => $items,
+                    'start_index' => 0,
+                    'is_first' => true,
+                    'is_final' => true,
+                ]],
+                'needs_final_content_page' => false,
+            ];
         }
 
         if ($remainingItemWeight($items, 0) <= $singlePageCapacity) {
-            return [[
-                'items' => $items,
-                'start_index' => 0,
-                'is_first' => true,
-                'is_final' => true,
-            ]];
+            return [
+                'pages' => [[
+                    'items' => $items,
+                    'start_index' => 0,
+                    'is_first' => true,
+                    'is_final' => true,
+                ]],
+                'needs_final_content_page' => false,
+            ];
         }
 
         $pages = [];
+        $needsFinalContentPage = false;
         [$firstChunk, $nextIndex] = $takeItemPage($items, 0, $firstItemsCapacity);
-        if ($nextIndex >= $count && $count > 1) {
-            $nextIndex = $count - 1;
-            $firstChunk = $items->slice(0, $nextIndex)->values();
-        }
         $pages[] = [
             'items' => $firstChunk,
             'start_index' => 0,
             'is_first' => true,
             'is_final' => false,
         ];
+        if ($nextIndex >= $count) {
+            return [
+                'pages' => $pages,
+                'needs_final_content_page' => true,
+            ];
+        }
 
         while ($nextIndex < $count) {
             $startIndex = $nextIndex;
@@ -174,10 +185,6 @@
             $capacity = $remainingWeight <= $finalItemsCapacity ? $finalItemsCapacity : $continuationItemsCapacity;
 
             [$chunk, $nextIndex] = $takeItemPage($items, $startIndex, $capacity);
-            if ($remainingWeight > $finalItemsCapacity && $nextIndex >= $count && $startIndex < ($count - 1)) {
-                $nextIndex = $count - 1;
-                $chunk = $items->slice($startIndex, $nextIndex - $startIndex)->values();
-            }
 
             $pages[] = [
                 'items' => $chunk,
@@ -185,18 +192,31 @@
                 'is_first' => false,
                 'is_final' => false,
             ];
+
+            if ($nextIndex >= $count && $remainingWeight > $finalItemsCapacity) {
+                $needsFinalContentPage = true;
+                break;
+            }
         }
 
-        $lastIndex = count($pages) - 1;
-        $pages[$lastIndex]['is_final'] = true;
+        if (!$needsFinalContentPage) {
+            $lastIndex = count($pages) - 1;
+            $pages[$lastIndex]['is_final'] = true;
+        }
 
-        return $pages;
+        return [
+            'pages' => $pages,
+            'needs_final_content_page' => $needsFinalContentPage,
+        ];
     };
 
-    $itemPages = $paginateItems($allItems);
+    $pagination = $paginateItems($allItems);
+    $itemPages = $pagination['pages'];
+    $hasSeparateFinalContentPage = (bool) ($pagination['needs_final_content_page'] ?? false);
     $totalItemPages = count($itemPages);
+    $finalContentPageCount = $hasSeparateFinalContentPage ? 1 : 0;
     $bankPageCount = $isPI ? 1 : 0;
-    $totalPages = max(1, $totalItemPages + $bankPageCount);
+    $totalPages = max(1, $totalItemPages + $finalContentPageCount + $bankPageCount);
     $pageLabel = static fn (int $pageNumber): string => $title.' · Page '.$pageNumber.' of '.$totalPages;
 @endphp
 
@@ -227,12 +247,12 @@
         .header { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; align-items: start; border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
         .continuation-header { margin-bottom: 10px; }
         .continuation-kicker { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-        .brand { display: flex; gap: 12px; align-items: flex-start; }
+        .brand { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
         .logo { width: 86px; height: 44px; object-fit: contain; }
         .company-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
         .muted { color: var(--muted); font-size: 11px; }
         .title-box { text-align: right; }
-        h1 { margin: 0 0 6px; font-size: 24px; text-transform: uppercase; letter-spacing: .8px; }
+        h1 { margin: 0 0 6px; font-size: 26px; text-transform: uppercase; letter-spacing: .8px; }
         .doc-meta { display: grid; grid-template-columns: 86px 1fr; gap: 3px 8px; justify-content: end; font-size: 11.5px; max-width: 250px; margin-left: auto; }
         .doc-meta-wide { display: grid; grid-template-columns: 90px 1fr; gap: 3px 8px; justify-content: end; font-size: 11.5px; max-width: 260px; margin-left: auto; }
         .label { color: var(--muted); font-weight: 600; white-space: nowrap; }
@@ -281,6 +301,19 @@
         .sig-kv { display: grid; grid-template-columns: 38px 1fr; gap: 3px 8px; font-size: 11px; }
         .sig-line { margin-top: 36px; border-top: 1px solid var(--accent); }
         .footer { position: absolute; left: 13mm; right: 13mm; bottom: 8mm; margin-top: 0; padding-top: 8px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; color: #6b7280; font-size: 10.5px; }
+        .page.is-hidden { display: none; }
+        .final-content-merged [data-final-content-body] h2,
+        .is-measuring-final-merge [data-final-content-body] h2 { margin-top: 7px; }
+        .final-content-merged [data-final-content-body] .summary-wrap,
+        .is-measuring-final-merge [data-final-content-body] .summary-wrap { margin-top: 5px; }
+        .final-content-merged [data-final-content-body] .terms-grid,
+        .is-measuring-final-merge [data-final-content-body] .terms-grid { margin-top: 4px; }
+        .final-content-merged [data-final-content-body] .signature,
+        .is-measuring-final-merge [data-final-content-body] .signature { margin-top: 8px; }
+        .final-content-merged [data-final-content-body] .sig-box,
+        .is-measuring-final-merge [data-final-content-body] .sig-box { padding: 7px; }
+        .final-content-merged [data-final-content-body] .sig-line,
+        .is-measuring-final-merge [data-final-content-body] .sig-line { margin-top: 20px; }
         .panel, .summary-wrap, .notes-box, .terms-grid, .term-item, .bank-block, .summary-card, .declaration, .signature, .sig-box { break-inside: avoid; page-break-inside: avoid; }
         thead { display: table-header-group; }
         tfoot { display: table-footer-group; }
@@ -289,7 +322,7 @@
             body { background: #fff; font-size: 11px; line-height: 1.25; }
             .page { width: 210mm; height: 297mm; min-height: 0; margin: 0; padding: 10mm 12mm 18mm; box-shadow: none; }
             .footer { left: 12mm; right: 12mm; bottom: 8mm; }
-            h1 { font-size: 22px; }
+            h1 { font-size: 24px; }
             h2 { margin: 9px 0 4px; }
             th, td { padding: 4px 5px; }
             .muted { font-size: 10px; }
@@ -316,7 +349,7 @@
         {{-- ====== PI ITEM PAGES: Items + Summary on final item page ====== --}}
         @foreach ($itemPages as $pageIndex => $itemPage)
             @php $pageNumber = $pageIndex + 1; @endphp
-            <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}">
+            <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}" data-print-page data-item-page>
                 @if ($itemPage['is_first'])
                     <div class="topbar">
                         @if (session('error'))
@@ -348,7 +381,7 @@
                         <div class="title-box">
                             <div class="continuation-kicker">{{ $isZh ? '明细续页' : 'Items continued' }}</div>
                             <h1>{{ $title }}</h1>
-                            <div class="muted" style="margin-top:4px;">Page {{ $pageNumber }} of {{ $totalPages }}</div>
+                            <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $pageNumber }} of {{ $totalPages }}</div>
                         </div>
                     </div>
                 @endif
@@ -365,14 +398,46 @@
 
                 <div class="footer">
                     <div>{{ $seller['website'] ?: '' }}</div>
-                    <div>{{ $pageLabel($pageNumber) }}</div>
+                    <div data-page-label>{{ $pageLabel($pageNumber) }}</div>
                 </div>
             </div>
         @endforeach
 
-        {{-- ====== PI PAGE 2: Bank Account ====== --}}
-        @php $bankPageNumber = $totalItemPages + 1; @endphp
-        <div class="page page-break">
+        @if ($hasSeparateFinalContentPage)
+            @php $finalContentPageNumber = $totalItemPages + 1; @endphp
+            <div class="page page-break" data-print-page data-final-content-page>
+                <div class="header continuation-header">
+                    <div class="brand">
+                        <div>
+                            <div class="company-name">{{ $seller['name'] }}</div>
+                            <div class="muted">{{ $quote->quote_no }}</div>
+                        </div>
+                    </div>
+                    <div class="title-box">
+                        <div class="continuation-kicker">{{ $isZh ? '汇总与条款' : 'Summary & Terms' }}</div>
+                        <h1>{{ $title }}</h1>
+                        <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $finalContentPageNumber }} of {{ $totalPages }}</div>
+                    </div>
+                </div>
+
+                <div data-final-content-body>
+                    @if ($showPrices)
+                        @include('admin.crm.quotes.partials.print-summary', ['quote' => $quote, 'label' => $label, 'money' => $money, 'showTax' => false])
+                    @endif
+
+                    @include('admin.crm.quotes.partials.print-terms', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
+                </div>
+
+                <div class="footer">
+                    <div>{{ $seller['website'] ?: '' }}</div>
+                    <div data-page-label>{{ $pageLabel($finalContentPageNumber) }}</div>
+                </div>
+            </div>
+        @endif
+
+        {{-- ====== PI FINAL PAGE: Bank Account ====== --}}
+        @php $bankPageNumber = $totalItemPages + $finalContentPageCount + 1; @endphp
+        <div class="page page-break" data-print-page>
             <div class="topbar">
                 <select class="doc-switcher" onchange="if(this.value) window.location.href=this.value">
                     @foreach (['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'] as $typeVal => $typeLabel)
@@ -391,7 +456,7 @@
                 </div>
                 <div class="title-box">
                     <h1>BANK ACCOUNT</h1>
-                    <div class="muted" style="margin-top:4px;">Page {{ $bankPageNumber }} of {{ $totalPages }}</div>
+                    <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $bankPageNumber }} of {{ $totalPages }}</div>
                 </div>
             </div>
 
@@ -447,14 +512,14 @@
 
             <div class="footer">
                 <div>{{ $seller['website'] ?: '' }}</div>
-                <div>{{ $pageLabel($bankPageNumber) }}</div>
+                <div data-page-label>{{ $pageLabel($bankPageNumber) }}</div>
             </div>
         </div>
     @else
         {{-- ====== Dynamic pages: Quotation / Invoice / Packing List / Contract ====== --}}
         @foreach ($itemPages as $pageIndex => $itemPage)
             @php $pageNumber = $pageIndex + 1; @endphp
-            <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}">
+            <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}" data-print-page data-item-page>
                 @if ($itemPage['is_first'])
                     <div class="topbar">
                         @if (session('error'))
@@ -491,7 +556,7 @@
                         <div class="title-box">
                             <div class="continuation-kicker">{{ $isZh ? '明细续页' : 'Items continued' }}</div>
                             <h1>{{ $title }}</h1>
-                            <div class="muted" style="margin-top:4px;">Page {{ $pageNumber }} of {{ $totalPages }}</div>
+                            <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $pageNumber }} of {{ $totalPages }}</div>
                         </div>
                     </div>
                 @endif
@@ -499,84 +564,141 @@
                 @include('admin.crm.quotes.partials.print-items', ['quote' => $quote, 'items' => $itemPage['items'], 'startIndex' => $itemPage['start_index'], 'documentKind' => $documentKind, 'showImages' => $showImages, 'showPrices' => $showPrices, 'isPacking' => $isPacking, 'label' => $label, 'money' => $money, 'weight' => $weight])
 
                 @if ($itemPage['is_final'])
-                    {{-- Packing List: summary card --}}
-                    @if ($isPacking)
-                        @include('admin.crm.quotes.partials.print-packing-summary', ['totalPackages' => $totalPackages, 'totalNetWeight' => $totalNetWeight, 'totalGrossWeight' => $totalGrossWeight, 'totalVolume' => $totalVolume])
-
-                        <h2>{{ $label('notes', 'Notes') }}</h2>
-                            <div class="notes-box">{{ $isZh ? '包装类型：出口级木箱。所有尺寸和重量仅供海关清关和物流参考。' : 'Package type: Export-grade wooden case. All dimensions and weights are for customs clearance and logistics reference.' }}</div>
-
-                        @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'isZh' => $isZh, 'documentKind' => $documentKind])
-                    @else
-                        @if ($showPrices)
-                            @include('admin.crm.quotes.partials.print-summary', ['quote' => $quote, 'label' => $label, 'money' => $money, 'showTax' => $isInvoice])
-                        @endif
-
-                        {{-- Invoice: declaration --}}
-                        @if ($isInvoice)
-                            <h2>Declaration</h2>
-                            <div class="declaration">
-                                The above information is true and correct. Goods are of Chinese origin unless otherwise stated.
-                            </div>
-                        @endif
-
-                        @if (!$isInvoice)
-                            @include('admin.crm.quotes.partials.print-terms', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
-
-                            @if ($showBank)
-                                @if (!empty(array_filter($bank)))
-                                    <h2>{{ $label('bank_account', 'Bank Account') }}</h2>
-                                    <div class="bank-block">
-                                        <div class="bank-grid">
-                                            @if (!empty($bank['beneficiary']))
-                                                <div class="bank-item wide"><div class="label">Beneficiary:</div><div>{{ $bank['beneficiary'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['bank_name']))
-                                                <div class="bank-item"><div class="label">Bank Name:</div><div>{{ $bank['bank_name'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['account_no']))
-                                                <div class="bank-item"><div class="label">Account No.:</div><div>{{ $bank['account_no'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['bank_code']))
-                                                <div class="bank-item"><div class="label">Bank Code:</div><div>{{ $bank['bank_code'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['branch_code']))
-                                                <div class="bank-item"><div class="label">Branch Code:</div><div>{{ $bank['branch_code'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['swift']))
-                                                <div class="bank-item"><div class="label">SWIFT:</div><div>{{ $bank['swift'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['currency']))
-                                                <div class="bank-item"><div class="label">Currency:</div><div>{{ $bank['currency'] }}</div></div>
-                                            @endif
-                                            @if (!empty($bank['bank_address']))
-                                                <div class="bank-item wide"><div class="label">Bank Address:</div><div>{{ $bank['bank_address'] }}</div></div>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endif
-                            @endif
-                        @endif
-
-                        @if ($showContract)
-                            @include('admin.crm.quotes.partials.print-contract-terms', ['quote' => $quote, 'label' => $label, 'isZh' => $isZh])
-                        @endif
-
-                        @if (!$isInvoice && !$showContract && !$showPrices && (string) ($quote->notes ?? '') !== '')
-                            <h2>{{ $label('notes', 'Notes') }}</h2>
-                            <div class="section">{{ $quote->notes }}</div>
-                        @endif
-
-                        @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'isZh' => $isZh, 'documentKind' => $documentKind])
-                    @endif
+                    <div data-final-content-inline>
+                        @include('admin.crm.quotes.partials.print-final-content')
+                    </div>
                 @endif
 
                 <div class="footer">
                     <div>{{ $seller['website'] ?: '' }}</div>
-                    <div>{{ $pageLabel($pageNumber) }}</div>
+                    <div data-page-label>{{ $pageLabel($pageNumber) }}</div>
                 </div>
             </div>
         @endforeach
+
+        @if ($hasSeparateFinalContentPage)
+            @php $finalContentPageNumber = $totalItemPages + 1; @endphp
+            <div class="page page-break" data-print-page data-final-content-page>
+                <div class="header continuation-header">
+                    <div class="brand">
+                        <div>
+                            <div class="company-name">{{ $seller['name'] }}</div>
+                            <div class="muted">{{ $quote->quote_no }}</div>
+                        </div>
+                    </div>
+                    <div class="title-box">
+                        <div class="continuation-kicker">{{ $isZh ? '汇总与条款' : 'Summary & Terms' }}</div>
+                        <h1>{{ $title }}</h1>
+                        <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $finalContentPageNumber }} of {{ $totalPages }}</div>
+                    </div>
+                </div>
+
+                <div data-final-content-body>
+                    @include('admin.crm.quotes.partials.print-final-content')
+                </div>
+
+                <div class="footer">
+                    <div>{{ $seller['website'] ?: '' }}</div>
+                    <div data-page-label>{{ $pageLabel($finalContentPageNumber) }}</div>
+                </div>
+            </div>
+        @endif
     @endif
+    <script>
+        (() => {
+            const documentTitle = @json($title);
+            const safetyGap = 6;
+
+            const visiblePages = () => Array.from(document.querySelectorAll('[data-print-page]'))
+                .filter((page) => !page.classList.contains('is-hidden'));
+
+            const updatePageLabels = () => {
+                const pages = visiblePages();
+                const total = pages.length;
+
+                pages.forEach((page, index) => {
+                    const pageNumber = index + 1;
+                    page.querySelectorAll('[data-page-count-line]').forEach((element) => {
+                        element.textContent = `Page ${pageNumber} of ${total}`;
+                    });
+                    page.querySelectorAll('[data-page-label]').forEach((element) => {
+                        element.textContent = `${documentTitle} · Page ${pageNumber} of ${total}`;
+                    });
+                });
+            };
+
+            const availableBottom = (page) => {
+                const footer = page.querySelector(':scope > .footer');
+
+                return footer ? footer.getBoundingClientRect().top - safetyGap : page.getBoundingClientRect().bottom - safetyGap;
+            };
+
+            const targetItemPageFor = (finalPage) => {
+                const pages = visiblePages();
+                const finalIndex = pages.indexOf(finalPage);
+                if (finalIndex < 1) {
+                    return null;
+                }
+
+                return pages
+                    .slice(0, finalIndex)
+                    .reverse()
+                    .find((page) => page.matches('[data-item-page]')) || null;
+            };
+
+            const tryMergeFinalContent = (finalPage) => {
+                const finalContent = finalPage.querySelector('[data-final-content-body]');
+                const targetPage = targetItemPageFor(finalPage);
+                const targetFooter = targetPage?.querySelector(':scope > .footer') || null;
+
+                if (!finalContent || !targetPage || !targetFooter || targetPage.querySelector('[data-final-content-inline]')) {
+                    return false;
+                }
+
+                const placeholder = document.createComment('final-content-placeholder');
+                finalContent.parentNode.insertBefore(placeholder, finalContent);
+                targetPage.classList.add('is-measuring-final-merge');
+                targetPage.insertBefore(finalContent, targetFooter);
+
+                const fits = finalContent.getBoundingClientRect().bottom <= availableBottom(targetPage);
+                if (!fits) {
+                    targetPage.classList.remove('is-measuring-final-merge');
+                    placeholder.replaceWith(finalContent);
+                    return false;
+                }
+
+                placeholder.remove();
+                finalPage.classList.add('is-hidden');
+                finalPage.setAttribute('aria-hidden', 'true');
+                targetPage.classList.remove('is-measuring-final-merge');
+                targetPage.classList.add('final-content-merged');
+                targetPage.setAttribute('data-final-content-merged', 'true');
+
+                return true;
+            };
+
+            const autoPaginate = () => {
+                document.querySelectorAll('[data-final-content-page]:not(.is-hidden)').forEach((finalPage) => {
+                    tryMergeFinalContent(finalPage);
+                });
+                updatePageLabels();
+                window.GeoFlowCrmDocumentPaginationReady = true;
+            };
+
+            const scheduleAutoPaginate = () => {
+                window.requestAnimationFrame(() => {
+                    window.requestAnimationFrame(autoPaginate);
+                });
+            };
+
+            window.GeoFlowCrmDocumentAutoPaginate = autoPaginate;
+            window.addEventListener('load', scheduleAutoPaginate);
+            window.addEventListener('beforeprint', autoPaginate);
+
+            if (document.fonts?.ready) {
+                document.fonts.ready.then(scheduleAutoPaginate).catch(() => {});
+            }
+        })();
+    </script>
 </body>
 </html>

@@ -27,7 +27,7 @@
 | 标签性能体验补强 | 已完成核心功能 | 标签选择器远程搜索和引用明细懒加载已确认；搜索接口补充 `has_more`；标签统计缓存 key 与写入侧清理已统一 |
 | 受控标签分组白名单 | 已完成核心功能 | 支持新增、编辑、删除可用分组 |
 | 不同素材自动 tag 推荐 | 已移除 | 按用户要求删除自动推荐入口，避免误标签和无效标签扩散 |
-| 创建任务页重整 | 已完成核心功能 | Collection 必选，Entity / Case 多选，标签筛选折叠 |
+| 创建任务页重整 | 已完成增强 | Collection 必选，Entity / Case 多选与可用数量反馈；Skill / Style / 模型策略渐进式折叠；默认人工审核和仅本站发布；操作区不再遮挡表单 |
 | 创建任务页 Collection 联动 | 已完成 | 选择 Collection 后，Entity / Case 仅允许选择同 Collection 内容；跨 Collection 需显式开启 |
 | 图片配置优化 | 已完成核心功能 | 区分不指定图库和不配图，支持 Entity 关联图库思路 |
 | URL 采集标题关键词关联 | 已完成 | 标题库关联关键词库，单条标题可编辑关联关键词 |
@@ -40,6 +40,7 @@
 | 文章生成语言强制 | 已完成 | 生成语言优先由标题和关键词判断，最终提示词强制目标语言 |
 | 任务回收站 | 已完成 | 任务删除改为软删除；已生成文章和 task_id 来源关系保留；回收站支持查看与恢复，恢复后保持暂停 |
 | Prompt Skill System v1 | 已完成增强 | 任务支持可选 `skill_prompt_id`，提示词页可管理 Master Prompt 与 Skill Prompt；创建任务页支持根据标题库智能推荐 Skill，并保留不使用/手动覆盖 |
+| 写作风格 Style Prompt 轻量版 | 已完成核心功能 | 任务支持可选 `style_prompt_id`；提示词页可管理 `type=style`；创建任务页手动选择 Style Prompt；Worker 按 Master -> Skill -> Writing Style 拼接，Style 不参与语言判断；本阶段不包含 URL 抓取、自动风格识别或作者仿写 |
 | 轻量 CRM 阶段 1 | 已完成 | 新增客户、内部负责人、跟进记录，客户可关联 Collection |
 | 轻量 CRM 阶段 2 | 已完成 | 新增询盘管理，支持 AI 需求识别并关联 Entity、知识库、Case、Tag |
 | 轻量 CRM 阶段 3 | 已完成 | 新增报价单、报价明细和打印页，可从询盘生成报价 |
@@ -62,6 +63,7 @@
 | 素材库删除后保留筛选位置 | 已完成 | 关键词库、标题库、图片库、知识库删除后保留 query 并回到列表区域 |
 | 模板工厂 / 站点模板复刻 | 已完成核心功能 | 可从首页、列表页、文章页 3 个参考 URL 创建模板复刻任务，支持预览、迭代、发布、打包和归档 |
 | 分发最近日志分页 | 已完成 | 分发首页最近日志支持分页、页码跳转和上一页/下一页 |
+| 上游更新选择性吸收（2026-06-21） | 已完成 | 已吸收分类删除保护、同源相对后台路径、反向代理 forwarded headers、Docker storage 权限修复、生产 Redis session 默认和任务分发策略后端基础；未照搬会增加创建任务页复杂度的分发策略 UI |
 | 首次部署登录提示 | 已完成 | 默认管理员首次成功登录前显示初始账号提示，可通过环境变量关闭 |
 | 功能说明文档 | 已完成 | 已创建 `功能说明文档/` |
 | Agent 交接文档 | 已完成 | 已创建 `agent-docs/` |
@@ -143,6 +145,7 @@
 - CRM 轻量增强阶段 4 验证：`AdminCrmPagesTest` 全量通过，共 34 tests / 323 assertions，覆盖询盘、商机、客户三处单据链路展示与单据/订单/售后详情链接；浏览器检查三处页面桌面和移动布局均无横向溢出、无控制台错误。截图接口本次连续超时，已记录为工具限制。
 - Codex 业务录入助手 API Phase 0-1 验证：`AssistantContextApiTest` 与 `ApiV1ContractTest` 联合通过，共 17 tests / 108 assertions；接口为只读上下文搜索，不写入 CRM 或素材业务表。
 - Codex 业务录入助手 API Phase 2-6 验证：`AssistantIntakeDraftApiTest` 通过，共 7 tests / 73 assertions，覆盖 `assistant:write` scope、草稿创建、草稿预检、幂等创建、后台草稿箱审核应用、知识库/Case 内容候选和重复客户/低置信度/缺 Collection 治理提醒；PHP/Blade lint 通过，容器内 `node --check scripts/codex-intake.mjs` 通过。
+- 2026-06-21 上游选择性吸收验证：`AdminCategoriesPageTest`、`AdminArticlesPageTest`、`AdminDashboardQuickStartTest`、`AdminWebAppPathTest`、`TaskDistributionChannelSelectorTest`、`DistributionSchemaMigrationTest`、`AdminTasksPageTest`、`AdminDistributionPageTest` 联合通过，共 101 tests / 834 assertions；本地 Docker 已执行 `2026_06_20_000000_add_distribution_strategy_to_tasks` 迁移。GitHub 远端 fetch / ls-remote 本轮超时，当前审核基于本地已抓取的 `upstream/main=b4aeef7`。
 
 ## 2026-06-12 上游功能融入
 

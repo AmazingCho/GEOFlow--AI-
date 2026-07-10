@@ -232,7 +232,7 @@
             <aside class="space-y-6">
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200"><h2 class="text-base font-semibold text-gray-900">下一步待办</h2><p class="mt-1 text-sm text-gray-500">需要在未来完成的动作单独设定截止时间。</p><div class="mt-4">@include('admin.crm.partials.task-form',['customer_id'=>$inquiry->customer_id,'inquiry_id'=>$inquiry->id])</div><div class="mt-5 divide-y divide-gray-100 border-t border-gray-100">@forelse($inquiry->crmTasks as $task)@include('admin.crm.partials.task-row',['task'=>$task])@empty<div class="py-5 text-sm text-gray-500">暂无待办</div>@endforelse</div></section>
                 <section class="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                    <h2 class="text-base font-semibold text-gray-900">推荐引用资料</h2>
+                    <h2 class="text-base font-semibold text-gray-900">已关联引用资料</h2>
                     <div class="mt-4 space-y-5">
                         <div>
                             <h3 class="text-sm font-medium text-gray-700">Entity</h3>

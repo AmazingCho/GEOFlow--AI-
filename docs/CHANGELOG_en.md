@@ -2,7 +2,41 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-07-10
+
+### Safer Task Defaults and Progressive Configuration
+
+- New tasks now require manual review and default to GEOFlow-only publishing. The backend uses the same safe defaults when those fields are omitted.
+- The task form now includes a Business Context / Generation / Review / Publish Scope summary with live required-field and publishing-risk feedback.
+- Skill Prompt, Style Prompt, and model failover settings now live under Advanced Generation Settings. The section is collapsed for new tasks and opens automatically when editing existing advanced values.
+- Selecting a Collection now reports the available Entity and Case counts, including clear pending, empty, and cross-Collection states.
+- The submit area no longer floats over form content on desktop or mobile.
+- Added safe-default and page-structure coverage. `AdminTasksPageTest` passes 21 tests / 160 assertions, with desktop and 390px mobile visual verification.
+
+## 2026-07-01
+
+### Lightweight Writing Style Prompt
+
+- Added optional `Style Prompt` support for article tasks: `Master Prompt` remains responsible for base generation rules, factual discipline, language, and RAG behavior; `Skill Prompt` remains responsible for article structure such as comparison, buying guide, and application formats; `Style Prompt` only controls optional tone, sentence shape, and expression preference.
+- The prompt management page now supports a third prompt type, `type=style`, and counts tasks using each style prompt to prevent accidental deletion or type changes.
+- The task create/edit form now includes a `Style Prompt` dropdown in content settings. It defaults to "Do not use a Style Prompt".
+- Task persistence, edit-state hydration, lifecycle validation, monitoring details, and generation trace now support `style_prompt_id`.
+- The worker composes prompts in `Master Prompt -> Skill Prompt -> Writing Style Prompt` order. Language detection uses only the title, keyword, and Master/Skill prompts, so English style templates do not override the target article language.
+- Added five packaged Style Prompt presets: engineering procurement advisor, cost breakdown analyst, supplier comparison matrix, DFM risk explainer, and process selection guide.
+- Boundary: this phase does not add URL crawling, automatic style recognition, author imitation, or retroactive rewriting of existing articles.
+
 ## 2026-06-21
+
+### Selective Upstream Sync and Deployment Stability
+
+- Selectively absorbed upstream compatibility fixes: category deletion checks now include trashed articles, preventing categories from being removed while old article source links still depend on them.
+- Admin AJAX / Echo / upload URLs now use safer same-origin relative paths that preserve an `APP_URL` subdirectory, reverse proxy, or changed port.
+- Docker Nginx now forwards `X-Forwarded-Proto / Host / Port`, allowing Laravel to resolve the external HTTPS URL correctly behind a reverse proxy.
+- Docker entrypoints now support `AUTO_FIX_STORAGE_PERMISSIONS`, enabled by default, to repair `storage` and `bootstrap/cache` permissions and create upload/temp directories; custom mounted environments can disable it.
+- `.env.prod.example` now defaults production sessions to `redis` instead of `file`, reducing login/session issues in multi-container or permission-sensitive deployments.
+- Task distribution strategy support was integrated only at the backend foundation level: `broadcast / round_robin / random_balanced` fields and selector logic were added, while the task-create UI remains unchanged and defaults to the existing "broadcast to all selected channels" behavior.
+- Intentionally skipped upstream changes that would disrupt the customized local workflow: no task-create distribution-strategy UI rewrite, no removal of the China Composer mirror setting, and no removal of local Reverb/Vite habits.
+- Verification: category, article, welcome modal, task, distribution page, and distribution-strategy tests passed, covering 101 tests / 834 assertions; the local Docker database has run `2026_06_20_000000_add_distribution_strategy_to_tasks`.
 
 ### Packaged Admin Prompt Presets
 

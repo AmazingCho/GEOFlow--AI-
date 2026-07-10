@@ -53,4 +53,35 @@ class AdminAiPromptsPageTest extends TestCase
             ->assertSee('Comparison Skill Prompt')
             ->assertSee(__('admin.ai_prompts.type_skill'));
     }
+
+    public function test_style_prompt_can_be_created_and_listed(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'ai_style_prompt_admin',
+            'password' => 'secret-123',
+            'email' => 'ai-style-prompt-admin@example.com',
+            'display_name' => 'AI Style Prompt Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.ai-prompts.store'), [
+                'name' => 'Style - Engineering Procurement Advisor',
+                'type' => 'style',
+                'content' => 'Write in a practical engineering advisor tone.',
+            ])
+            ->assertRedirect(route('admin.ai-prompts'));
+
+        $this->assertDatabaseHas('prompts', [
+            'name' => 'Style - Engineering Procurement Advisor',
+            'type' => 'style',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.ai-prompts'))
+            ->assertOk()
+            ->assertSee('Style - Engineering Procurement Advisor')
+            ->assertSee(__('admin.ai_prompts.type_style'));
+    }
 }

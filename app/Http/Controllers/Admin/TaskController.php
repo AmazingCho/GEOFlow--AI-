@@ -21,6 +21,7 @@ use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Services\GeoFlow\EntityMaterialLinkService;
 use App\Services\GeoFlow\SkillPromptRecommendationService;
 use App\Services\GeoFlow\TagService;
+use App\Services\GeoFlow\TaskDistributionChannelSelector;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
@@ -257,6 +258,7 @@ class TaskController extends Controller
                 'title_library_id' => (string) ($task['title_library_id'] ?? ''),
                 'prompt_id' => (string) ($task['prompt_id'] ?? ''),
                 'skill_prompt_id' => (string) (($task['skill_prompt_id'] ?? '') ?: ''),
+                'style_prompt_id' => (string) (($task['style_prompt_id'] ?? '') ?: ''),
                 'ai_model_id' => (string) ($task['ai_model_id'] ?? ''),
                 'author_id' => (string) (($task['author_id'] ?? 0) ?: 0),
                 'image_library_id' => (string) (($task['image_library_id'] ?? '') ?: ''),
@@ -280,6 +282,7 @@ class TaskController extends Controller
                 'auto_keywords' => (int) ($task['auto_keywords'] ?? 1),
                 'auto_description' => (int) ($task['auto_description'] ?? 1),
                 'publish_scope' => (string) ($task['publish_scope'] ?? 'local_and_distribution'),
+                'distribution_strategy' => (string) ($task['distribution_strategy'] ?? TaskDistributionChannelSelector::STRATEGY_BROADCAST),
                 'distribution_channel_ids' => $this->taskDistributionChannelIds($taskId),
             ],
         ]);
@@ -476,6 +479,7 @@ class TaskController extends Controller
      *     titleLibraries: list<array{id:int,name:string}>,
      *     prompts: list<array{id:int,name:string}>,
      *     skillPrompts: list<array{id:int,name:string}>,
+     *     stylePrompts: list<array{id:int,name:string}>,
      *     aiModels: list<array{id:int,name:string}>,
      *     imageLibraries: list<array{id:int,name:string,count:int}>,
      *     imageTags: list<array{id:int,label:string,count:int}>,
@@ -517,6 +521,14 @@ class TaskController extends Controller
             ->orderBy('name')
             ->get();
         $skillPrompts = $skillPromptRows
+            ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->all();
+
+        $stylePrompts = Prompt::query()
+            ->select(['id', 'name'])
+            ->where('type', 'style')
+            ->orderBy('name')
+            ->get()
             ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
             ->all();
 
@@ -620,6 +632,7 @@ class TaskController extends Controller
             'titleLibraries' => $titleLibraries,
             'prompts' => $prompts,
             'skillPrompts' => $skillPrompts,
+            'stylePrompts' => $stylePrompts,
             'skillPromptRecommendations' => $this->skillPromptRecommendationService->recommendForTitleLibraries(
                 collect($titleLibraries)->pluck('id')->map(static fn ($id): int => (int) $id)->all(),
                 $skillPromptRows
@@ -643,6 +656,7 @@ class TaskController extends Controller
      *     title_library_id: int,
      *     prompt_id: int,
      *     skill_prompt_id: int|null,
+     *     style_prompt_id: int|null,
      *     ai_model_id: int,
      *     author_id: int|null,
      *     image_library_id: int|null,
@@ -674,6 +688,7 @@ class TaskController extends Controller
             'title_library_id' => ['required', 'integer', 'min:1'],
             'prompt_id' => ['required', 'integer', 'min:1', Rule::exists('prompts', 'id')->where('type', 'content')],
             'skill_prompt_id' => ['nullable'],
+            'style_prompt_id' => ['nullable'],
             'ai_model_id' => ['required', 'integer', 'min:1'],
             'author_id' => ['nullable', 'integer', 'min:0'],
             'image_library_id' => ['nullable', 'integer', 'min:1'],
@@ -693,6 +708,7 @@ class TaskController extends Controller
             'category_mode' => ['nullable', 'string', 'in:smart,fixed,random'],
             'model_selection_mode' => ['nullable', 'string', 'in:fixed,smart_failover'],
             'publish_scope' => ['nullable', 'string', 'in:local_and_distribution,distribution_only,local_only'],
+            'distribution_strategy' => ['nullable', 'string', 'in:'.implode(',', TaskDistributionChannelSelector::strategies())],
             'distribution_channel_ids' => ['nullable', 'array'],
             'distribution_channel_ids.*' => ['integer', 'min:1'],
         ];
@@ -705,6 +721,7 @@ class TaskController extends Controller
 
         $payload = $request->validate($rules);
         $this->assertSkillPromptSelection($payload);
+        $this->assertStylePromptSelection($payload);
         $this->assertCrmSourceExists($payload);
 
         return $payload;
@@ -731,6 +748,7 @@ class TaskController extends Controller
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
             'skill_prompt_id' => $this->resolveSkillPromptId($payload),
+            'style_prompt_id' => $this->resolveStylePromptId($payload),
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
             'knowledge_base_id' => isset($payload['knowledge_base_id']) ? (int) $payload['knowledge_base_id'] : null,
@@ -741,11 +759,14 @@ class TaskController extends Controller
             'crm_source_id' => $this->normalizeCrmSourceId($payload),
             'fixed_category_id' => isset($payload['fixed_category_id']) ? (int) $payload['fixed_category_id'] : null,
             'status' => (string) $payload['status'],
-            'publish_scope' => (string) ($payload['publish_scope'] ?? 'local_and_distribution'),
+            'publish_scope' => (string) ($payload['publish_scope'] ?? 'local_only'),
+            'distribution_strategy' => (string) ($payload['distribution_strategy'] ?? TaskDistributionChannelSelector::STRATEGY_BROADCAST),
             'article_limit' => (int) ($payload['article_limit'] ?? 10),
             'draft_limit' => (int) ($payload['draft_limit'] ?? 10),
             'publish_interval' => max(1, (int) ($payload['publish_interval'] ?? 60)) * 60,
-            'need_review' => $request->boolean('need_review') ? 1 : 0,
+            'need_review' => array_key_exists('need_review', $payload)
+                ? ($request->boolean('need_review') ? 1 : 0)
+                : 1,
             'is_loop' => $request->boolean('is_loop') ? 1 : 0,
             'category_mode' => $categoryMode,
             'model_selection_mode' => (string) ($payload['model_selection_mode'] ?? 'fixed'),
@@ -803,11 +824,50 @@ class TaskController extends Controller
     }
 
     /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function assertStylePromptSelection(array $payload): void
+    {
+        $rawValue = $payload['style_prompt_id'] ?? '';
+        if (is_array($rawValue) || is_object($rawValue)) {
+            throw ValidationException::withMessages([
+                'style_prompt_id' => __('admin.task_create.error.style_prompt_invalid'),
+            ]);
+        }
+
+        $value = trim((string) $rawValue);
+        if ($value === '') {
+            return;
+        }
+
+        if (! ctype_digit($value) || (int) $value <= 0 || ! Prompt::query()->whereKey((int) $value)->where('type', 'style')->exists()) {
+            throw ValidationException::withMessages([
+                'style_prompt_id' => __('admin.task_create.error.style_prompt_invalid'),
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function resolveStylePromptId(array $payload): ?int
+    {
+        $rawValue = $payload['style_prompt_id'] ?? '';
+        if (is_array($rawValue) || is_object($rawValue)) {
+            return null;
+        }
+
+        $value = trim((string) $rawValue);
+
+        return $value !== '' && ctype_digit($value) ? (int) $value : null;
+    }
+
+    /**
      * @return list<int>
      */
     private function selectedDistributionChannelIds(Request $request): array
     {
-        if ((string) $request->input('publish_scope', 'local_and_distribution') === 'local_only') {
+        if ((string) $request->input('publish_scope', 'local_only') === 'local_only') {
             return [];
         }
 

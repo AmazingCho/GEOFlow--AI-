@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GEOFlow 创建任务页 PM / UX 审核标注板</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9e1ec;
+      --canvas: #eef2f7;
+      --card: #ffffff;
+      --p0: #c2413a;
+      --p1: #b56408;
+      --p2: #2563b8;
+      --good: #237a57;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    main { width: min(1600px, calc(100% - 48px)); margin: 24px auto 72px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 32px;
+      align-items: end;
+      padding: 34px 40px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    h1 { margin: 0; font-size: 34px; line-height: 1.25; }
+    .subtitle { margin: 12px 0 0; color: var(--muted); font-size: 17px; line-height: 1.7; }
+    .score { min-width: 180px; padding-left: 28px; border-left: 1px solid var(--line); }
+    .score strong { display: block; color: var(--p1); font-size: 38px; line-height: 1; }
+    .score span { display: block; margin-top: 8px; color: var(--muted); font-size: 14px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; }
+    .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); background: #fff; font-size: 13px; font-weight: 700; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+    .p0 { color: var(--p0); } .p1 { color: var(--p1); } .p2 { color: var(--p2); }
+    .section-title { margin: 34px 0 14px; font-size: 22px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+    .audit-card { overflow: hidden; border: 1px solid var(--line); background: var(--card); box-shadow: 0 8px 28px rgba(23,32,51,.06); }
+    .card-head { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .card-head h2 { margin: 0; font-size: 19px; }
+    .health { flex: 0 0 auto; padding: 5px 9px; border: 1px solid currentColor; font-size: 13px; font-weight: 700; }
+    .health.general { color: var(--p1); background: #fff9ed; }
+    .health.risk { color: var(--p0); background: #fff3f1; }
+    .health.good { color: var(--good); background: #effaf5; }
+    .health.poor { color: #9b2c2c; background: #fff0f0; }
+    .shot { position: relative; padding: 18px; background: #f7f9fc; }
+    .shot img { display: block; width: 100%; height: auto; border: 1px solid #cfd8e5; }
+    .shot.mobile img { width: min(48%, 360px); margin: 0 auto; }
+    .marker { position: absolute; display: grid; place-items: center; width: 38px; height: 38px; border: 4px solid #fff; border-radius: 50%; color: #fff; font-size: 16px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.22); }
+    .marker.p0-bg { background: var(--p0); }
+    .marker.p1-bg { background: var(--p1); }
+    .marker.p2-bg { background: var(--p2); }
+    .notes { display: grid; gap: 12px; padding: 18px 22px 22px; }
+    .note { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .note-num { display: grid; place-items: center; width: 28px; height: 28px; color: #fff; font-weight: 800; font-size: 13px; }
+    .note p { margin: 2px 0 0; color: #344054; line-height: 1.62; font-size: 14px; }
+    .span-2 { grid-column: 1 / -1; }
+    .roadmap { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .road-card { border-top: 5px solid currentColor; background: var(--card); padding: 22px; min-height: 220px; }
+    .road-card h3 { margin: 0 0 12px; font-size: 20px; }
+    .road-card ul { margin: 0; padding-left: 20px; color: #344054; line-height: 1.75; font-size: 14px; }
+    footer { margin-top: 24px; padding: 18px 22px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 13px; }
+    @media (max-width: 980px) {
+      main { width: min(100% - 24px, 760px); margin-top: 12px; }
+      .hero { grid-template-columns: 1fr; padding: 26px; }
+      .score { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; }
+      .grid, .roadmap { grid-template-columns: 1fr; }
+      .span-2 { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div>
+      <h1>GEOFlow 创建任务页 · PM / UX 审核标注板</h1>
+      <p class="subtitle">审核范围：默认入口、内容策略、审核分发、Collection / Entity 联动及移动端体验。核心目标是降低首次配置负担，同时保留高级生成能力。</p>
+      <div class="legend">
+        <span class="pill p0"><i class="dot"></i>P0 立即修复</span>
+        <span class="pill p1"><i class="dot"></i>P1 流程重组</span>
+        <span class="pill p2"><i class="dot"></i>P2 体验打磨</span>
+      </div>
+    </div>
+    <div class="score"><strong>6.8 / 10</strong><span>当前综合可用性</span></div>
+  </section>
+
+  <h2 class="section-title">关键流程截图标注</h2>
+  <section class="grid">
+    <article class="audit-card">
+      <div class="card-head"><h2>Step 1 · 默认入口与基础信息</h2><span class="health general">一般</span></div>
+      <div class="shot">
+        <img src="assets/01-default-top.png" alt="创建任务页默认入口">
+        <span class="marker p0-bg" style="right:7%;bottom:5%">1</span>
+        <span class="marker p1-bg" style="left:4%;top:31%">2</span>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="note-num p0-bg">1</span><p><strong>P0：</strong>底部固定操作栏遮挡页面内容和下方输入区域。应预留与操作栏等高的安全区，移动端改为紧凑操作栏。</p></div>
+        <div class="note"><span class="note-num p1-bg">2</span><p><strong>P1：</strong>“基础信息”一次承载过多选择。建议只突出 Collection、标题库和语言，其余移入“更多设置”。</p></div>
+      </div>
+    </article>
+
+    <article class="audit-card">
+      <div class="card-head"><h2>Step 2 · 内容策略与知识来源</h2><span class="health general">一般</span></div>
+      <div class="shot">
+        <img src="assets/02-content-detail.png" alt="内容策略与知识来源">
+        <span class="marker p1-bg" style="right:8%;top:27%">1</span>
+        <span class="marker p0-bg" style="right:7%;bottom:5%">2</span>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="note-num p1-bg">1</span><p><strong>P1：</strong>Master Prompt、Skill、Style 与模型同时出现，概念负担较大。默认只展示系统推荐结果，允许展开后人工覆盖。</p></div>
+        <div class="note"><span class="note-num p0-bg">2</span><p><strong>P0：</strong>固定操作栏持续覆盖内容，且用户无法快速判断还剩多少必填项未完成。</p></div>
+      </div>
+    </article>
+
+    <article class="audit-card">
+      <div class="card-head"><h2>Step 3 · 审核与内容分发</h2><span class="health risk">有风险</span></div>
+      <div class="shot">
+        <img src="assets/03-distribution.png" alt="审核与内容分发设置">
+        <span class="marker p0-bg" style="left:4%;top:16%">1</span>
+        <span class="marker p1-bg" style="right:5%;top:48%">2</span>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="note-num p0-bg">1</span><p><strong>P0：</strong>审核与发布属于高风险动作，不宜与普通生成配置采用相同默认强度。建议默认“生成草稿，不自动发布”。</p></div>
+        <div class="note"><span class="note-num p1-bg">2</span><p><strong>P1：</strong>渠道、审核规则和发布状态应按“生成 → 审核 → 分发”顺序组织，并明确哪些设置会立即产生外部动作。</p></div>
+      </div>
+    </article>
+
+    <article class="audit-card">
+      <div class="card-head"><h2>Step 4 · Collection 与 Entity 联动</h2><span class="health good">良好</span></div>
+      <div class="shot">
+        <img src="assets/04-collection-entity.png" alt="Collection 与 Entity 联动">
+        <span class="marker p2-bg" style="left:36%;top:18%">1</span>
+        <span class="marker p1-bg" style="right:7%;bottom:5%">2</span>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="note-num p2-bg">1</span><p><strong>保留：</strong>选择 Collection 后过滤 Entity 的方向正确，是任务上下文收敛的重要入口。建议补充结果数量和“为何不可选”的空状态。</p></div>
+        <div class="note"><span class="note-num p1-bg">2</span><p><strong>P1：</strong>联动说明文案仍偏系统术语，应改为用户结果语言，例如“仅显示此业务容器中的实体”。</p></div>
+      </div>
+    </article>
+
+    <article class="audit-card span-2">
+      <div class="card-head"><h2>Step 5 · 移动端与窄屏</h2><span class="health poor">较差</span></div>
+      <div class="shot mobile">
+        <img src="assets/05-mobile.png" alt="创建任务页移动端视图">
+        <span class="marker p1-bg" style="left:24%;top:30%">1</span>
+        <span class="marker p0-bg" style="left:55%;bottom:4%">2</span>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="note-num p1-bg">1</span><p><strong>P1：</strong>移动端单页过长，用户缺少当前进度感。建议采用分步导航或可折叠章节，并显示“必填项完成度”。</p></div>
+        <div class="note"><span class="note-num p0-bg">2</span><p><strong>P0：</strong>底部固定栏在窄屏占据过多高度，遮挡输入控件。应缩为单行主按钮，并将次要动作放入菜单。</p></div>
+      </div>
+    </article>
+  </section>
+
+  <h2 class="section-title">优先级路线图</h2>
+  <section class="roadmap">
+    <article class="road-card p0"><h3>P0 · 立即修复</h3><ul><li>消除底部固定栏遮挡</li><li>默认生成草稿，不自动发布</li><li>明确必填项与未完成状态</li><li>移动端压缩操作栏高度</li></ul></article>
+    <article class="road-card p1"><h3>P1 · 流程重组</h3><ul><li>按“上下文、生成、审核、分发”分组</li><li>默认隐藏 Master Prompt、Skill、Style 等高级项</li><li>让系统推荐成为默认，人工选择作为覆盖</li><li>移动端使用分步或折叠结构</li></ul></article>
+    <article class="road-card p2"><h3>P2 · 体验打磨</h3><ul><li>补充 Collection / Entity 结果数量</li><li>优化业务化说明和空状态</li><li>增加任务配置摘要与风险提示</li><li>统一输入框、下拉框和章节标题层级</li></ul></article>
+  </section>
+  <footer>本标注板是 Figma 审核板的本地可访问副本。原始页面截图未被修改，编号和说明以独立图层形式叠加展示。</footer>
+</main>
+</body>
+</html>

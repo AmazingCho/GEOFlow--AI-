@@ -6,9 +6,13 @@
         ? route('admin.articles.update', ['articleId' => (int) $articleId])
         : route('admin.articles.store');
     $articleImageUploadUrl = $isEdit
-        ? route('admin.articles.editor.images.upload', ['articleId' => (int) $articleId], false)
+        ? \App\Support\AdminWeb::routePath('admin.articles.editor.images.upload', ['articleId' => (int) $articleId])
         : '';
-    $articleWechatHtmlUrl = route('admin.articles.editor.wechat-html', [], false);
+    $articleWechatHtmlUrl = \App\Support\AdminWeb::routePath('admin.articles.editor.wechat-html');
+    $articleFormId = 'article-content-form';
+    $correctionFormId = $isEdit ? 'article-correction-form-'.(int) $articleId : '';
+    $internalLinkRefreshFormId = $isEdit ? 'article-internal-link-refresh-form-'.(int) $articleId : '';
+    $internalLinkApplyFormId = $isEdit ? 'article-internal-link-apply-form-'.(int) $articleId : '';
     $vditorLocaleMap = [
         'zh_CN' => 'zh_CN',
         'zh-CN' => 'zh_CN',
@@ -61,7 +65,7 @@
             </div>
         </div>
 
-        <form method="POST" action="{{ $formAction }}" class="space-y-8">
+        <form id="{{ $articleFormId }}" method="POST" action="{{ $formAction }}" class="space-y-8">
             @csrf
             @if($isEdit)
                 @method('PUT')
@@ -289,6 +293,7 @@
                             'knowledgeBaseOptions' => $correctionKnowledgeBaseOptions ?? [],
                             'title' => __('admin.knowledge_corrections.assistant.article_title'),
                             'description' => __('admin.knowledge_corrections.assistant.article_desc'),
+                            'externalFormId' => $correctionFormId,
                         ])
                     @endif
 
@@ -304,13 +309,10 @@
                                         <h3 class="text-lg font-medium text-gray-900">{{ __('admin.article_edit.internal_links.title') }}</h3>
                                         <p class="mt-1 text-xs leading-5 text-gray-500">{{ __('admin.article_edit.internal_links.subtitle') }}</p>
                                     </div>
-                                    <form method="POST" action="{{ route('admin.articles.internal-links.refresh', ['articleId' => (int) $articleId]) }}">
-                                        @csrf
-                                        <button type="submit" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                            <i data-lucide="refresh-cw" class="mr-1.5 h-3.5 w-3.5"></i>
-                                            {{ __('admin.article_edit.internal_links.refresh') }}
-                                        </button>
-                                    </form>
+                                    <button type="submit" form="{{ $internalLinkRefreshFormId }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                        <i data-lucide="refresh-cw" class="mr-1.5 h-3.5 w-3.5"></i>
+                                        {{ __('admin.article_edit.internal_links.refresh') }}
+                                    </button>
                                 </div>
                             </div>
                             <div class="px-6 py-4 text-sm">
@@ -319,8 +321,7 @@
                                         {{ __('admin.article_edit.internal_links.empty') }}
                                     </div>
                                 @else
-                                    <form method="POST" action="{{ route('admin.articles.internal-links.apply', ['articleId' => (int) $articleId]) }}" class="space-y-4">
-                                        @csrf
+                                    <div class="space-y-4">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <button type="button" data-internal-link-select-all class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                                 {{ __('admin.article_edit.internal_links.select_all') }}
@@ -334,7 +335,7 @@
                                             @foreach($linkSuggestions as $suggestion)
                                                 <label class="block rounded-lg border border-gray-200 bg-gray-50 p-3 hover:border-blue-200 hover:bg-blue-50/50">
                                                     <div class="flex items-start gap-3">
-                                                        <input type="checkbox" name="entity_ids[]" value="{{ (int) ($suggestion['entity_id'] ?? 0) }}" class="mt-1 rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" data-internal-link-checkbox>
+                                                        <input type="checkbox" name="entity_ids[]" value="{{ (int) ($suggestion['entity_id'] ?? 0) }}" form="{{ $internalLinkApplyFormId }}" class="mt-1 rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" data-internal-link-checkbox>
                                                         <div class="min-w-0 flex-1">
                                                             <div class="flex flex-wrap items-center gap-2">
                                                                 <span class="font-semibold text-gray-900">{{ (string) ($suggestion['entity_name'] ?? '-') }}</span>
@@ -349,12 +350,12 @@
                                             @endforeach
                                         </div>
                                         <div class="flex justify-end">
-                                            <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                                            <button type="submit" form="{{ $internalLinkApplyFormId }}" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                                                 <i data-lucide="link" class="mr-2 h-4 w-4"></i>
                                                 {{ __('admin.article_edit.internal_links.apply_selected') }}
                                             </button>
                                         </div>
-                                    </form>
+                                    </div>
                                 @endif
 
                                 @if($linkRecords->isNotEmpty())
@@ -818,6 +819,18 @@
                 </div>
             </div>
         </form>
+
+        @if($isEdit)
+            <form id="{{ $correctionFormId }}" method="POST" action="{{ route('admin.knowledge-corrections.store') }}" class="hidden">
+                @csrf
+            </form>
+            <form id="{{ $internalLinkRefreshFormId }}" method="POST" action="{{ route('admin.articles.internal-links.refresh', ['articleId' => (int) $articleId]) }}" class="hidden">
+                @csrf
+            </form>
+            <form id="{{ $internalLinkApplyFormId }}" method="POST" action="{{ route('admin.articles.internal-links.apply', ['articleId' => (int) $articleId]) }}" class="hidden">
+                @csrf
+            </form>
+        @endif
     </div>
 @endsection
 

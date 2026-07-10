@@ -29,7 +29,7 @@
             </a>
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">{{ $isEdit ? '编辑询盘' : '新增询盘' }}</h1>
-                <p class="mt-1 text-sm text-gray-600">询盘用于把客户需求与现有知识体系关联，AI 只推荐已有 Entity、知识库和 Case。</p>
+                <p class="mt-1 text-sm text-gray-600">询盘用于记录客户需求，并可按需手动关联现有 Entity、知识库和 Case。</p>
             </div>
         </div>
 
@@ -51,7 +51,7 @@
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div>
                                 <h2 class="text-base font-semibold text-blue-950">AI 需求识别</h2>
-                                <p class="mt-1 text-sm text-blue-800">粘贴询盘原文后，系统会提取需求摘要，并推荐当前 Collection 内可引用的 Entity、知识库和 Case。</p>
+                                <p class="mt-1 text-sm text-blue-800">粘贴询盘原文后，系统只提取需求摘要、产品兴趣和回复建议；引用资料请在下方手动选择。</p>
                             </div>
                             <div class="flex min-w-[280px] flex-col gap-2 sm:flex-row">
                                 <select data-crm-analysis-model class="block w-full rounded-md border border-blue-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -171,8 +171,8 @@
                     </div>
 
                     <section class="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-                        <h2 class="text-base font-semibold text-slate-900">推荐引用资料</h2>
-                        <p class="mt-1 text-sm text-slate-600">这些关联不会创建新素材，只用于把询盘和现有知识上下文连接起来。</p>
+                        <h2 class="text-base font-semibold text-slate-900">引用资料</h2>
+                        <p class="mt-1 text-sm text-slate-600">不会自动关联资料；请按需手动搜索并选择已有 Entity、知识库和 Case。</p>
                         <div class="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-3">
                             <div>
                                 <label class="mb-2 block text-sm font-medium text-gray-700">Entity</label>
@@ -267,16 +267,6 @@
                 });
             }
 
-            function selectOption(fieldName, id) {
-                const selector = form.querySelector('[data-option-multi-selector][data-field-name="' + fieldName + '"]');
-                if (!selector || !id) return;
-                if (selector.querySelector('[data-option-chip][data-option-id="' + CSS.escape(String(id)) + '"]')) return;
-                const item = selector.querySelector('[data-option-item][data-option-id="' + CSS.escape(String(id)) + '"]');
-                if (item && item.dataset.optionFilterHidden !== '1') {
-                    item.click();
-                }
-            }
-
             collectionSelect?.addEventListener('change', filterByCollection);
             filterByCollection();
 
@@ -327,10 +317,7 @@
                     if (form.querySelector('[name="raw_message"]') && !form.querySelector('[name="raw_message"]').value.trim()) {
                         form.querySelector('[name="raw_message"]').value = content;
                     }
-                    (fields.entity_ids || []).forEach((id) => selectOption('entity_ids', id));
-                    (fields.knowledge_base_ids || []).forEach((id) => selectOption('knowledge_base_ids', id));
-                    (fields.case_record_ids || []).forEach((id) => selectOption('case_record_ids', id));
-                    if (status) status.textContent = '分析完成，可继续人工调整。';
+                    if (status) status.textContent = '分析完成，请按需手动选择引用资料。';
                 } catch (error) {
                     if (status) status.textContent = '分析失败，请检查模型配置或稍后重试。';
                 }

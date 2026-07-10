@@ -1014,15 +1014,15 @@ class ArticleController extends Controller
     {
         if ($isTrashView) {
             return [
-                'batch_restore' => route('admin.articles.batch.restore', [], false),
-                'batch_force_delete' => route('admin.articles.batch.force-delete', [], false),
+                'batch_restore' => AdminWeb::routePath('admin.articles.batch.restore'),
+                'batch_force_delete' => AdminWeb::routePath('admin.articles.batch.force-delete'),
             ];
         }
 
         return [
-            'batch_update_status' => route('admin.articles.batch.update-status', [], false),
-            'batch_update_review' => route('admin.articles.batch.update-review', [], false),
-            'delete_articles' => route('admin.articles.batch.delete', [], false),
+            'batch_update_status' => AdminWeb::routePath('admin.articles.batch.update-status'),
+            'batch_update_review' => AdminWeb::routePath('admin.articles.batch.update-review'),
+            'delete_articles' => AdminWeb::routePath('admin.articles.batch.delete'),
         ];
     }
 }

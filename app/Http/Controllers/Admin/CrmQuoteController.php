@@ -44,6 +44,10 @@ class CrmQuoteController extends Controller
 
     private const SELLER_PROFILE_TYPES = ['seller_company', 'bank_account'];
 
+    private const DEFAULT_WARRANTY_TERMS = '12 months warranty for machine main parts, excluding consumables and damage caused by misuse.';
+
+    private const DEFAULT_INSTALLATION_TERMS = 'Installation & Training: Remote training and online technical support are included. On-site service is available at extra cost, with airfare, hotel and local travel expenses to be covered by the buyer.';
+
     /**
      * @return array<string, string>
      */
@@ -163,6 +167,7 @@ class CrmQuoteController extends Controller
     {
         $payload = $this->validateQuote($request);
         $this->applySalesChainToQuotePayload($payload);
+        $this->validateQuoteItemMaterialScope($payload);
         $items = $this->normalizeItems($payload['items'] ?? [], $request);
         $quote = CrmQuote::query()->create($this->normalizeQuotePayload($payload, $items));
         $this->syncItems($quote, $items);
@@ -270,6 +275,7 @@ class CrmQuoteController extends Controller
         $quote = CrmQuote::query()->whereKey($quoteId)->firstOrFail();
         $payload = $this->validateQuote($request, $quote);
         $this->applySalesChainToQuotePayload($payload);
+        $this->validateQuoteItemMaterialScope($payload);
         $items = $this->normalizeItems($payload['items'] ?? [], $request);
         $quote->update($this->normalizeQuotePayload($payload, $items, $quote));
         $this->syncItems($quote, $items);
@@ -342,6 +348,27 @@ class CrmQuoteController extends Controller
         return response()->json([
             'message' => '常用信息已保存',
             'profile' => $this->sellerProfileOption($profile),
+        ]);
+    }
+
+    public function setDefaultSellerProfile(Request $request, int $profileId): JsonResponse
+    {
+        $data = $request->validate([
+            'type' => ['required', 'string', Rule::in(self::SELLER_PROFILE_TYPES)],
+        ]);
+
+        $type = (string) $data['type'];
+        $profile = CrmSellerProfile::query()
+            ->whereKey($profileId)
+            ->where('type', $type)
+            ->firstOrFail();
+
+        CrmSellerProfile::query()->where('type', $type)->update(['is_default' => false]);
+        $profile->forceFill(['is_default' => true])->save();
+
+        return response()->json([
+            'message' => '默认常用信息已更新',
+            'profile' => $this->sellerProfileOption($profile->refresh()),
         ]);
     }
 
@@ -434,6 +461,10 @@ class CrmQuoteController extends Controller
     {
         $sellerCompanyProfiles = $this->sellerProfileOptions('seller_company');
         $bankAccountProfiles = $this->sellerProfileOptions('bank_account');
+        $entityOptions = $this->entityOptions($collectionId);
+        $imageOptions = $this->imageOptions($collectionId);
+        $entityOptionPool = $collectionId !== null && $collectionId > 0 ? $this->entityOptions(null) : $entityOptions;
+        $imageOptionPool = $collectionId !== null && $collectionId > 0 ? $this->imageOptions(null) : $imageOptions;
 
         return $base + [
             'activeMenu' => 'crm',
@@ -443,8 +474,10 @@ class CrmQuoteController extends Controller
             'customerProfiles' => $this->customerProfiles($collectionId),
             'inquiryOptions' => $this->inquiryOptions($collectionId, $customerId),
             'opportunityOptions' => $this->opportunityOptions($collectionId, $customerId),
-            'entityOptions' => $this->entityOptions($collectionId),
-            'imageOptions' => $this->imageOptions($collectionId),
+            'entityOptions' => $entityOptions,
+            'imageOptions' => $imageOptions,
+            'quoteEntityOptionPool' => $entityOptionPool,
+            'quoteImageOptionPool' => $imageOptionPool,
             'employeeOptions' => CrmOptions::employeeOptions(),
             'documentTypeOptions' => self::documentTypeOptions(),
             'lineTypeOptions' => self::lineTypeOptions(),
@@ -672,6 +705,65 @@ class CrmQuoteController extends Controller
         $payload['collection_id'] = $expectedCollectionId ?? $collectionId;
     }
 
+    /** @param array<string, mixed> $payload */
+    private function validateQuoteItemMaterialScope(array $payload): void
+    {
+        $collectionId = $this->normalizeNullableId($payload['collection_id'] ?? null);
+        if ($collectionId === null) {
+            return;
+        }
+
+        $itemsPayload = (array) ($payload['items'] ?? []);
+        $entityIds = collect((array) ($itemsPayload['entity_id'] ?? []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($entityIds->isNotEmpty()) {
+            $hasOutOfScopeEntity = EntityRecord::query()
+                ->whereIn('id', $entityIds->all())
+                ->where(static function ($query) use ($collectionId): void {
+                    $query->whereNull('collection_id')
+                        ->orWhere('collection_id', '<>', $collectionId);
+                })
+                ->exists();
+
+            if ($hasOutOfScopeEntity) {
+                throw ValidationException::withMessages([
+                    'items.entity_id' => '明细关联 Entity 必须属于当前业务容器。',
+                ]);
+            }
+        }
+
+        $imageIds = collect((array) ($itemsPayload['image_id'] ?? []))
+            ->map(static fn ($id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($imageIds->isEmpty()) {
+            return;
+        }
+
+        $hasOutOfScopeImage = Image::query()
+            ->whereIn('id', $imageIds->all())
+            ->where(static function ($query) use ($collectionId): void {
+                $query->whereDoesntHave('library')
+                    ->orWhereHas('library', static function ($libraryQuery) use ($collectionId): void {
+                        $libraryQuery->whereNull('collection_id')
+                            ->orWhere('collection_id', '<>', $collectionId);
+                    });
+            })
+            ->exists();
+
+        if ($hasOutOfScopeImage) {
+            throw ValidationException::withMessages([
+                'items.image_id' => '明细图片必须来自当前业务容器下的图片库。',
+            ]);
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $itemsPayload
      * @return list<array<string, mixed>>
@@ -808,8 +900,8 @@ class CrmQuoteController extends Controller
             'payment_terms' => '',
             'delivery_terms' => '',
             'lead_time' => '',
-            'warranty_terms' => '',
-            'installation_terms' => '',
+            'warranty_terms' => self::DEFAULT_WARRANTY_TERMS,
+            'installation_terms' => self::DEFAULT_INSTALLATION_TERMS,
             'packing_terms' => '',
             'deposit_percent' => 60,
             'status' => 'draft',

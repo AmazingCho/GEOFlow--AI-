@@ -32,6 +32,11 @@ try {
     timeout: 60000,
   });
   await page.emulateMediaType('print');
+  await page.evaluate(() => {
+    if (typeof window.GeoFlowCrmDocumentAutoPaginate === 'function') {
+      window.GeoFlowCrmDocumentAutoPaginate();
+    }
+  });
   await page.pdf({
     path: pdfPath,
     format: 'A4',

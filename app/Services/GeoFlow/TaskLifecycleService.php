@@ -90,6 +90,7 @@ class TaskLifecycleService
                 'image_tag_filter' => $normalized['image_tag_filter'],
                 'prompt_id' => $normalized['prompt_id'],
                 'skill_prompt_id' => $normalized['skill_prompt_id'],
+                'style_prompt_id' => $normalized['style_prompt_id'],
                 'ai_model_id' => $normalized['ai_model_id'],
                 'need_review' => $normalized['need_review'],
                 'publish_interval' => $normalized['publish_interval'],
@@ -102,6 +103,8 @@ class TaskLifecycleService
                 'model_selection_mode' => $normalized['model_selection_mode'],
                 'status' => $normalized['status'],
                 'publish_scope' => $normalized['publish_scope'],
+                'distribution_strategy' => $normalized['distribution_strategy'],
+                'distribution_cursor' => 0,
                 'knowledge_base_id' => $normalized['knowledge_base_id'],
                 'knowledge_tag_filter' => $normalized['knowledge_tag_filter'],
                 'entity_filter' => $normalized['entity_filter'],
@@ -499,6 +502,7 @@ class TaskLifecycleService
             'image_library_id' => ['model' => ImageLibrary::class, 'message' => '选择的图片库不存在', 'required' => false],
             'prompt_id' => ['model' => Prompt::class, 'message' => '选择的内容提示词不存在', 'required' => ! $isUpdate, 'prompt_content' => true],
             'skill_prompt_id' => ['model' => Prompt::class, 'message' => '选择的 Skill Prompt 不存在', 'required' => false, 'prompt_skill' => true],
+            'style_prompt_id' => ['model' => Prompt::class, 'message' => '选择的 Style Prompt 不存在', 'required' => false, 'prompt_style' => true],
             'ai_model_id' => ['model' => AiModel::class, 'message' => '选择的AI模型不存在或未激活', 'required' => ! $isUpdate, 'ai_active_chat' => true],
             'author_id' => ['model' => Author::class, 'message' => '选择的作者不存在', 'required' => false],
             'knowledge_base_id' => ['model' => KnowledgeBase::class, 'message' => '选择的知识库不存在', 'required' => false],
@@ -534,6 +538,8 @@ class TaskLifecycleService
                 $exists = Prompt::query()->whereKey($id)->where('type', 'content')->exists();
             } elseif (! empty($config['prompt_skill'])) {
                 $exists = Prompt::query()->whereKey($id)->where('type', 'skill')->exists();
+            } elseif (! empty($config['prompt_style'])) {
+                $exists = Prompt::query()->whereKey($id)->where('type', 'style')->exists();
             } elseif (! empty($config['ai_active_chat'])) {
                 $exists = AiModel::query()
                     ->whereKey($id)
@@ -634,6 +640,17 @@ class TaskLifecycleService
             }
         } elseif (! $isUpdate) {
             $output['publish_scope'] = 'local_and_distribution';
+        }
+
+        if (array_key_exists('distribution_strategy', $data)) {
+            $strategy = trim((string) $data['distribution_strategy']);
+            if (! in_array($strategy, TaskDistributionChannelSelector::strategies(), true)) {
+                $fieldErrors['distribution_strategy'] = '分发策略无效';
+            } else {
+                $output['distribution_strategy'] = $strategy;
+            }
+        } elseif (! $isUpdate) {
+            $output['distribution_strategy'] = TaskDistributionChannelSelector::STRATEGY_BROADCAST;
         }
 
         if (array_key_exists('knowledge_tag_filter', $data)) {

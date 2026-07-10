@@ -74,4 +74,16 @@ class CrmCustomer extends Model
     public function contacts(): HasMany { return $this->hasMany(CrmCustomerContact::class, 'customer_id')->orderByDesc('is_primary')->orderBy('name'); }
     public function opportunities(): HasMany { return $this->hasMany(CrmOpportunity::class, 'customer_id'); }
     public function crmTasks(): HasMany { return $this->hasMany(CrmTask::class, 'customer_id'); }
+
+    public function getDisplayNameAttribute(): string
+    {
+        foreach (['company_name', 'contact_person', 'email', 'phone'] as $field) {
+            $value = trim((string) ($this->{$field} ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '客户 #'.(int) $this->id;
+    }
 }

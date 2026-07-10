@@ -248,9 +248,14 @@ class TaskMonitoringQueryService
                 'cross_collection_mode' => (int) ($task->cross_collection_mode ?? 0),
                 'status' => (string) ($task->status ?? 'paused'),
                 'publish_scope' => (string) ($task->publish_scope ?? 'local_and_distribution'),
+                'distribution_strategy' => in_array((string) ($task->distribution_strategy ?? ''), TaskDistributionChannelSelector::strategies(), true)
+                    ? (string) $task->distribution_strategy
+                    : TaskDistributionChannelSelector::STRATEGY_BROADCAST,
+                'distribution_cursor' => (int) ($task->distribution_cursor ?? 0),
                 'title_library_id' => $this->nullableInt($task->title_library_id),
                 'prompt_id' => $this->nullableInt($task->prompt_id),
                 'skill_prompt_id' => $this->nullableInt($task->skill_prompt_id),
+                'style_prompt_id' => $this->nullableInt($task->style_prompt_id),
                 'ai_model_id' => $this->nullableInt($task->ai_model_id),
                 'knowledge_base_id' => $this->nullableInt($task->knowledge_base_id),
                 'knowledge_tag_filter' => (string) ($task->knowledge_tag_filter ?? ''),

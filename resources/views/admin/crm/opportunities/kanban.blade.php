@@ -68,7 +68,7 @@
                         @php($nextTask = $opportunity->tasks->first())
                         <a href="{{ route('admin.crm.opportunities.edit', ['opportunityId' => (int) $opportunity->id]) }}" class="block rounded-md border border-gray-200 bg-white p-3 shadow-sm hover:border-blue-300 hover:bg-blue-50/40">
                             <div class="text-sm font-semibold leading-5 text-gray-900">{{ $opportunity->name }}</div>
-                            <div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->company_name ?: '未关联客户' }}</div>
+                            <div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->display_name ?: '未关联客户' }}</div>
                             <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
                                 <span class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">{{ $opportunity->currency ?: 'USD' }} {{ number_format((float) $opportunity->amount, 0) }}</span>
                                 <span class="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{{ (int) $opportunity->probability }}%</span>

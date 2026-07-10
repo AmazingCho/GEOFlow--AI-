@@ -9,7 +9,8 @@
     $selectedDistributionChannelIds = collect(old('distribution_channel_ids', $taskForm['distribution_channel_ids'] ?? []))
         ->map(static fn ($id): string => (string) $id)
         ->all();
-    $publishScope = (string) old('publish_scope', (string) ($taskForm['publish_scope'] ?? 'local_and_distribution'));
+    $publishScope = (string) old('publish_scope', (string) ($taskForm['publish_scope'] ?? ($isEdit ? 'local_and_distribution' : 'local_only')));
+    $distributionStrategy = (string) old('distribution_strategy', (string) ($taskForm['distribution_strategy'] ?? \App\Services\GeoFlow\TaskDistributionChannelSelector::STRATEGY_BROADCAST));
     $distributionChannelsDisabled = $publishScope === 'local_only';
     $storedKnowledgeTagFilter = (string) ($taskForm['knowledge_tag_filter'] ?? '');
     $selectedKnowledgeTagFilters = old('knowledge_tag_filters', null);
@@ -91,9 +92,15 @@
     $hasImageConfiguration = (string) old('image_library_id', (string) ($taskForm['image_library_id'] ?? '')) !== ''
         || count($selectedImageTagFilters) > 0;
     $hasDistributionConfiguration = count($selectedDistributionChannelIds) > 0
-        || $publishScope !== 'local_and_distribution';
+        || $publishScope !== 'local_only';
     $autoSkillPromptValue = \App\Services\GeoFlow\SkillPromptRecommendationService::AUTO_VALUE;
     $selectedSkillPromptValue = (string) old('skill_prompt_id', $isEdit ? (string) ($taskForm['skill_prompt_id'] ?? '') : $autoSkillPromptValue);
+    $selectedStylePromptValue = (string) old('style_prompt_id', (string) ($taskForm['style_prompt_id'] ?? ''));
+    $selectedModelSelectionMode = (string) old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed'));
+    $selectedNeedReview = (string) old('need_review', (string) ($taskForm['need_review'] ?? ($isEdit ? '0' : '1'))) === '1';
+    $hasAdvancedGenerationConfiguration = $selectedStylePromptValue !== ''
+        || $selectedSkillPromptValue !== $autoSkillPromptValue
+        || $selectedModelSelectionMode !== 'fixed';
     $skillPromptRecommendations = $formOptions['skillPromptRecommendations'] ?? [];
     $skillPromptIntentLabels = [
         'comparison' => $t('task_create.skill_recommendation.intent.comparison'),
@@ -131,19 +138,40 @@
                     </div>
                 </div>
             @else
-            <div class="mb-5 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-                <div class="flex flex-wrap items-center gap-3 text-xs font-medium">
-                    <span class="inline-flex items-center gap-1.5 text-red-700"><span class="h-2 w-2 rounded-full bg-red-500"></span>必填</span>
-                    <span class="inline-flex items-center gap-1.5 text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>推荐</span>
-                    <span class="inline-flex items-center gap-1.5 text-gray-600"><span class="h-2 w-2 rounded-full bg-gray-400"></span>可选</span>
+            <div data-task-workflow-summary class="mb-5 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="flex flex-wrap items-center gap-3 text-xs font-medium">
+                        <span class="inline-flex items-center gap-1.5 text-red-700"><span class="h-2 w-2 rounded-full bg-red-500"></span>{{ $t('task_create.workflow.required') }}</span>
+                        <span class="inline-flex items-center gap-1.5 text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>{{ $t('task_create.workflow.recommended') }}</span>
+                        <span class="inline-flex items-center gap-1.5 text-gray-600"><span class="h-2 w-2 rounded-full bg-gray-400"></span>{{ $t('task_create.workflow.optional') }}</span>
+                    </div>
+                    <p class="text-sm text-gray-500">{{ $t('task_create.workflow.intro') }}</p>
                 </div>
-                <p class="text-sm text-gray-500">先完成蓝色必填区；素材上下文可提高生成准确度，发布与高级配置可按需展开。</p>
+                <div class="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-4 sm:divide-y-0">
+                    <div class="px-4 py-3">
+                        <span class="block text-xs font-semibold text-gray-500">1. {{ $t('task_create.workflow.context') }}</span>
+                        <span data-workflow-context class="mt-1 block truncate text-sm font-medium text-gray-800">{{ $t('task_create.workflow.context_pending') }}</span>
+                    </div>
+                    <div class="px-4 py-3">
+                        <span class="block text-xs font-semibold text-gray-500">2. {{ $t('task_create.workflow.generation') }}</span>
+                        <span data-workflow-generation class="mt-1 block truncate text-sm font-medium text-gray-800">{{ $t('task_create.workflow.generation_pending') }}</span>
+                    </div>
+                    <div class="px-4 py-3">
+                        <span class="block text-xs font-semibold text-gray-500">3. {{ $t('task_create.workflow.review') }}</span>
+                        <span data-workflow-review class="mt-1 block truncate text-sm font-medium text-gray-800"></span>
+                    </div>
+                    <div class="px-4 py-3">
+                        <span class="block text-xs font-semibold text-gray-500">4. {{ $t('task_create.workflow.distribution') }}</span>
+                        <span data-workflow-distribution class="mt-1 block truncate text-sm font-medium text-gray-800"></span>
+                    </div>
+                </div>
             </div>
             <form method="POST" action="{{ $isEdit ? route('admin.tasks.update', ['taskId' => $taskId]) : route('admin.tasks.store') }}" class="grid grid-cols-1 gap-6 xl:grid-cols-12">
                 @csrf
                 @if ($isEdit)
                     @method('PUT')
                 @endif
+                <input type="hidden" name="distribution_strategy" value="{{ $distributionStrategy }}">
 
                 <div class="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm xl:col-span-12">
                     <div class="flex items-start justify-between gap-4 border-b border-blue-200 bg-blue-50 px-6 py-4">
@@ -191,6 +219,7 @@
                                     ])
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.entities') }}</p>
+                                <p data-entity-filter-status class="mt-2 text-xs font-medium text-blue-700"></p>
                             </div>
                             <div class="order-6 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:col-span-3">
                                 <label class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.cases') }}</label>
@@ -205,6 +234,7 @@
                                     ])
                                 </div>
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.cases') }}</p>
+                                <p data-case-filter-status class="mt-2 text-xs font-medium text-blue-700"></p>
                             </div>
                             <div class="order-3 lg:col-span-2">
                                 <label for="title_library_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.title_library') }} *</label>
@@ -285,29 +315,6 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="order-3">
-                                <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
-                                <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
-                                    <option value="{{ $autoSkillPromptValue }}" @selected($selectedSkillPromptValue === $autoSkillPromptValue)>{{ $t('task_create.option.auto_skill_prompt') }}</option>
-                                    <option value="" @selected($selectedSkillPromptValue === '')>{{ $t('task_create.option.no_skill_prompt') }}</option>
-                                    @foreach (($formOptions['skillPrompts'] ?? []) as $prompt)
-                                        <option value="{{ $prompt['id'] }}" @selected($selectedSkillPromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
-                                    @endforeach
-                                </select>
-                                <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
-                                <div
-                                    data-skill-prompt-recommendation
-                                    data-recommendations='@json($skillPromptRecommendations)'
-                                    data-intent-labels='@json($skillPromptIntentLabels)'
-                                    class="mt-3 hidden rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
-                                >
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <span class="rounded-full bg-blue-600 px-2 py-0.5 font-semibold text-white">{{ $t('task_create.skill_recommendation.badge') }}</span>
-                                        <span data-skill-recommendation-title class="font-semibold"></span>
-                                    </div>
-                                    <p data-skill-recommendation-reason class="mt-1 leading-5 text-blue-800"></p>
-                                </div>
-                            </div>
                             <div class="order-2 lg:col-span-2">
                                 <label for="ai_model_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.ai_model') }} *</label>
                                 <select name="ai_model_id" id="ai_model_id" required class="{{ $fieldClass }}">
@@ -317,14 +324,58 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="order-4">
-                                <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
-                                <select name="model_selection_mode" id="model_selection_mode" class="{{ $fieldClass }}">
-                                    <option value="fixed" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
-                                    <option value="smart_failover" @selected(old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed')) === 'smart_failover')>{{ $t('task_create.option.model_selection_smart_failover') }}</option>
-                                </select>
-                                <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.model_selection_mode') !!}</p>
-                            </div>
+                            <details data-advanced-generation-settings class="order-3 rounded-lg border border-gray-200 bg-gray-50 lg:col-span-4" @if($hasAdvancedGenerationConfiguration) open @endif>
+                                <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-sm">
+                                    <span>
+                                        <span class="block font-semibold text-gray-800">{{ $t('task_create.advanced_generation.title') }}</span>
+                                        <span data-advanced-generation-summary class="mt-0.5 block text-xs font-normal text-gray-500">{{ $t('task_create.advanced_generation.default_summary') }}</span>
+                                    </span>
+                                    <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">{{ $t('task_create.workflow.optional') }}</span>
+                                </summary>
+                                <div class="grid grid-cols-1 gap-5 border-t border-gray-200 bg-white px-4 py-4 lg:grid-cols-3">
+                                    <div>
+                                        <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
+                                        <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
+                                            <option value="{{ $autoSkillPromptValue }}" @selected($selectedSkillPromptValue === $autoSkillPromptValue)>{{ $t('task_create.option.auto_skill_prompt') }}</option>
+                                            <option value="" @selected($selectedSkillPromptValue === '')>{{ $t('task_create.option.no_skill_prompt') }}</option>
+                                            @foreach (($formOptions['skillPrompts'] ?? []) as $prompt)
+                                                <option value="{{ $prompt['id'] }}" @selected($selectedSkillPromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
+                                        <div
+                                            data-skill-prompt-recommendation
+                                            data-recommendations='@json($skillPromptRecommendations)'
+                                            data-intent-labels='@json($skillPromptIntentLabels)'
+                                            class="mt-3 hidden rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+                                        >
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="rounded-full bg-blue-600 px-2 py-0.5 font-semibold text-white">{{ $t('task_create.skill_recommendation.badge') }}</span>
+                                                <span data-skill-recommendation-title class="font-semibold"></span>
+                                            </div>
+                                            <p data-skill-recommendation-reason class="mt-1 leading-5 text-blue-800"></p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label for="style_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.style_prompt') }}</label>
+                                        <select name="style_prompt_id" id="style_prompt_id" class="{{ $fieldClass }}">
+                                            <option value="" @selected($selectedStylePromptValue === '')>{{ $t('task_create.option.no_style_prompt') }}</option>
+                                            @foreach (($formOptions['stylePrompts'] ?? []) as $prompt)
+                                                <option value="{{ $prompt['id'] }}" @selected($selectedStylePromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.style_prompt') }}</p>
+                                    </div>
+                                    <div>
+                                        <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
+                                        <select name="model_selection_mode" id="model_selection_mode" class="{{ $fieldClass }}">
+                                            <option value="fixed" @selected($selectedModelSelectionMode === 'fixed')>{{ $t('task_create.option.model_selection_fixed') }}</option>
+                                            <option value="smart_failover" @selected($selectedModelSelectionMode === 'smart_failover')>{{ $t('task_create.option.model_selection_smart_failover') }}</option>
+                                        </select>
+                                        <p class="mt-1 text-sm text-gray-500">{!! $t('task_create.help.model_selection_mode') !!}</p>
+                                    </div>
+                                </div>
+                            </details>
                             <div class="order-5 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
                                 <label for="knowledge_base_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.knowledge_base') }}</label>
                                 <select name="knowledge_base_id" id="knowledge_base_id" class="{{ $fieldClass }}">
@@ -456,7 +507,8 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <div class="flex items-center">
-                                    <input type="checkbox" name="need_review" id="need_review" @checked((bool) old('need_review', (bool) ($taskForm['need_review'] ?? false)))
+                                    <input type="hidden" name="need_review" value="0">
+                                    <input type="checkbox" name="need_review" value="1" @checked($selectedNeedReview) id="need_review"
                                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                     <label for="need_review" class="ml-2 block text-sm text-gray-900">{{ $t('task_create.field.need_review') }}</label>
                                 </div>
@@ -468,6 +520,10 @@
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.publish_interval') }}</p>
                             </div>
+                        </div>
+                        <div data-publish-risk class="mt-5 flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                            <i data-lucide="shield-check" class="mt-0.5 h-4 w-4 shrink-0"></i>
+                            <span data-publish-risk-text>{{ $t('task_create.publish_risk.safe') }}</span>
                         </div>
                     </div>
                 </details>
@@ -672,12 +728,18 @@
                     </div>
                 </details>
 
-                <div class="sticky bottom-3 z-30 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur xl:col-span-12 sm:flex-row sm:items-center sm:justify-between">
-                    <div class="flex items-center gap-2 text-sm">
-                        <span data-required-status-dot class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-                        <span data-required-status class="font-medium text-gray-700">正在检查必填项...</span>
+                <div data-task-action-bar class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm xl:col-span-12 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0 space-y-1 text-sm">
+                        <div class="flex items-center gap-2">
+                            <span data-required-status-dot class="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"></span>
+                            <span data-required-status class="truncate font-medium text-gray-700">{{ $t('task_create.workflow.checking_required') }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-gray-500">
+                            <i data-lucide="shield-check" class="h-3.5 w-3.5 shrink-0"></i>
+                            <span data-action-publish-summary class="truncate"></span>
+                        </div>
                     </div>
-                    <div class="flex justify-end gap-3">
+                    <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-3 sm:flex sm:justify-end">
                         <a href="{{ route('admin.tasks.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
                             {{ __('admin.button.cancel') }}
                         </a>
@@ -703,6 +765,8 @@
 
             const titleLibrarySelect = document.getElementById('title_library_id');
             const skillPromptSelect = document.getElementById('skill_prompt_id');
+            const stylePromptSelect = document.getElementById('style_prompt_id');
+            const modelSelectionModeSelect = document.getElementById('model_selection_mode');
             const skillPromptRecommendationPanel = document.querySelector('[data-skill-prompt-recommendation]');
             const skillPromptRecommendationTitle = document.querySelector('[data-skill-recommendation-title]');
             const skillPromptRecommendationReason = document.querySelector('[data-skill-recommendation-reason]');
@@ -726,6 +790,16 @@
             const requiredStatus = document.querySelector('[data-required-status]');
             const requiredStatusDot = document.querySelector('[data-required-status-dot]');
             const submitButton = document.querySelector('[data-task-submit]');
+            const entityFilterStatus = document.querySelector('[data-entity-filter-status]');
+            const caseFilterStatus = document.querySelector('[data-case-filter-status]');
+            const workflowContext = document.querySelector('[data-workflow-context]');
+            const workflowGeneration = document.querySelector('[data-workflow-generation]');
+            const workflowReview = document.querySelector('[data-workflow-review]');
+            const workflowDistribution = document.querySelector('[data-workflow-distribution]');
+            const advancedGenerationSummary = document.querySelector('[data-advanced-generation-summary]');
+            const publishRisk = document.querySelector('[data-publish-risk]');
+            const publishRiskText = document.querySelector('[data-publish-risk-text]');
+            const actionPublishSummary = document.querySelector('[data-action-publish-summary]');
 
             if (!form) {
                 return;
@@ -755,8 +829,16 @@
 
                 if (requiredStatus) {
                     requiredStatus.textContent = missing.length === 0
-                        ? '必填项已完成，可以创建任务'
-                        : `还需填写 ${missing.length} 项：${missing.map((field) => field.label).join('、')}`;
+                        ? @json($t('task_create.workflow.required_complete'))
+                        : @json($t('task_create.workflow.required_missing'))
+                            .replace('__COUNT__', String(missing.length))
+                            .replace('__FIELDS__', missing.map((field) => field.label).join('、'));
+                }
+
+                if (workflowGeneration) {
+                    workflowGeneration.textContent = missing.length === 0
+                        ? @json($t('task_create.workflow.generation_ready'))
+                        : @json($t('task_create.workflow.generation_missing')).replace('__COUNT__', String(missing.length));
                 }
 
                 requiredStatusDot?.classList.toggle('bg-emerald-500', missing.length === 0);
@@ -765,6 +847,44 @@
                 if (submitButton) {
                     submitButton.disabled = missing.length > 0;
                 }
+            }
+
+            function selectedOptionLabel(select) {
+                const option = select?.selectedOptions?.[0];
+                return String(option?.textContent || '').trim();
+            }
+
+            function syncWorkflowSummary() {
+                if (workflowContext) {
+                    workflowContext.textContent = selectedCollectionId() === ''
+                        ? @json($t('task_create.workflow.context_pending'))
+                        : selectedOptionLabel(collectionSelect);
+                }
+
+                const needsReview = Boolean(needReviewCheckbox?.checked);
+                if (workflowReview) {
+                    workflowReview.textContent = needsReview
+                        ? @json($t('task_create.workflow.review_manual'))
+                        : @json($t('task_create.workflow.review_automatic'));
+                }
+
+                const selectedScope = document.querySelector('input[name="publish_scope"]:checked');
+                if (workflowDistribution) {
+                    workflowDistribution.textContent = selectedScope
+                        ? String(selectedScope.closest('label')?.querySelector('.font-medium')?.textContent || '').trim()
+                        : @json($t('task_create.workflow.distribution_pending'));
+                }
+            }
+
+            function syncAdvancedGenerationSummary() {
+                if (!advancedGenerationSummary) {
+                    return;
+                }
+
+                const skill = selectedOptionLabel(skillPromptSelect);
+                const style = selectedOptionLabel(stylePromptSelect);
+                const mode = selectedOptionLabel(modelSelectionModeSelect);
+                advancedGenerationSummary.textContent = [skill, style, mode].filter(Boolean).join(' · ');
             }
 
             function syncSkillPromptRecommendation() {
@@ -879,7 +999,7 @@
             function syncOptionSelectorByCollection(fieldName) {
                 const selector = document.querySelector('[data-option-multi-selector][data-field-name="' + fieldName + '"]');
                 if (!selector || !collectionSelect) {
-                    return;
+                    return { total: 0, available: 0 };
                 }
 
                 const shouldFilter = collectionFilterIsActive();
@@ -911,15 +1031,55 @@
                     .filter((item) => !item.hidden && item.dataset.optionFilterHidden !== '1');
                 selector.querySelector('[data-option-menu-empty]')?.classList.toggle('hidden', visibleItems.length > 0);
                 selector.dispatchEvent(new CustomEvent('option-selector:changed', { bubbles: true }));
+
+                return {
+                    total: selector.querySelectorAll('[data-option-item]').length,
+                    available: visibleItems.length,
+                };
+            }
+
+            function syncContextFilterStatus(target, label, stats) {
+                if (!target) {
+                    return;
+                }
+
+                target.classList.remove('text-amber-700', 'text-blue-700');
+                if (selectedCollectionId() === '') {
+                    target.classList.add('text-amber-700');
+                    target.textContent = @json($t('task_create.collection_filter.select_first')).replace('__LABEL__', label);
+                    return;
+                }
+
+                if (crossCollectionCheckbox?.checked) {
+                    target.classList.add('text-blue-700');
+                    target.textContent = @json($t('task_create.collection_filter.cross_collection'))
+                        .replace('__COUNT__', String(stats.total))
+                        .replace('__LABEL__', label);
+                    return;
+                }
+
+                if (stats.available === 0) {
+                    target.classList.add('text-amber-700');
+                    target.textContent = @json($t('task_create.collection_filter.empty')).replace('__LABEL__', label);
+                    return;
+                }
+
+                target.classList.add('text-blue-700');
+                target.textContent = @json($t('task_create.collection_filter.available'))
+                    .replace('__COUNT__', String(stats.available))
+                    .replace('__LABEL__', label);
             }
 
             function syncContextOptionsByCollection() {
-                syncOptionSelectorByCollection('entity_ids');
-                syncOptionSelectorByCollection('case_ids');
+                const entityStats = syncOptionSelectorByCollection('entity_ids');
+                const caseStats = syncOptionSelectorByCollection('case_ids');
+                syncContextFilterStatus(entityFilterStatus, 'Entity', entityStats);
+                syncContextFilterStatus(caseFilterStatus, 'Case', caseStats);
                 syncNativeSelectByCollection(titleLibrarySelect, true);
                 syncNativeSelectByCollection(knowledgeBaseSelect, true);
                 syncCrmSourceOptions();
                 syncSkillPromptRecommendation();
+                syncWorkflowSummary();
                 window.setTimeout(syncImageLibrariesByEntities, 0);
             }
 
@@ -999,6 +1159,15 @@
                 const selectedScope = document.querySelector('input[name="publish_scope"]:checked');
                 const isLocalOnly = selectedScope && selectedScope.value === 'local_only';
 
+                publishScopeRadios.forEach((input) => {
+                    const card = input.closest('label');
+                    const isSelected = input.checked;
+                    card?.classList.toggle('border-blue-400', isSelected);
+                    card?.classList.toggle('bg-blue-50', isSelected);
+                    card?.classList.toggle('ring-1', isSelected);
+                    card?.classList.toggle('ring-blue-200', isSelected);
+                });
+
                 distributionChannelInputs.forEach((input) => {
                     input.disabled = isLocalOnly;
                     if (isLocalOnly) {
@@ -1019,6 +1188,37 @@
                 });
             }
 
+            function syncPublishRisk() {
+                const selectedScope = document.querySelector('input[name="publish_scope"]:checked');
+                const scope = String(selectedScope?.value || 'local_only');
+                const needsReview = Boolean(needReviewCheckbox?.checked);
+                const safe = needsReview && scope === 'local_only';
+                const message = safe
+                    ? @json($t('task_create.publish_risk.safe'))
+                    : (!needsReview
+                        ? @json($t('task_create.publish_risk.no_review'))
+                        : @json($t('task_create.publish_risk.remote_distribution')));
+
+                if (publishRisk) {
+                    publishRisk.classList.toggle('border-emerald-200', safe);
+                    publishRisk.classList.toggle('bg-emerald-50', safe);
+                    publishRisk.classList.toggle('text-emerald-800', safe);
+                    publishRisk.classList.toggle('border-amber-200', !safe);
+                    publishRisk.classList.toggle('bg-amber-50', !safe);
+                    publishRisk.classList.toggle('text-amber-800', !safe);
+                }
+                if (publishRiskText) {
+                    publishRiskText.textContent = message;
+                }
+                if (actionPublishSummary) {
+                    actionPublishSummary.textContent = message;
+                    actionPublishSummary.classList.toggle('text-emerald-700', safe);
+                    actionPublishSummary.classList.toggle('text-amber-700', !safe);
+                }
+
+                syncWorkflowSummary();
+            }
+
             document.addEventListener('click', function (event) {
                 if (event.target.closest('[data-option-item], [data-option-remove]')) {
                     window.setTimeout(syncImageLibrariesByEntities, 0);
@@ -1027,12 +1227,23 @@
             collectionSelect?.addEventListener('change', syncContextOptionsByCollection);
             crossCollectionCheckbox?.addEventListener('change', syncContextOptionsByCollection);
             titleLibrarySelect?.addEventListener('change', syncSkillPromptRecommendation);
-            skillPromptSelect?.addEventListener('change', syncSkillPromptRecommendation);
+            skillPromptSelect?.addEventListener('change', function () {
+                syncSkillPromptRecommendation();
+                syncAdvancedGenerationSummary();
+            });
+            stylePromptSelect?.addEventListener('change', syncAdvancedGenerationSummary);
+            modelSelectionModeSelect?.addEventListener('change', syncAdvancedGenerationSummary);
             crmSourceTypeSelect?.addEventListener('change', syncCrmSourceOptions);
-            needReviewCheckbox.addEventListener('change', togglePublishInterval);
+            needReviewCheckbox.addEventListener('change', function () {
+                togglePublishInterval();
+                syncPublishRisk();
+            });
             articleLimitInput.addEventListener('input', syncDraftLimitMax);
             categoryModeRadios.forEach((radio) => radio.addEventListener('change', handleCategoryModeChange));
-            publishScopeRadios.forEach((radio) => radio.addEventListener('change', syncDistributionChannelsByScope));
+            publishScopeRadios.forEach((radio) => radio.addEventListener('change', function () {
+                syncDistributionChannelsByScope();
+                syncPublishRisk();
+            }));
 
             form.addEventListener('submit', function (event) {
                 syncContextOptionsByCollection();
@@ -1082,10 +1293,12 @@
             syncImageLibrariesByEntities();
             syncContextOptionsByCollection();
             syncSkillPromptRecommendation();
+            syncAdvancedGenerationSummary();
             togglePublishInterval();
             handleCategoryModeChange();
             syncDraftLimitMax();
             syncDistributionChannelsByScope();
+            syncPublishRisk();
             syncRequiredStatus();
         });
     </script>

@@ -24,6 +24,7 @@ class Task extends Model
         'image_tag_filter',
         'prompt_id',
         'skill_prompt_id',
+        'style_prompt_id',
         'ai_model_id',
         'author_id',
         'need_review',
@@ -38,6 +39,8 @@ class Task extends Model
         'model_selection_mode',
         'status',
         'publish_scope',
+        'distribution_strategy',
+        'distribution_cursor',
         'created_count',
         'published_count',
         'loop_count',
@@ -69,6 +72,7 @@ class Task extends Model
             'image_count' => 'integer',
             'prompt_id' => 'integer',
             'skill_prompt_id' => 'integer',
+            'style_prompt_id' => 'integer',
             'ai_model_id' => 'integer',
             'author_id' => 'integer',
             'need_review' => 'integer',
@@ -79,6 +83,7 @@ class Task extends Model
             'draft_limit' => 'integer',
             'article_limit' => 'integer',
             'is_loop' => 'integer',
+            'distribution_cursor' => 'integer',
             'created_count' => 'integer',
             'published_count' => 'integer',
             'loop_count' => 'integer',
@@ -119,6 +124,11 @@ class Task extends Model
     public function skillPrompt(): BelongsTo
     {
         return $this->belongsTo(Prompt::class, 'skill_prompt_id');
+    }
+
+    public function stylePrompt(): BelongsTo
+    {
+        return $this->belongsTo(Prompt::class, 'style_prompt_id');
     }
 
     public function aiModel(): BelongsTo
@@ -164,7 +174,9 @@ class Task extends Model
     public function distributionChannels(): BelongsToMany
     {
         return $this->belongsToMany(DistributionChannel::class, 'task_distribution_channels')
-            ->withPivot(['trigger', 'remote_status', 'failure_policy', 'max_attempts'])
-            ->withTimestamps();
+            ->withPivot(['trigger', 'remote_status', 'failure_policy', 'max_attempts', 'sort_order'])
+            ->withTimestamps()
+            ->orderByPivot('sort_order')
+            ->orderBy('distribution_channels.id');
     }
 }

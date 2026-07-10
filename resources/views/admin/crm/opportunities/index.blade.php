@@ -44,7 +44,7 @@
                             <h2 class="font-semibold text-gray-900">{{ $opportunity->name }}</h2>
                             <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">已归档 {{ $opportunity->deleted_at?->format('Y-m-d H:i') }}</span>
                         </div>
-                        <p class="mt-2 text-sm text-gray-500">{{ $opportunity->customer?->company_name ?: '未关联客户' }}@if($opportunity->sourceInquiry) · 来源：{{ $opportunity->sourceInquiry->subject }}@endif</p>
+                        <p class="mt-2 text-sm text-gray-500">{{ $opportunity->customer?->display_name ?: '未关联客户' }}@if($opportunity->sourceInquiry) · 来源：{{ $opportunity->sourceInquiry->subject }}@endif</p>
                         <p class="mt-2 text-xs text-gray-500">保留 {{ $opportunity->tasks_count }} 个待办、{{ $opportunity->activities_count }} 条活动、{{ $opportunity->quotes_count }} 份单据</p>
                     </div>
                     <form method="POST" action="{{ route('admin.crm.opportunities.restore', ['opportunityId' => (int) $opportunity->id]) }}">
@@ -72,7 +72,7 @@
                             @forelse($rows as $opportunity)
                                 <a href="{{ route('admin.crm.opportunities.edit', ['opportunityId' => $opportunity->id]) }}" class="block rounded-md border border-gray-200 bg-white p-3 shadow-sm hover:border-blue-300">
                                     <div class="text-sm font-semibold text-gray-900">{{ $opportunity->name }}</div>
-                                    <div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->company_name }}</div>
+                                    <div class="mt-2 text-xs text-gray-500">{{ $opportunity->customer?->display_name ?: '未关联客户' }}</div>
                                     <div class="mt-2 flex justify-between text-xs"><span class="font-medium text-gray-700">{{ $opportunity->currency }} {{ number_format((float) $opportunity->amount, 0) }}</span><span class="text-gray-500">{{ $opportunity->probability }}%</span></div>
                                     @if($opportunity->expected_close_date)<div class="mt-2 text-xs text-gray-500">预计 {{ $opportunity->expected_close_date->format('Y-m-d') }}</div>@endif
                                 </a>

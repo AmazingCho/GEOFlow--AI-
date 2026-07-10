@@ -110,19 +110,12 @@ class CrmInquiryAnalysisService
 
     private function buildPrompt(string $message, ?int $collectionId): string
     {
-        $context = [
-            'entities' => $this->entityOptions($collectionId),
-            'knowledge_bases' => $this->knowledgeBaseOptions($collectionId),
-            'cases' => $this->caseOptions($collectionId),
-        ];
-
         return implode("\n\n", [
             MaterialAnalysisPromptRules::autoLanguageDirective(),
             MaterialAnalysisPromptRules::jsonOnlyRule(),
             MaterialAnalysisPromptRules::factGroundingRules(),
-            'Analyze the customer inquiry. Do not create new entities, tags, knowledge bases, or cases. Recommend only existing object ids from the provided context.',
-            'Return JSON with keys: detected_language, customer_need_summary, product_interest, entity_ids, knowledge_base_ids, case_record_ids, suggested_reply_points, missing_information_questions, urgency_level.',
-            "Existing selectable objects:\n".json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'Analyze the customer inquiry. Do not create or recommend entities, tags, knowledge bases, or cases. Reference material linking is handled manually by the admin after analysis.',
+            'Return JSON with keys: detected_language, customer_need_summary, product_interest, suggested_reply_points, missing_information_questions, urgency_level.',
             "Customer inquiry:\n".$message,
         ]);
     }
@@ -138,9 +131,9 @@ class CrmInquiryAnalysisService
             'detected_language' => $this->detectLanguage($message),
             'customer_need_summary' => $summary,
             'product_interest' => $this->productInterest($message),
-            'entity_ids' => $this->matchedIds(EntityRecord::class, $message, $collectionId, ['name', 'aliases', 'description']),
-            'knowledge_base_ids' => $this->matchedIds(KnowledgeBase::class, $message, $collectionId, ['name', 'summary', 'description', 'content']),
-            'case_record_ids' => $this->matchedIds(CaseRecord::class, $message, $collectionId, ['title', 'summary', 'challenge', 'solution', 'result']),
+            'entity_ids' => [],
+            'knowledge_base_ids' => [],
+            'case_record_ids' => [],
             'suggested_reply_points' => $this->replyPoints($message),
             'missing_information_questions' => $this->missingQuestions($message),
             'urgency_level' => $this->urgencyLevel($message),
@@ -157,9 +150,9 @@ class CrmInquiryAnalysisService
             'detected_language' => trim((string) ($payload['detected_language'] ?? '')),
             'customer_need_summary' => trim((string) ($payload['customer_need_summary'] ?? '')),
             'product_interest' => trim((string) ($payload['product_interest'] ?? '')),
-            'entity_ids' => $this->validIds(EntityRecord::class, $payload['entity_ids'] ?? $payload['recommended_entities'] ?? [], $collectionId),
-            'knowledge_base_ids' => $this->validIds(KnowledgeBase::class, $payload['knowledge_base_ids'] ?? $payload['recommended_knowledge_bases'] ?? [], $collectionId),
-            'case_record_ids' => $this->validIds(CaseRecord::class, $payload['case_record_ids'] ?? $payload['recommended_cases'] ?? [], $collectionId),
+            'entity_ids' => [],
+            'knowledge_base_ids' => [],
+            'case_record_ids' => [],
             'suggested_reply_points' => $this->textList($payload['suggested_reply_points'] ?? ''),
             'missing_information_questions' => $this->textList($payload['missing_information_questions'] ?? ''),
             'urgency_level' => trim((string) ($payload['urgency_level'] ?? '')),

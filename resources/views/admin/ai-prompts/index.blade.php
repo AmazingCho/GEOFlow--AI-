@@ -54,12 +54,16 @@
                             @foreach ($prompts as $prompt)
                                 @php
                                     $promptType = (string) ($prompt['type'] ?? 'content');
-                                    $typeClass = $promptType === 'skill'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-green-100 text-green-800';
-                                    $typeLabel = $promptType === 'skill'
-                                        ? __('admin.ai_prompts.type_skill')
-                                        : __('admin.ai_prompts.type_content');
+                                    $typeClass = match ($promptType) {
+                                        'skill' => 'bg-blue-100 text-blue-800',
+                                        'style' => 'bg-purple-100 text-purple-800',
+                                        default => 'bg-green-100 text-green-800',
+                                    };
+                                    $typeLabel = match ($promptType) {
+                                        'skill' => __('admin.ai_prompts.type_skill'),
+                                        'style' => __('admin.ai_prompts.type_style'),
+                                        default => __('admin.ai_prompts.type_content'),
+                                    };
                                 @endphp
                                 <tr>
                                     <td class="px-6 py-4">
@@ -124,6 +128,7 @@
                         <select name="type" id="prompt_type" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500">
                             <option value="content">{{ __('admin.ai_prompts.type_content') }}</option>
                             <option value="skill">{{ __('admin.ai_prompts.type_skill') }}</option>
+                            <option value="style">{{ __('admin.ai_prompts.type_style') }}</option>
                         </select>
                         <p class="mt-1 text-xs text-gray-500">{{ __('admin.ai_prompts.type_help') }}</p>
                     </div>

@@ -15,10 +15,13 @@ use Illuminate\View\View;
 /**
  * 文章生成提示词配置控制器。
  *
- * Master Prompt(type=content) 负责正文生成基准；Skill Prompt(type=skill) 负责文章结构策略增强。
+ * Master Prompt(type=content) 负责正文生成基准；Skill Prompt(type=skill) 负责文章结构策略增强；
+ * Style Prompt(type=style) 仅负责可选写作语气与表达方式。
  */
 class AiPromptController extends Controller
 {
+    private const ARTICLE_PROMPT_TYPES = ['content', 'skill', 'style'];
+
     /**
      * 文章生成提示词列表页。
      */
@@ -36,7 +39,7 @@ class AiPromptController extends Controller
     {
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'type' => ['required', 'string', Rule::in(['content', 'skill'])],
+            'type' => ['required', 'string', Rule::in(self::ARTICLE_PROMPT_TYPES)],
             'content' => ['required', 'string'],
         ], [
             'name.required' => __('admin.ai_prompts.error.required'),
@@ -58,12 +61,12 @@ class AiPromptController extends Controller
     {
         $prompt = Prompt::query()
             ->whereKey($promptId)
-            ->whereIn('type', ['content', 'skill'])
+            ->whereIn('type', self::ARTICLE_PROMPT_TYPES)
             ->firstOrFail();
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'type' => ['required', 'string', Rule::in(['content', 'skill'])],
+            'type' => ['required', 'string', Rule::in(self::ARTICLE_PROMPT_TYPES)],
             'content' => ['required', 'string'],
         ], [
             'name.required' => __('admin.ai_prompts.error.invalid_fields'),
@@ -89,7 +92,7 @@ class AiPromptController extends Controller
     {
         $prompt = Prompt::query()
             ->whereKey($promptId)
-            ->whereIn('type', ['content', 'skill'])
+            ->whereIn('type', self::ARTICLE_PROMPT_TYPES)
             ->firstOrFail();
 
         $usageCount = $this->promptUsageCount($promptId);
@@ -116,9 +119,10 @@ class AiPromptController extends Controller
     {
         return Prompt::query()
             ->select(['id', 'name', 'type', 'content', 'created_at'])
-            ->whereIn('type', ['content', 'skill'])
+            ->whereIn('type', self::ARTICLE_PROMPT_TYPES)
             ->withCount('tasks')
             ->withCount('skillTasks')
+            ->withCount('styleTasks')
             ->orderByDesc('created_at')
             ->get()
             ->map(static function (Prompt $prompt): array {
@@ -127,7 +131,9 @@ class AiPromptController extends Controller
                     'name' => (string) $prompt->name,
                     'type' => (string) $prompt->type,
                     'content' => (string) $prompt->content,
-                    'task_count' => (int) ($prompt->tasks_count ?? 0) + (int) ($prompt->skill_tasks_count ?? 0),
+                    'task_count' => (int) ($prompt->tasks_count ?? 0)
+                        + (int) ($prompt->skill_tasks_count ?? 0)
+                        + (int) ($prompt->style_tasks_count ?? 0),
                     'created_at' => optional($prompt->created_at)?->format('Y-m-d H:i'),
                 ];
             })
@@ -139,6 +145,9 @@ class AiPromptController extends Controller
         $query = Task::query()->where('prompt_id', $promptId);
         if (Schema::hasColumn('tasks', 'skill_prompt_id')) {
             $query->orWhere('skill_prompt_id', $promptId);
+        }
+        if (Schema::hasColumn('tasks', 'style_prompt_id')) {
+            $query->orWhere('style_prompt_id', $promptId);
         }
 
         return (int) $query->count();

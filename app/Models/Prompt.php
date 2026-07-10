@@ -30,4 +30,9 @@ class Prompt extends Model
     {
         return $this->hasMany(Task::class, 'skill_prompt_id');
     }
+
+    public function styleTasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'style_prompt_id');
+    }
 }

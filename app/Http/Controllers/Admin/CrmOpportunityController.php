@@ -348,7 +348,7 @@ class CrmOpportunityController extends Controller
                 return [
                     'id' => (int) $inquiry->id,
                     'label' => (string) $inquiry->subject,
-                    'customer' => (string) ($inquiry->customer?->company_name ?: $inquiry->customer?->contact_person ?: '未命名客户'),
+                    'customer' => (string) ($inquiry->customer?->display_name ?: '未命名客户'),
                     'customer_id' => (int) $inquiry->customer_id,
                     'collection_id' => (int) ($inquiry->collection_id ?? 0),
                     'disabled' => (bool) ($existing && ! $isCurrent),

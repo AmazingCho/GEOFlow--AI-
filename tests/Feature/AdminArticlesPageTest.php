@@ -16,6 +16,7 @@ use App\Models\ImageLibrary;
 use App\Models\SiteSetting;
 use App\Models\Task;
 use App\Models\TaskRun;
+use App\Support\AdminWeb;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -571,21 +572,66 @@ class AdminArticlesPageTest extends TestCase
         $content = (string) $response->getContent();
 
         $this->assertStringContainsString(
-            'action="'.route('admin.articles.batch.update-status', [], false).'"',
+            'action="'.AdminWeb::routePath('admin.articles.batch.update-status').'"',
             $content
         );
         $this->assertStringContainsString(
-            'const EMPTY_TRASH_URL = '.json_encode(route('admin.articles.trash.empty', [], false)).';',
+            'const EMPTY_TRASH_URL = '.json_encode(AdminWeb::routePath('admin.articles.trash.empty')).';',
             $content
         );
         $this->assertStringContainsString(
-            'const ARTICLE_PUBLISH_URL_TEMPLATE = '.json_encode(route('admin.articles.publish', ['articleId' => '__ID__'], false)).';',
+            'const ARTICLE_PUBLISH_URL_TEMPLATE = '.json_encode(AdminWeb::routePath('admin.articles.publish', ['articleId' => '__ID__'])).';',
             $content
         );
         $this->assertStringContainsString(
-            json_encode(route('admin.articles.batch.delete', [], false)),
+            json_encode(AdminWeb::routePath('admin.articles.batch.delete')),
             $content
         );
+    }
+
+    public function test_article_list_internal_urls_keep_configured_subdirectory_without_absolute_host(): void
+    {
+        config(['app.url' => 'https://configured.example/geoflow']);
+
+        $admin = Admin::query()->create([
+            'username' => 'articles_subdirectory_url_admin',
+            'password' => 'secret-123',
+            'email' => 'articles-subdirectory-url@example.com',
+            'display_name' => 'Articles Subdirectory URL Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create([
+            'name' => '二级目录 URL 分类',
+            'slug' => 'subdirectory-url-category',
+        ]);
+        $author = Author::query()->create(['name' => 'Subdirectory URL Author']);
+        Article::query()->create([
+            'title' => '二级目录 URL 测试文章',
+            'slug' => 'subdirectory-url-article',
+            'excerpt' => '',
+            'content' => '正文',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $content = (string) $this->actingAs($admin, 'admin')
+            ->get(route('admin.articles.index'))
+            ->assertOk()
+            ->getContent();
+
+        $batchPath = AdminWeb::routePath('admin.articles.batch.update-status');
+        $trashPath = AdminWeb::routePath('admin.articles.trash.empty');
+        $publishPath = AdminWeb::routePath('admin.articles.publish', ['articleId' => '__ID__']);
+
+        $this->assertStringStartsWith('/geoflow/', $batchPath);
+        $this->assertStringContainsString('action="'.$batchPath.'"', $content);
+        $this->assertStringContainsString('const EMPTY_TRASH_URL = '.json_encode($trashPath).';', $content);
+        $this->assertStringContainsString('const ARTICLE_PUBLISH_URL_TEMPLATE = '.json_encode($publishPath).';', $content);
+        $this->assertStringNotContainsString('https://configured.example'.$batchPath, $content);
+        $this->assertStringNotContainsString('https:\/\/configured.example'.str_replace('/', '\\/', $batchPath), $content);
     }
 
     public function test_admin_brand_stays_geoflow_when_public_site_name_changes(): void

@@ -27,10 +27,18 @@
                 <h1 class="text-2xl font-bold text-gray-900">{{ $isEdit ? '编辑商机' : '新增商机' }}</h1>
                 <p class="mt-1 text-sm text-gray-500">商机只记录已经确认存在采购可能的机会，用于推进阶段、报价和成交。</p>
             </div>
-            <a href="{{ route('admin.crm.opportunities.index') }}" class="inline-flex w-fit items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                <i data-lucide="kanban-square" class="mr-2 h-4 w-4"></i>
-                返回管道
-            </a>
+            <div class="flex flex-wrap gap-2">
+                @if($isEdit)
+                    <a href="{{ route('admin.crm.quotes.create', ['opportunity_id' => (int) $opportunity->id]) }}" class="inline-flex w-fit items-center rounded-md border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-100">
+                        <i data-lucide="file-plus-2" class="mr-2 h-4 w-4"></i>
+                        新建单据
+                    </a>
+                @endif
+                <a href="{{ route('admin.crm.opportunities.index') }}" class="inline-flex w-fit items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <i data-lucide="kanban-square" class="mr-2 h-4 w-4"></i>
+                    返回管道
+                </a>
+            </div>
         </div>
 
         @include('admin.crm.partials.nav', ['currentCrmTab' => 'opportunities'])
@@ -99,7 +107,7 @@
                                     <span class="text-xs font-semibold uppercase tracking-wide text-emerald-700">当前来源询盘</span>
                                     <div class="mt-1 text-sm font-semibold text-emerald-950">{{ $sourceInquiry->subject }}</div>
                                     <div class="mt-1 text-xs leading-5 text-emerald-800">
-                                        {{ $sourceInquiry->customer?->company_name ?: $sourceInquiry->customer?->contact_person ?: '未关联客户' }}
+                                        {{ $sourceInquiry->customer?->display_name ?: '未关联客户' }}
                                         @if($sourceInquiry->collection)
                                             · {{ $sourceInquiry->collection->name }}
                                         @endif
@@ -163,7 +171,7 @@
                             <select name="customer_id" required class="{{ $inputClass }}">
                                 @foreach($customers as $customer)
                                     <option value="{{ (int) $customer->id }}" @selected((int) old('customer_id', $selectedCustomerId) === (int) $customer->id)>
-                                        {{ $customer->company_name ?: $customer->contact_person }}
+                                        {{ $customer->display_name }}
                                     </option>
                                 @endforeach
                             </select>
@@ -403,6 +411,10 @@
                         <h2 class="font-semibold text-gray-900">快捷操作</h2>
                         <p class="mt-1 text-sm text-gray-500">右侧只保留跳转入口，具体编辑都在主工作区完成。</p>
                         <div class="mt-4 grid gap-2">
+                            <a href="{{ route('admin.crm.quotes.create', ['opportunity_id' => (int) $opportunity->id]) }}" class="inline-flex items-center justify-between rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-100">
+                                新建单据
+                                <i data-lucide="file-plus-2" class="h-4 w-4 text-purple-500"></i>
+                            </a>
                             <a href="#opportunity-activity" class="inline-flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                                 记录活动
                                 <i data-lucide="arrow-down-right" class="h-4 w-4 text-gray-400"></i>

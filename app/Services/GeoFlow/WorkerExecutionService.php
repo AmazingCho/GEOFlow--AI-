@@ -133,6 +133,7 @@ class WorkerExecutionService
                     category: $category,
                     prompt: $pipeline['prompt'],
                     skillPrompt: $pipeline['skillPrompt'],
+                    stylePrompt: $pipeline['stylePrompt'],
                     aiModel: $aiModel,
                     generationAttempts: $pipeline['generationAttempts'],
                     knowledgeContext: (string) $pipeline['knowledgeContext'],
@@ -150,6 +151,7 @@ class WorkerExecutionService
      *   category:Category|null,
      *   prompt:Prompt|null,
      *   skillPrompt:Prompt|null,
+     *   stylePrompt:Prompt|null,
      *   keyword:string,
      *   knowledgeContext:string,
      *   contentPrompt:string,
@@ -172,6 +174,7 @@ class WorkerExecutionService
         $category = $this->pickCategory($task);
         $prompt = $task->prompt_id ? Prompt::query()->find((int) $task->prompt_id) : null;
         $skillPrompt = $task->skill_prompt_id ? Prompt::query()->whereKey((int) $task->skill_prompt_id)->where('type', 'skill')->first() : null;
+        $stylePrompt = $task->style_prompt_id ? Prompt::query()->whereKey((int) $task->style_prompt_id)->where('type', 'style')->first() : null;
         $keyword = (string) ($titleRow->keyword ?? '');
         $pipelineSteps[] = $this->pipelineStep('select_sources', [
             'title_id' => (int) $titleRow->id,
@@ -179,6 +182,7 @@ class WorkerExecutionService
             'category_id' => $category?->id,
             'prompt_id' => $prompt?->id,
             'skill_prompt_id' => $skillPrompt?->id,
+            'style_prompt_id' => $stylePrompt?->id,
         ]);
 
         $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
@@ -190,13 +194,18 @@ class WorkerExecutionService
             'cases' => count($this->lastKnowledgeTrace['cases'] ?? []),
         ]);
 
-        $composedPromptContent = $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content);
-        $targetLanguage = $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $composedPromptContent);
+        $composedPromptContent = $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content, $stylePrompt?->content);
+        $targetLanguage = $this->determineGenerationLanguage(
+            (string) $titleRow->title,
+            $keyword,
+            $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content)
+        );
         $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $composedPromptContent, $knowledgeContext, $targetLanguage);
         $pipelineSteps[] = $this->pipelineStep('compose_prompt', [
             'prompt_length' => mb_strlen($contentPrompt, 'UTF-8'),
             'has_custom_prompt' => $prompt !== null,
             'has_skill_prompt' => $skillPrompt !== null,
+            'has_style_prompt' => $stylePrompt !== null,
             'target_language' => $targetLanguage,
         ]);
 
@@ -237,6 +246,7 @@ class WorkerExecutionService
             'category' => $category,
             'prompt' => $prompt,
             'skillPrompt' => $skillPrompt,
+            'stylePrompt' => $stylePrompt,
             'keyword' => $keyword,
             'knowledgeContext' => $knowledgeContext,
             'contentPrompt' => $contentPrompt,
@@ -366,6 +376,7 @@ class WorkerExecutionService
         ?Category $category,
         ?Prompt $prompt,
         ?Prompt $skillPrompt,
+        ?Prompt $stylePrompt,
         AiModel $aiModel,
         array $generationAttempts,
         string $knowledgeContext,
@@ -394,6 +405,7 @@ class WorkerExecutionService
             'category' => $category ? ['id' => (int) $category->id, 'name' => (string) $category->name] : null,
             'prompt' => $prompt ? ['id' => (int) $prompt->id, 'name' => (string) $prompt->name, 'type' => (string) $prompt->type] : null,
             'skill_prompt' => $skillPrompt ? ['id' => (int) $skillPrompt->id, 'name' => (string) $skillPrompt->name, 'type' => (string) $skillPrompt->type] : null,
+            'style_prompt' => $stylePrompt ? ['id' => (int) $stylePrompt->id, 'name' => (string) $stylePrompt->name, 'type' => (string) $stylePrompt->type] : null,
             'language' => [
                 'code' => $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content)),
             ],
@@ -795,20 +807,32 @@ class WorkerExecutionService
     /**
      * 构造正文提示词：优先精确替换变量；无变量的自定义提示词自动补齐任务上下文。
      */
-    private function composeMasterAndSkillPrompt(?string $masterPromptContent, ?string $skillPromptContent): ?string
+    private function composeMasterAndSkillPrompt(?string $masterPromptContent, ?string $skillPromptContent, ?string $stylePromptContent = null): ?string
     {
         $masterPrompt = trim((string) $masterPromptContent);
         $skillPrompt = trim((string) $skillPromptContent);
+        $stylePrompt = trim((string) $stylePromptContent);
 
-        if ($masterPrompt === '') {
+        if ($masterPrompt === '' && $stylePrompt === '') {
             return $skillPrompt !== '' ? $skillPrompt : null;
         }
 
-        if ($skillPrompt === '') {
+        if ($skillPrompt === '' && $stylePrompt === '') {
             return $masterPrompt;
         }
 
-        return trim("=== Master Prompt ===\n{$masterPrompt}\n\n=== Skill Prompt ===\n{$skillPrompt}");
+        $sections = [];
+        if ($masterPrompt !== '') {
+            $sections[] = "=== Master Prompt ===\n{$masterPrompt}";
+        }
+        if ($skillPrompt !== '') {
+            $sections[] = "=== Skill Prompt ===\n{$skillPrompt}";
+        }
+        if ($stylePrompt !== '') {
+            $sections[] = "=== Writing Style Prompt ===\n{$stylePrompt}";
+        }
+
+        return $sections !== [] ? trim(implode("\n\n", $sections)) : null;
     }
 
     private function buildContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext, string $targetLanguage): string

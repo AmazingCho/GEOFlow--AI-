@@ -30,6 +30,9 @@ GEOFlow 以 [Apache License 2.0](LICENSE) 开源发布。你可以自由使用�
 | 📊 数据分析 | 集中展示系统总览、单站内容运营、多站分发、访问日志、Top 内容、AI 爬虫识别和趋势图 |
 | 🔍 SEO 与 LLM 抓取友好输出 | 文章 SEO 元信息、Open Graph、Schema、GFM Markdown、独立 CSS、图片同步、sitemap 和 TXT 地图 |
 | 🎨 前台与主题 | 默认主题、主题包、预览路径、后台主题切换；模板工厂可从 3 个对标页面创建受控模板复刻任务，并支持预览、迭代、发布和打包 |
+| 🧭 Collection / Entity / Case | 以 Collection 隔离业务线，使用 Entity 组织产品和主题索引，以 Case 沉淀真实客户与应用证据 |
+| 🤝 轻量 CRM | 支持客户、联系人、询盘、商机、活动、待办、单据、订单和售后工单，并与 Collection、Entity 和内容候选衔接 |
+| 🧑‍💻 Codex 业务录入助手 | 提供上下文搜索、AI 录入草稿箱、风险检查和管理员确认应用，让自然语言业务记录受控进入 CRM |
 | 🌍 后台语言 | 后台仅保留中文、英文，并覆盖 2.0 新模块 |
 | 🔔 版本提醒 | 后台可按 `version.json` 检查 GitHub 新版本，并在有新版本时提醒管理员 |
 | 🐳 可直接部署 | **Docker Compose** 一键拉起 PostgreSQL（pgvector）、Redis、应用、队列、调度、Reverb 和生产 Nginx/php-fpm |
@@ -40,20 +43,13 @@ GEOFlow 以 [Apache License 2.0](LICENSE) 开源发布。你可以自由使用�
 
 <table>
   <tr>
-    <td width="34%" rowspan="3"><img src="docs/images/screenshots/analytics.png" alt="GEOFlow 中文数据分析" /><br /><sub>数据分析</sub></td>
-    <td width="33%" rowspan="2"><img src="docs/images/screenshots/site-settings.png" alt="GEOFlow 中文网站设置" /><br /><sub>网站设置</sub></td>
-    <td width="33%"><img src="docs/images/screenshots/home.png" alt="GEOFlow 中文后台首页" /><br /><sub>后台首页</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="docs/images/screenshots/task-management.png" alt="GEOFlow 中文任务管理" /><br /><sub>任务管理</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="docs/images/screenshots/ai-config.png" alt="GEOFlow 中文 AI 模型配置" /><br /><sub>AI 模型配置</sub></td>
-    <td width="33%"><img src="docs/images/screenshots/materials.png" alt="GEOFlow 中文素材管理" /><br /><sub>素材管理</sub></td>
+    <td width="42%"><img src="docs/images/screenshots/task-create-desktop.png" alt="GEOFlow 创建任务页桌面端" /><br /><sub>创建任务：业务上下文与安全默认</sub></td>
+    <td width="42%"><img src="docs/images/screenshots/task-create-advanced.png" alt="GEOFlow 高级生成设置" /><br /><sub>Master / Skill / Style 渐进式配置</sub></td>
+    <td width="16%"><img src="docs/images/screenshots/task-create-mobile.png" alt="GEOFlow 创建任务页移动端" /><br /><sub>移动端操作区</sub></td>
   </tr>
 </table>
 
-上述页面覆盖后台首页、数据分析、任务调度、素材库、模型配置与网站设置等主链路；更多后台说明见 `docs/`。
+当前截图展示定制版任务创建主链路；更多功能和使用说明见 [`功能说明文档/`](功能说明文档/) 与 [`agent-docs/`](agent-docs/)。
 
 ---
 
@@ -67,6 +63,10 @@ GEOFlow 2.0 重点变化包括：
 - **数据分析独立成页**：系统总览、内容运营、任务健康、素材健康、分发状态、访问日志和 AI 爬虫趋势集中到 `/admin/analytics`。
 - **分发管理进入可运行闭环**：支持 GEOFlow Agent 和 WordPress REST 渠道新建、密钥管理、测试连接、目标站点包下载、静态/伪静态模式、远端设置同步、队列、日志、远端文章编辑与删除。
 - **任务发布范围更清晰**：任务可选择“本地和渠道站点同时发布”“仅发布到渠道站点”“仅发布到本站”，仅本站模式会禁用渠道选择并避免进入远程分发队列。
+- **任务创建默认更安全**：新建任务默认人工审核和仅本站发布；页面实时显示业务上下文、必填完成度、审核状态和发布风险，高级 Skill / Style / 模型策略默认折叠。
+- **Prompt Skill 与 Style 分层**：Master Prompt 负责事实、语言和基础规则，Skill Prompt 负责文章结构，Style Prompt 只控制可选表达风格。
+- **轻量 CRM 形成业务闭环**：客户、询盘、商机、活动、待办、单据、订单和售后工单可以沿同一业务链管理，并关联 Collection 与 Entity。
+- **Codex 业务录入助手可用**：支持只读上下文搜索、AI 录入草稿、幂等提交、风险提示和后台审核应用；知识库与 Case 内容仍需管理员确认。
 - **目标渠道站点支持静态页面**：文章分发后生成远端首页、详情页、sitemap、TXT 地图和 `llms.txt`，并同步图片与独立 CSS。
 - **文章编辑器升级**：文章创建/编辑页接入 Markdown 编辑器，支持快捷插入、图片上传、复制 Markdown 和复制适合公众号等富文本编辑器粘贴的 HTML。
 - **模板工厂工作流**：网站设置中新增模板复刻入口，可提交首页、列表页、文章页 3 个对标链接，生成隔离草稿、预览、迭代、发布或下载主题包。
@@ -98,7 +98,8 @@ GEOFlow 2.0 重点变化包括：
 
 ### 素材与任务体验
 
-- **任务创建页重构**：Collection 必选，Entity / Case 支持多选；受控分组标签筛选折叠为高级选项，降低页面复杂度。
+- **任务创建页重构**：Collection 必选，Entity / Case 支持多选并显示当前可选数量；业务上下文、生成、审核和发布状态集中展示，高级生成与标签筛选按需展开。
+- **发布安全默认值**：新任务默认进入人工审核并仅发布到本站；关闭审核或启用远程分发时会显示风险提示，编辑旧任务仍保留原设置。
 - **图片配置优化**：区分“不指定图库”和“不配图”；图库选择可结合 Entity 关联关系辅助筛选。
 - **标题与关键词关联**：URL 智能采集生成的标题可关联关键词，标题素材可继续编辑关联关键词。
 - **标签选择器优化**：素材编辑和任务创建中的标签选择采用搜索式交互，减少大量标签时的页面拥挤。
@@ -107,10 +108,10 @@ GEOFlow 2.0 重点变化包括：
 ### API 与 AI 业务录入助手
 
 - **REST API 基础能力**：`/api/v1` 已支持 Bearer Token、scope 权限、统一 JSON 响应信封、Request-Id 追踪和写操作幂等键，便于外部工具或本地 agent 受控接入。
-- **Codex 业务录入助手规划**：新增 `agent-docs/CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md`，规划通过 Codex / AI 把客户、询盘、订单、售后、Case、知识库补充等自然语言思考整理为可审核草稿。
+- **Codex 业务录入助手主线**：已完成上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选和本地调用脚本。
 - **Assistant Context Search API**：新增只读接口 `GET /api/v1/assistant/context/search`，通过 `assistant:read` scope 查询客户、联系人、询盘、商机、单据、订单、售后、Entity、知识库和 Case 候选。
 - **Collection 安全边界**：上下文搜索支持 `collection_id` 限定，避免跨业务容器误匹配；客户候选也可通过关联询盘、订单、售后等业务链路命中。
-- **不直接写入业务数据**：当前阶段 API 只做上下文检索，不会创建、更新或删除 CRM / Case / 知识库数据；后续写入必须先进入 AI 录入草稿箱，并由管理员确认后应用。
+- **不绕过人工确认**：Codex / AI 先创建录入草稿，管理员确认后才能应用低风险 CRM 动作；知识库和 Case 动作只生成内容候选，不会直接覆盖正式资料。
 
 ### 审核、质量评分与兼容性
 

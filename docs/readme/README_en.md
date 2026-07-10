@@ -40,16 +40,9 @@ GEOFlow is released under the [Apache License 2.0](../../LICENSE). You may use, 
 
 <table>
   <tr>
-    <td width="34%" rowspan="3"><img src="../../docs/images/screenshots/analytics-en.png" alt="GEOFlow analytics preview" /><br /><sub>Analytics</sub></td>
-    <td width="33%" rowspan="2"><img src="../../docs/images/screenshots/site-settings-en.png" alt="GEOFlow site settings preview" /><br /><sub>Site Settings</sub></td>
-    <td width="33%"><img src="../../docs/images/screenshots/dashboard-en.png" alt="GEOFlow admin dashboard preview" /><br /><sub>Admin Dashboard</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="../../docs/images/screenshots/tasks-en.png" alt="GEOFlow task management preview" /><br /><sub>Task Management</sub></td>
-  </tr>
-  <tr>
-    <td width="33%"><img src="../../docs/images/screenshots/ai-config-en.png" alt="GEOFlow AI model configuration preview" /><br /><sub>AI Model Configuration</sub></td>
-    <td width="33%"><img src="../../docs/images/screenshots/materials-en.png" alt="GEOFlow materials preview" /><br /><sub>Materials</sub></td>
+    <td width="42%"><img src="../../docs/images/screenshots/task-create-desktop.png" alt="GEOFlow task creation on desktop" /><br /><sub>Business context and safer defaults</sub></td>
+    <td width="42%"><img src="../../docs/images/screenshots/task-create-advanced.png" alt="GEOFlow advanced generation settings" /><br /><sub>Progressive Master / Skill / Style settings</sub></td>
+    <td width="16%"><img src="../../docs/images/screenshots/task-create-mobile.png" alt="GEOFlow task creation on mobile" /><br /><sub>Mobile task actions</sub></td>
   </tr>
 </table>
 

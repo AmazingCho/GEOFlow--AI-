@@ -33,6 +33,8 @@
     $imageOriginalName = $valueFor('image_original_name');
     $selectedImageOption = collect($imageOptions ?? [])->firstWhere('id', (int) $imageId);
     $imageUrl = $selectedImageOption['url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl($imagePath);
+    $imagePreviewLabel = $imageOriginalName !== '' ? $imageOriginalName : (string) ($selectedImageOption['label'] ?? '');
+    $imagePreviewHelp = '可从图片库选择，或本地上传 200KB 以内图片。';
 @endphp
 
 <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-crm-quote-item-row>
@@ -58,10 +60,10 @@
         </div>
         <div class="lg:col-span-3">
             <label class="mb-1 block text-xs font-medium text-gray-600">关联 Entity</label>
-            <select name="items[entity_id][]" class="{{ $compactInputClass }}">
+            <select name="items[entity_id][]" class="{{ $compactInputClass }}" data-quote-entity-select>
                 <option value="">不关联</option>
                 @foreach (($entityOptions ?? []) as $entity)
-                    <option value="{{ (int) $entity['id'] }}" @selected($valueFor('entity_id') === (string) $entity['id'])>
+                    <option value="{{ (int) $entity['id'] }}" data-collection-id="{{ (int) ($entity['collection_id'] ?? 0) }}" @selected($valueFor('entity_id') === (string) $entity['id'])>
                         {{ $entity['label'] }} @if (($entity['meta'] ?? '') !== '') · {{ $entity['meta'] }} @endif
                     </option>
                 @endforeach
@@ -85,10 +87,10 @@
         <div class="lg:col-span-6">
             <label class="mb-1 block text-xs font-medium text-gray-600">图片</label>
             <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <select name="items[image_id][]" class="{{ $compactInputClass }}">
+                <select name="items[image_id][]" class="{{ $compactInputClass }}" data-quote-image-select>
                     <option value="">不选择图库图片</option>
                     @foreach (($imageOptions ?? []) as $image)
-                        <option value="{{ (int) $image['id'] }}" @selected($imageId === (string) $image['id'])>
+                        <option value="{{ (int) $image['id'] }}" data-collection-id="{{ (int) ($image['collection_id'] ?? 0) }}" data-image-url="{{ $image['url'] ?? '' }}" data-image-label="{{ $image['label'] ?? '' }}" @selected($imageId === (string) $image['id'])>
                             {{ $image['label'] }} @if (($image['meta'] ?? '') !== '') · {{ $image['meta'] }} @endif
                         </option>
                     @endforeach
@@ -97,11 +99,9 @@
             </div>
             <input type="hidden" name="items[image_path][]" value="{{ $imagePath }}">
             <input type="hidden" name="items[image_original_name][]" value="{{ $imageOriginalName }}">
-            <div class="mt-2 flex items-center gap-3 text-xs text-gray-500">
-                @if ($imageUrl !== '')
-                    <img src="{{ $imageUrl }}" alt="" class="h-10 w-10 rounded border border-gray-200 object-cover">
-                @endif
-                <span>{{ $imageOriginalName !== '' ? $imageOriginalName : '可从图片库选择，或本地上传 200KB 以内图片。' }}</span>
+            <div class="mt-2 flex items-center gap-3 text-xs text-gray-500" data-quote-image-preview>
+                <img src="{{ $imageUrl }}" alt="" class="h-10 w-10 rounded border border-gray-200 object-cover {{ $imageUrl === '' ? 'hidden' : '' }}" data-quote-image-preview-img>
+                <span data-quote-image-preview-text>{{ $imagePreviewLabel !== '' ? $imagePreviewLabel : $imagePreviewHelp }}</span>
             </div>
         </div>
     </div>

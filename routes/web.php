@@ -230,6 +230,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
                 Route::get('create', [CrmQuoteController::class, 'create'])->name('create');
                 Route::post('create', [CrmQuoteController::class, 'store'])->name('store');
                 Route::post('seller-profiles', [CrmQuoteController::class, 'storeSellerProfile'])->name('seller-profiles.store');
+                Route::post('seller-profiles/{profileId}/default', [CrmQuoteController::class, 'setDefaultSellerProfile'])->name('seller-profiles.default')->whereNumber('profileId');
                 Route::prefix('pdf-regression')->name('pdf-regression.')->group(function () {
                     Route::get('/', [CrmDocumentPdfRegressionController::class, 'index'])->name('index');
                     Route::post('/', [CrmDocumentPdfRegressionController::class, 'store'])->name('store');

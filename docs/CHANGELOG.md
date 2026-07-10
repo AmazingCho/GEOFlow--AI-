@@ -2,7 +2,41 @@
 
 该文档记录公开仓库可见功能的持续更新。后续每次推送到 GitHub 时，同步更新本文件和英文版 `CHANGELOG_en.md`。
 
+## 2026-07-10
+
+### 创建任务页安全默认值与渐进式配置
+
+- 新建任务默认启用人工审核，发布范围默认仅 GEOFlow 本站；即使请求未提交相关字段，后台也使用相同安全默认值。
+- 创建任务页新增“业务上下文 / 内容生成 / 审核 / 发布范围”摘要，实时显示必填完成度和发布风险。
+- Skill Prompt、Style Prompt 与模型故障切换收入“高级生成设置”，新建任务默认折叠；编辑已有高级配置时自动展开并保留原值。
+- Collection 选择后实时显示当前可选 Entity 与 Case 数量；未选择、无结果和跨 Collection 状态均提供明确反馈。
+- 表单操作区取消吸底悬浮，桌面端和移动端均不再遮挡输入区域。
+- 新增安全默认与页面结构测试；`AdminTasksPageTest` 通过 21 tests / 160 assertions，并完成桌面端与 390px 移动端截图验收。
+
+## 2026-07-01
+
+### 写作风格 Style Prompt 轻量版
+
+- 新增文章任务可选 `Style Prompt`：`Master Prompt` 继续负责正文生成基准、事实约束、语言和 RAG 规则；`Skill Prompt` 继续负责对比、选型、应用等文章结构策略；`Style Prompt` 仅作为可选写作语气、句式和表达偏好层。
+- 提示词管理页支持第三种类型 `type=style`，并统计正在使用该风格提示词的任务数量，避免误删或误改类型。
+- 创建任务页内容配置区新增 `Style Prompt` 下拉框，默认“不使用 Style Prompt”，用户可手动选择内置或自定义风格。
+- 任务保存、编辑回显、任务生命周期服务、任务监控详情与生成 trace 均已支持 `style_prompt_id`。
+- Worker 生成时按 `Master Prompt -> Skill Prompt -> Writing Style Prompt` 顺序拼接；语言判断只参考标题、关键词、Master/Skill，不受 Style Prompt 英文模板影响。
+- 新增 5 条内置 Style Prompt 预设：采购工程顾问、成本拆解分析、供应商对比矩阵、DFM 风险解释、工艺选型指南。
+- 明确边界：本阶段不开发 URL 抓取、自动风格识别、作者仿写或旧文章批量重写。
+
 ## 2026-06-21
+
+### 上游更新选择性吸收与部署稳定性增强
+
+- 选择性吸收上游兼容性补丁：分类删除统计现在会计入回收站文章，避免分类被误删后旧文章来源断裂。
+- 后台内部 AJAX / Echo / 上传等 URL 统一增强为同源相对路径，兼容 `APP_URL` 带一级目录、反向代理或端口变化的部署场景。
+- Docker Nginx 增强 `X-Forwarded-Proto / Host / Port` 传递，反向代理 HTTPS 部署时 Laravel 能正确识别外部访问地址。
+- Docker 入口脚本新增 `AUTO_FIX_STORAGE_PERMISSIONS`，默认修复 `storage` 与 `bootstrap/cache` 权限，并补齐上传与临时目录；特殊挂载环境可关闭。
+- 生产模板 `.env.prod.example` 的 session 默认从 `file` 调整为 `redis`，减少多容器或持久化目录权限导致的登录状态问题。
+- 任务分发策略只接入后端基础能力：新增 `broadcast / round_robin / random_balanced` 策略字段和选择器，但创建任务页暂不新增可见配置，默认仍保持原来的“广播到所有已选渠道”。
+- 本轮明确跳过会影响本地工作流的上游 UI 重构：未照搬任务创建页分发策略选择区、未移除国内 Composer 镜像配置、未移除本地 Reverb/Vite 配置习惯。
+- 验证：分类、文章、后台欢迎弹窗、任务、分发页面和分发策略测试通过，合计覆盖 101 tests / 834 assertions；本地 Docker 已执行 `2026_06_20_000000_add_distribution_strategy_to_tasks` 迁移。
 
 ### 后台提示词预设入库安装包
 

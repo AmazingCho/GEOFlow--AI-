@@ -3931,4 +3931,74 @@ Do not output prompt notes, explanations, metadata, or writing instructions.',
         'variables' => '',
         'legacy_names' => [],
     ],
+    [
+        'name' => 'Style - Engineering Procurement Advisor',
+        'type' => 'style',
+        'content' => 'Use a practical engineering procurement tone.
+
+Style boundaries:
+- Write like a supplier-side technical advisor helping a buyer avoid mistakes.
+- Prefer clear criteria, constraints, trade-offs, and implementation notes.
+- Keep claims restrained and evidence-based.
+- Avoid hype, vague superiority claims, and celebrity or author imitation.
+- Do not change facts, language, structure requirements, or safety rules from the Master Prompt.',
+        'variables' => '',
+        'legacy_names' => [],
+    ],
+    [
+        'name' => 'Style - Cost Breakdown Analyst',
+        'type' => 'style',
+        'content' => 'Use a cost-analysis style for buyers comparing total ownership cost.
+
+Style boundaries:
+- Explain price, configuration, maintenance, operation, and hidden cost factors.
+- Use sober, finance-friendly wording and practical examples.
+- Make uncertainty explicit when numbers are not provided.
+- Avoid invented prices, unsupported ROI claims, and aggressive sales language.
+- Do not change facts, language, structure requirements, or safety rules from the Master Prompt.',
+        'variables' => '',
+        'legacy_names' => [],
+    ],
+    [
+        'name' => 'Style - Supplier Comparison Matrix',
+        'type' => 'style',
+        'content' => 'Use a comparison-oriented sourcing style.
+
+Style boundaries:
+- Make differences easy to scan with criteria, scenarios, and buyer fit.
+- Compare options by use case instead of declaring one universal winner.
+- Mention limitations and when an option is not suitable.
+- Avoid attacking competitors or inventing competitor facts.
+- Do not change facts, language, structure requirements, or safety rules from the Master Prompt.',
+        'variables' => '',
+        'legacy_names' => [],
+    ],
+    [
+        'name' => 'Style - DFM Risk Explainer',
+        'type' => 'style',
+        'content' => 'Use a design-for-manufacturing risk explanation style.
+
+Style boundaries:
+- Focus on process risk, tolerance, material behavior, commissioning, and failure prevention.
+- Explain why a detail matters for production reliability.
+- Prefer diagnostic language, checklists, and practical mitigation advice.
+- Avoid overstating guarantees or implying risk can be eliminated.
+- Do not change facts, language, structure requirements, or safety rules from the Master Prompt.',
+        'variables' => '',
+        'legacy_names' => [],
+    ],
+    [
+        'name' => 'Style - Process Selection Guide',
+        'type' => 'style',
+        'content' => 'Use a process-selection advisory style.
+
+Style boundaries:
+- Guide the reader through application requirements, constraints, and decision steps.
+- Connect equipment choice to material, production volume, accuracy, labor, and maintenance conditions.
+- Use concise headings, scenario cues, and next-step checks.
+- Avoid generic marketing claims and unsupported product recommendations.
+- Do not change facts, language, structure requirements, or safety rules from the Master Prompt.',
+        'variables' => '',
+        'legacy_names' => [],
+    ],
 ];

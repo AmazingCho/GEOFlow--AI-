@@ -87,6 +87,25 @@ class WorkerExecutionServicePromptTest extends TestCase
         $this->assertStringContainsString('Add a comparison table and decision framework.', $prompt);
     }
 
+    public function test_master_skill_and_style_prompts_are_composed_with_separate_style_rules(): void
+    {
+        $service = app(WorkerExecutionService::class);
+        $method = new ReflectionMethod($service, 'composeMasterAndSkillPrompt');
+        $method->setAccessible(true);
+
+        $prompt = (string) $method->invoke(
+            $service,
+            'Write a trustworthy GEO article for {{title}}.',
+            'Add a comparison table and decision framework.',
+            'Use concise engineering advisor language and avoid hype.'
+        );
+
+        $this->assertStringContainsString('=== Master Prompt ===', $prompt);
+        $this->assertStringContainsString('=== Skill Prompt ===', $prompt);
+        $this->assertStringContainsString('=== Writing Style Prompt ===', $prompt);
+        $this->assertStringContainsString('Use concise engineering advisor language and avoid hype.', $prompt);
+    }
+
     private function renderContentPrompt(string $title, string $keyword, ?string $promptContent, string $knowledgeContext): string
     {
         $service = app(WorkerExecutionService::class);

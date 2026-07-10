@@ -237,6 +237,9 @@
                                 <button type="button" class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50" data-profile-import>
                                     导入常用
                                 </button>
+                                <button type="button" class="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-700 hover:bg-amber-100" data-profile-set-default>
+                                    设为默认
+                                </button>
                                 <button type="button" class="inline-flex h-9 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 hover:bg-blue-100" data-profile-save>
                                     保存常用
                                 </button>
@@ -270,6 +273,9 @@
                             <div class="flex flex-wrap gap-2">
                                 <button type="button" class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50" data-profile-import>
                                     导入常用
+                                </button>
+                                <button type="button" class="inline-flex h-9 items-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-700 hover:bg-amber-100" data-profile-set-default>
+                                    设为默认
                                 </button>
                                 <button type="button" class="inline-flex h-9 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 hover:bg-blue-100" data-profile-save>
                                     保存常用
@@ -359,11 +365,11 @@
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">质保条款</label>
-                        <textarea name="warranty_terms" rows="3" class="{{ $textareaClass }}">{{ old('warranty_terms', (string) ($quoteForm['warranty_terms'] ?? '1 year warranty against manufacturing defects.')) }}</textarea>
+                        <textarea name="warranty_terms" rows="3" class="{{ $textareaClass }}">{{ old('warranty_terms', (string) ($quoteForm['warranty_terms'] ?? '')) }}</textarea>
                     </div>
                     <div>
                         <label class="mb-2 block text-sm font-medium text-gray-700">安装条款</label>
-                        <textarea name="installation_terms" rows="3" class="{{ $textareaClass }}">{{ old('installation_terms', (string) ($quoteForm['installation_terms'] ?? 'Remote guidance included; on-site available at extra cost')) }}</textarea>
+                        <textarea name="installation_terms" rows="3" class="{{ $textareaClass }}">{{ old('installation_terms', (string) ($quoteForm['installation_terms'] ?? '')) }}</textarea>
                     </div>
                 </div>
             </section>
@@ -531,17 +537,22 @@
             toggleFieldsByDocType();
 
             if (!form) return;
+            const collectionSelect = form.querySelector('select[name="collection_id"]');
+            const quoteEntityOptionPool = @json($quoteEntityOptionPool ?? $entityOptions ?? []);
+            const quoteImageOptionPool = @json($quoteImageOptionPool ?? $imageOptions ?? []);
             const customerProfiles = @json($customerProfiles ?? []);
             const sellerProfiles = {
                 bank_account: @json($bankAccountProfileOptions ?? []),
                 seller_company: @json($sellerCompanyProfileOptions ?? []),
             };
             const sellerProfileSaveUrl = @json(route('admin.crm.quotes.seller-profiles.store'));
+            const sellerProfileDefaultUrlTemplate = @json(route('admin.crm.quotes.seller-profiles.default', ['profileId' => '__PROFILE_ID__']));
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || form.querySelector('input[name="_token"]')?.value || '';
             const rowsContainer = form.querySelector('[data-crm-quote-items]');
             const template = form.querySelector('[data-crm-quote-row-template]');
             const subtotalEl = form.querySelector('[data-items-subtotal]');
             const grandTotalEl = form.querySelector('[data-grand-total]');
+            const imagePreviewHelpText = '可从图片库选择，或本地上传 200KB 以内图片。';
             const money = (value) => Number.parseFloat(String(value || '0')) || 0;
             const format = (value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -550,6 +561,143 @@
             };
 
             const profileById = (type, id) => (sellerProfiles[type] || []).find((profile) => String(profile.id) === String(id));
+            const sellerProfileDefaultUrl = (profileId) => sellerProfileDefaultUrlTemplate.replace('__PROFILE_ID__', encodeURIComponent(String(profileId)));
+            const sellerProfileLabel = (profile) => `${profile.name}${profile.is_default ? ' · 默认' : ''}`;
+            const refreshSellerProfileOptions = (type) => {
+                form.querySelectorAll(`[data-seller-json-panel][data-profile-type="${type}"] [data-profile-select]`).forEach((selectEl) => {
+                    const currentValue = selectEl.value;
+                    Array.from(selectEl.options).forEach((option) => {
+                        if (!option.value) {
+                            return;
+                        }
+                        const profile = profileById(type, option.value);
+                        if (profile) {
+                            option.textContent = sellerProfileLabel(profile);
+                        }
+                    });
+                    selectEl.value = currentValue;
+                });
+            };
+            const mergeSellerProfile = (type, profile) => {
+                const markDefault = Boolean(profile?.is_default);
+                let found = false;
+                sellerProfiles[type] = (sellerProfiles[type] || []).map((item) => {
+                    if (String(item.id) === String(profile.id)) {
+                        found = true;
+                        return profile;
+                    }
+
+                    return markDefault ? { ...item, is_default: false } : item;
+                });
+
+                if (!found) {
+                    sellerProfiles[type].push(profile);
+                }
+            };
+
+            const selectedCollectionId = () => String(collectionSelect?.value || '').trim();
+
+            const itemOptionMatchesCollection = (option) => {
+                const collectionId = selectedCollectionId();
+                if (collectionId === '') {
+                    return true;
+                }
+
+                return String(option.collection_id || '') === collectionId;
+            };
+
+            const itemOptionLabel = (option) => {
+                const label = String(option.label || '');
+                const meta = String(option.meta || '').trim();
+
+                return meta !== '' ? `${label} · ${meta}` : label;
+            };
+
+            const rebuildQuoteItemSelect = (select, options, emptyLabel) => {
+                if (!select) {
+                    return;
+                }
+
+                const currentValue = String(select.value || '');
+                select.innerHTML = '';
+
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = emptyLabel;
+                select.appendChild(emptyOption);
+
+                let canKeepCurrent = currentValue === '';
+                options.filter(itemOptionMatchesCollection).forEach((option) => {
+                    const optionEl = document.createElement('option');
+                    optionEl.value = String(option.id);
+                    optionEl.textContent = itemOptionLabel(option);
+                    optionEl.dataset.collectionId = String(option.collection_id || '');
+                    if (option.url !== undefined) {
+                        optionEl.dataset.imageUrl = String(option.url || '');
+                        optionEl.dataset.imageLabel = String(option.label || '');
+                    }
+                    select.appendChild(optionEl);
+                    if (currentValue !== '' && currentValue === optionEl.value) {
+                        canKeepCurrent = true;
+                    }
+                });
+
+                select.value = canKeepCurrent ? currentValue : '';
+            };
+
+            const syncQuoteItemImagePreview = (row) => {
+                if (!row) {
+                    return;
+                }
+
+                const select = row.querySelector('[data-quote-image-select]');
+                const image = row.querySelector('[data-quote-image-preview-img]');
+                const text = row.querySelector('[data-quote-image-preview-text]');
+                const imagePathInput = row.querySelector('input[name="items[image_path][]"]');
+                const imageOriginalNameInput = row.querySelector('input[name="items[image_original_name][]"]');
+                const selectedOption = select?.selectedOptions?.[0] || null;
+                const selectedImageId = String(select?.value || '');
+                let previewUrl = '';
+                let previewLabel = '';
+
+                if (selectedImageId !== '' && selectedOption) {
+                    previewUrl = String(selectedOption.dataset.imageUrl || '');
+                    previewLabel = String(selectedOption.dataset.imageLabel || selectedOption.textContent || '').trim();
+                    if (imagePathInput) {
+                        imagePathInput.value = '';
+                    }
+                    if (imageOriginalNameInput) {
+                        imageOriginalNameInput.value = '';
+                    }
+                } else {
+                    previewUrl = String(imagePathInput?.value || '');
+                    previewLabel = String(imageOriginalNameInput?.value || '').trim();
+                }
+
+                if (image) {
+                    if (previewUrl !== '') {
+                        image.src = previewUrl;
+                        image.classList.remove('hidden');
+                    } else {
+                        image.removeAttribute('src');
+                        image.classList.add('hidden');
+                    }
+                }
+
+                if (text) {
+                    text.textContent = previewLabel || imagePreviewHelpText;
+                }
+            };
+
+            const syncQuoteItemResourcesByCollection = (scope = form) => {
+                scope.querySelectorAll('[data-quote-entity-select]').forEach((select) => {
+                    rebuildQuoteItemSelect(select, quoteEntityOptionPool, '不关联');
+                });
+                scope.querySelectorAll('[data-quote-image-select]').forEach((select) => {
+                    rebuildQuoteItemSelect(select, quoteImageOptionPool, '不选择图库图片');
+                    syncQuoteItemImagePreview(select.closest('[data-crm-quote-item-row]'));
+                });
+            };
 
             const formatJsonTextarea = (textarea) => {
                 const value = String(textarea?.value || '').trim();
@@ -581,6 +729,47 @@
                     }
                     textarea.value = profile.payload || '';
                     formatJsonTextarea(textarea);
+                });
+
+                panel.querySelector('[data-profile-set-default]')?.addEventListener('click', async () => {
+                    const profileId = String(select?.value || '').trim();
+                    const profile = profileById(type, profileId);
+                    if (!profile) {
+                        alert('请先选择一个常用模板');
+                        return;
+                    }
+                    if (profile.is_default) {
+                        alert('当前模板已经是默认');
+                        return;
+                    }
+
+                    const button = panel.querySelector('[data-profile-set-default]');
+                    button.disabled = true;
+                    try {
+                        const response = await fetch(sellerProfileDefaultUrl(profileId), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                            },
+                            body: JSON.stringify({ type }),
+                        });
+                        const result = await response.json();
+                        if (!response.ok) {
+                            throw new Error(result.message || '设置默认常用模板失败');
+                        }
+
+                        const updatedProfile = result.profile;
+                        mergeSellerProfile(type, updatedProfile);
+                        refreshSellerProfileOptions(type);
+                        select.value = String(updatedProfile.id);
+                        alert(result.message || '默认常用信息已更新');
+                    } catch (error) {
+                        alert(error.message || '设置默认常用模板失败');
+                    } finally {
+                        button.disabled = false;
+                    }
                 });
 
                 panel.querySelector('[data-json-format]')?.addEventListener('click', () => {
@@ -621,8 +810,7 @@
                         }
 
                         const profile = result.profile;
-                        sellerProfiles[type] = (sellerProfiles[type] || []).filter((item) => String(item.id) !== String(profile.id));
-                        sellerProfiles[type].push(profile);
+                        mergeSellerProfile(type, profile);
 
                         let option = select.querySelector(`option[value="${profile.id}"]`);
                         if (!option) {
@@ -630,7 +818,8 @@
                             option.value = profile.id;
                             select.appendChild(option);
                         }
-                        option.textContent = `${profile.name}${profile.is_default ? ' · 默认' : ''}`;
+                        option.textContent = sellerProfileLabel(profile);
+                        refreshSellerProfileOptions(type);
                         select.value = String(profile.id);
                         alert(result.message || '常用信息已保存');
                     } catch (error) {
@@ -664,9 +853,21 @@
                 }
             });
 
+            form.addEventListener('change', (event) => {
+                if (event.target.matches('[data-quote-image-select]')) {
+                    syncQuoteItemImagePreview(event.target.closest('[data-crm-quote-item-row]'));
+                }
+            });
+
             form.querySelector('[data-add-quote-item]')?.addEventListener('click', () => {
                 if (!template || !rowsContainer) return;
                 rowsContainer.insertAdjacentHTML('beforeend', template.innerHTML.trim());
+                const rows = rowsContainer.querySelectorAll('[data-crm-quote-item-row]');
+                const newRow = rows[rows.length - 1];
+                if (newRow) {
+                    syncQuoteItemResourcesByCollection(newRow);
+                }
+                toggleFieldsByDocType();
                 refreshIcons();
                 calculate();
             });
@@ -711,6 +912,10 @@
                 calculate();
             });
 
+            collectionSelect?.addEventListener('change', () => {
+                syncQuoteItemResourcesByCollection();
+            });
+            syncQuoteItemResourcesByCollection();
             calculate();
         });
     </script>

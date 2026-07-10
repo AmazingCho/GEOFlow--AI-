@@ -67,6 +67,7 @@
 ## 创建任务
 
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
+- [写作风格 Style Prompt 轻量版使用说明](../功能说明文档/13-写作风格StylePrompt轻量版使用说明.md)
 - [Prompt Skill System v1](./PROMPT_SKILL_SYSTEM.md)
 
 适合理解：
@@ -76,6 +77,7 @@
 - 受控分组标签是否必须选择。
 - 图片配置中“不指定图库”和“不配图”的区别。
 - Master Prompt 与可选 Skill Prompt 的职责边界。
+- Style Prompt 的职责边界：只控制写作风格，不做 URL 抓取、自动识别或作者仿写。
 
 ## 文章质量
 

@@ -20,6 +20,8 @@ use App\Models\CrmSalesOrder;
 use App\Models\CrmSellerProfile;
 use App\Models\CrmTask;
 use App\Models\EntityRecord;
+use App\Models\Image;
+use App\Models\ImageLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeCorrection;
@@ -315,7 +317,7 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('Chain after-sales issue');
     }
 
-    public function test_inquiry_links_are_collection_limited_and_analysis_recommends_existing_materials(): void
+    public function test_inquiry_links_are_collection_limited_and_analysis_does_not_auto_select_materials(): void
     {
         $admin = $this->admin('crm_inquiry_admin');
         $collection = $this->collection('Cooling CRM');
@@ -394,9 +396,9 @@ class AdminCrmPagesTest extends TestCase
                 'ai_model_id' => 0,
             ])
             ->assertOk()
-            ->assertJsonPath('fields.entity_ids.0', (int) $entity->id)
-            ->assertJsonPath('fields.knowledge_base_ids.0', (int) $knowledgeBase->id)
-            ->assertJsonPath('fields.case_record_ids.0', (int) $caseRecord->id)
+            ->assertJsonPath('fields.entity_ids', [])
+            ->assertJsonPath('fields.knowledge_base_ids', [])
+            ->assertJsonPath('fields.case_record_ids', [])
             ->assertJsonPath('fields.urgency_level', 'high');
     }
 
@@ -468,6 +470,9 @@ class AdminCrmPagesTest extends TestCase
             ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id]))
             ->assertOk()
             ->assertSee('Quotation')
+            ->assertSee('.brand { display: flex; flex-direction: column;', false)
+            ->assertSee('h1 { margin: 0 0 6px; font-size: 26px;', false)
+            ->assertSee('h1 { font-size: 24px; }', false)
             ->assertSee('SJ4060 System')
             ->assertSee('USD 3,000.00');
 
@@ -590,6 +595,28 @@ class AdminCrmPagesTest extends TestCase
         }
     }
 
+    public function test_quote_create_form_prefills_default_warranty_and_installation_terms_only(): void
+    {
+        $admin = $this->admin('crm_quote_terms_default_admin');
+        $collection = $this->collection('Quote Terms Default CRM');
+        CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => 'Quote Terms Buyer',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.create', ['collection_id' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee('12 months warranty for machine main parts, excluding consumables and damage caused by misuse.')
+            ->assertSee('Installation & Training: Remote training and online technical support are included. On-site service is available at extra cost, with airfare, hotel and local travel expenses to be covered by the buyer.');
+
+        $this->assertMatchesRegularExpression(
+            '/<textarea name="delivery_terms"[^>]*>\s*<\/textarea>/',
+            $response->getContent()
+        );
+    }
+
     public function test_admin_can_save_seller_profiles_and_quote_json_must_be_valid(): void
     {
         $admin = $this->admin('crm_seller_profile_admin');
@@ -622,9 +649,47 @@ class AdminCrmPagesTest extends TestCase
         ]);
         $this->assertSame('Robota Automation', (string) CrmSellerProfile::query()->firstOrFail()->payload['name']);
 
+        $secondarySellerProfile = CrmSellerProfile::query()->create([
+            'type' => 'seller_company',
+            'name' => 'Robota Alternate Seller',
+            'payload' => [
+                'name' => 'Robota Alternate',
+                'address' => 'Baoan',
+                'email' => 'alternate@example.com',
+            ],
+            'is_default' => false,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.crm.quotes.seller-profiles.default', ['profileId' => (int) $secondarySellerProfile->id]), [
+                'type' => 'seller_company',
+            ])
+            ->assertOk()
+            ->assertJsonPath('profile.id', (int) $secondarySellerProfile->id)
+            ->assertJsonPath('profile.is_default', true);
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.crm.quotes.seller-profiles.default', ['profileId' => (int) $secondarySellerProfile->id]), [
+                'type' => 'bank_account',
+            ])
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('crm_seller_profiles', [
+            'type' => 'seller_company',
+            'name' => 'Robota Default Seller',
+            'is_default' => false,
+        ]);
+        $this->assertDatabaseHas('crm_seller_profiles', [
+            'type' => 'seller_company',
+            'name' => 'Robota Alternate Seller',
+            'is_default' => true,
+        ]);
+
         $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.quotes.create', ['collection_id' => (int) $collection->id]))
             ->assertOk()
+            ->assertSee('Robota Alternate Seller')
+            ->assertSee('设为默认')
             ->assertSee('Robota Default Seller')
             ->assertSee('Seller Company JSON')
             ->assertSee('bank_code')
@@ -644,6 +709,96 @@ class AdminCrmPagesTest extends TestCase
                 ],
             ])
             ->assertSessionHasErrors('seller_company_json');
+    }
+
+    public function test_quote_item_entity_and_image_options_follow_selected_collection(): void
+    {
+        $admin = $this->admin('crm_quote_collection_scope_admin');
+        $collection = $this->collection('Scoped Quote Collection');
+        $otherCollection = $this->collection('Other Quote Collection');
+        $customer = CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => 'Scoped Quote Buyer',
+            'status' => 'active',
+        ]);
+        $entity = EntityRecord::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'Quote Scoped Entity',
+            'entity_type' => '产品型号',
+        ]);
+        $otherEntity = EntityRecord::query()->create([
+            'collection_id' => (int) $otherCollection->id,
+            'name' => 'Other Quote Entity',
+            'entity_type' => '产品型号',
+        ]);
+        $library = ImageLibrary::query()->create([
+            'collection_id' => (int) $collection->id,
+            'name' => 'Scoped Quote Images',
+        ]);
+        $otherLibrary = ImageLibrary::query()->create([
+            'collection_id' => (int) $otherCollection->id,
+            'name' => 'Other Quote Images',
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $library->id,
+            'filename' => 'scoped-machine.jpg',
+            'original_name' => 'Scoped Machine Image',
+            'file_path' => 'storage/scoped-machine.jpg',
+        ]);
+        $otherImage = Image::query()->create([
+            'library_id' => (int) $otherLibrary->id,
+            'filename' => 'other-machine.jpg',
+            'original_name' => 'Other Machine Image',
+            'file_path' => 'storage/other-machine.jpg',
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.create', ['collection_id' => (int) $collection->id]))
+            ->assertOk()
+            ->assertSee('syncQuoteItemResourcesByCollection', false)
+            ->assertSee('syncQuoteItemImagePreview', false)
+            ->assertSee('data-quote-image-preview-img', false)
+            ->assertSee('dataset.imageUrl', false);
+
+        $html = (string) $response->getContent();
+        preg_match('/<select name="items\\[entity_id\\]\\[\\]"[^>]*>(.*?)<\\/select>/s', $html, $entitySelect);
+        preg_match('/<select name="items\\[image_id\\]\\[\\]"[^>]*>(.*?)<\\/select>/s', $html, $imageSelect);
+
+        $this->assertNotEmpty($entitySelect[1] ?? '');
+        $this->assertNotEmpty($imageSelect[1] ?? '');
+        $this->assertStringContainsString('Quote Scoped Entity', $entitySelect[1]);
+        $this->assertStringNotContainsString('Other Quote Entity', $entitySelect[1]);
+        $this->assertStringContainsString('Scoped Machine Image', $imageSelect[1]);
+        $this->assertStringContainsString('data-image-url=', $imageSelect[1]);
+        $this->assertStringContainsString('data-image-label="Scoped Machine Image"', $imageSelect[1]);
+        $this->assertStringNotContainsString('Other Machine Image', $imageSelect[1]);
+        $this->assertStringContainsString('Other Quote Entity', $html, 'The JS option pool should support changing collection without a page refresh.');
+        $this->assertStringContainsString('Other Machine Image', $html, 'The JS option pool should support changing collection without a page refresh.');
+
+        $basePayload = [
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $customer->id,
+            'title' => 'Scoped Quote Material Guard',
+            'items' => [
+                'entity_id' => [(int) $entity->id],
+                'image_id' => [(int) $image->id],
+                'item_name' => ['Machine'],
+                'quantity' => [1],
+                'unit_price' => [100],
+            ],
+        ];
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.store'), array_replace_recursive($basePayload, [
+                'items' => ['entity_id' => [(int) $otherEntity->id]],
+            ]))
+            ->assertSessionHasErrors('items.entity_id');
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.crm.quotes.store'), array_replace_recursive($basePayload, [
+                'items' => ['image_id' => [(int) $otherImage->id]],
+            ]))
+            ->assertSessionHasErrors('items.image_id');
     }
 
     public function test_admin_can_convert_quote_to_order_and_create_after_sales_ticket(): void
@@ -1120,6 +1275,21 @@ class AdminCrmPagesTest extends TestCase
             'status' => 'open',
             'due_at' => now()->addDay(),
         ]);
+        $contactOnlyCustomer = CrmCustomer::query()->create([
+            'collection_id' => (int) $collection->id,
+            'company_name' => '',
+            'contact_person' => 'Victor Pereira',
+            'status' => 'active',
+        ]);
+        CrmOpportunity::query()->create([
+            'collection_id' => (int) $collection->id,
+            'customer_id' => (int) $contactOnlyCustomer->id,
+            'name' => 'Contact-only customer opportunity',
+            'stage' => 'solution',
+            'amount' => 1200,
+            'currency' => 'USD',
+            'probability' => 30,
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.opportunities.kanban', ['collection_id' => (int) $collection->id]))
@@ -1131,7 +1301,10 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('USD 9,800')
             ->assertSee('55%')
             ->assertSee('Kanban source inquiry')
-            ->assertSee('Send PI for approval');
+            ->assertSee('Send PI for approval')
+            ->assertSee('Contact-only customer opportunity')
+            ->assertSee('Victor Pereira')
+            ->assertDontSee('未关联客户');
     }
 
     public function test_opportunity_can_be_created_with_blank_optional_text_fields(): void
@@ -1205,9 +1378,11 @@ class AdminCrmPagesTest extends TestCase
             ->assertDontSee('新建待办</h2>', false);
 
         $html = $response->getContent();
+        $createQuoteUrl = route('admin.crm.quotes.create', ['opportunity_id' => $opportunity->id]);
         $sidebarPosition = strpos($html, '<aside class="space-y-6');
 
         $this->assertNotFalse($sidebarPosition);
+        $this->assertGreaterThanOrEqual(3, substr_count($html, $createQuoteUrl));
         $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-activity"'));
         $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-tasks"'));
         $this->assertLessThan($sidebarPosition, strpos($html, 'id="opportunity-documents"'));
@@ -1777,6 +1952,135 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('class="term-item full" data-term-field="warranty_terms"', false)
             ->assertSee('class="term-item full" data-term-field="installation_terms"', false)
             ->assertSee('class="term-item full" data-term-field="packing_terms"', false);
+    }
+
+    public function test_quote_print_template_keeps_image_items_and_summary_on_same_page_when_they_fit(): void
+    {
+        $admin = $this->admin('crm_quote_image_pagination_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Image PDF Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $library = ImageLibrary::query()->create(['name' => 'Quote Pagination Images']);
+        $image = Image::query()->create([
+            'library_id' => (int) $library->id,
+            'filename' => 'quote-pagination-image.jpg',
+            'original_name' => 'Quote Pagination Image',
+            'file_path' => 'storage/quote-pagination-image.jpg',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-PI-IMAGE-PAGE',
+            'title' => 'Image PI pagination',
+            'document_type' => 'proforma_invoice',
+            'document_language' => 'en',
+            'currency' => 'USD',
+            'status' => 'draft',
+            'trade_term' => 'EXW',
+            'lead_time' => '10 days',
+            'valid_until' => now()->addMonth(),
+            'payment_terms' => '60% deposit, 40% balance before shipment.',
+            'delivery_terms' => '10 days after advance payment.',
+            'warranty_terms' => '12 months warranty for machine main parts.',
+            'installation_terms' => 'Remote guidance included.',
+            'packing_terms' => 'Standard export wooden case',
+            'total_amount' => 122850,
+            'grand_total' => 122850,
+        ]);
+
+        for ($index = 1; $index <= 7; $index++) {
+            $quote->items()->create([
+                'image_id' => (int) $image->id,
+                'item_name' => 'Image item '.$index,
+                'description' => 'Consumables',
+                'model' => '-',
+                'quantity' => $index === 7 ? 2000 : 1,
+                'unit' => $index === 7 ? 'pcs' : 'set',
+                'unit_price' => $index === 7 ? 0.3 : 1000,
+                'amount' => $index === 7 ? 600 : 1000,
+                'sort_order' => $index,
+            ]);
+        }
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'proforma_invoice', 'language' => 'en']))
+            ->assertOk()
+            ->assertSee('Page 1 of 2')
+            ->assertSee('Summary')
+            ->assertSee('Terms &amp; Conditions', false)
+            ->assertSee('BANK ACCOUNT')
+            ->assertSee('Page 2 of 2')
+            ->assertDontSee('Summary &amp; Terms', false)
+            ->assertDontSee('Items continued');
+
+        $html = (string) $response->getContent();
+        $this->assertLessThan(strpos($html, 'Summary'), strpos($html, 'Image item 7'));
+        $this->assertLessThan(strpos($html, 'Proforma Invoice · Page 1 of 2'), strpos($html, 'Summary'));
+    }
+
+    public function test_quote_print_template_keeps_eighth_compact_image_item_before_summary_page(): void
+    {
+        $admin = $this->admin('crm_quote_eighth_image_row_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Eight Image Row Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $library = ImageLibrary::query()->create(['name' => 'Eight Image Row Images']);
+        $image = Image::query()->create([
+            'library_id' => (int) $library->id,
+            'filename' => 'eight-image-row.jpg',
+            'original_name' => 'Eight Image Row',
+            'file_path' => 'storage/eight-image-row.jpg',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => $customer->id,
+            'quote_no' => 'Q-EIGHT-IMAGE-ROWS',
+            'title' => 'Eight compact image rows',
+            'document_type' => 'quotation',
+            'document_language' => 'en',
+            'currency' => 'CNY',
+            'status' => 'draft',
+            'trade_term' => 'EXW',
+            'lead_time' => '10 days',
+            'valid_until' => now()->addMonth(),
+            'payment_terms' => '60% deposit, 40% balance before shipment.',
+            'delivery_terms' => '10 days after advance payment.',
+            'warranty_terms' => '12 months warranty for machine main parts.',
+            'installation_terms' => 'Remote guidance included.',
+            'packing_terms' => 'Standard export wooden case',
+            'total_amount' => 123600,
+            'grand_total' => 123600,
+        ]);
+
+        for ($index = 1; $index <= 8; $index++) {
+            $quote->items()->create([
+                'image_id' => (int) $image->id,
+                'item_name' => 'Compact image item '.$index,
+                'description' => 'Spare Parts',
+                'model' => '-',
+                'quantity' => $index === 8 ? 5 : 1,
+                'unit' => 'set',
+                'unit_price' => $index === 8 ? 150 : 300,
+                'amount' => $index === 8 ? 750 : 300,
+                'sort_order' => $index,
+            ]);
+        }
+
+        $response = $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'quotation', 'language' => 'en']))
+            ->assertOk()
+            ->assertSee('Compact image item 8')
+            ->assertSee('Quotation · Page 1 of 2')
+            ->assertSee('Summary &amp; Terms', false)
+            ->assertSee('Quotation · Page 2 of 2')
+            ->assertSee('data-final-content-page', false)
+            ->assertSee('window.GeoFlowCrmDocumentAutoPaginate', false);
+
+        $html = (string) $response->getContent();
+        $this->assertLessThan(strpos($html, 'Quotation · Page 1 of 2'), strpos($html, 'Compact image item 8'));
+        $this->assertLessThan(strpos($html, 'Summary &amp; Terms'), strpos($html, 'Quotation · Page 1 of 2'));
     }
 
     public function test_quote_pdf_regression_admin_page_can_start_run(): void
