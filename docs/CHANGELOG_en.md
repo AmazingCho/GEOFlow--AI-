@@ -2,6 +2,14 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-07-11
+
+### Admin Login Entry Redirect Fix
+
+- Authenticated admins who revisit the admin login page or admin entry now return to the admin Dashboard instead of being redirected to the public content site.
+- The unauthenticated login page and admin-entry redirect behavior remain unchanged.
+- Added focused admin guest-redirect coverage and regressed the existing first-install hints and login page flow.
+
 ## 2026-07-10
 
 ### Safer Task Defaults and Progressive Configuration

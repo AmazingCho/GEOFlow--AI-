@@ -55,6 +55,8 @@ return Application::configure(basePath: dirname(__DIR__))
             // Blade 后台：写操作日志
             'admin.activity' => LogAdminActivity::class,
         ]);
+
+        $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         /**

@@ -82,6 +82,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + 轻�
 - 2026-06-17 主线 Phase 3 知识库治理建议：知识库重复/冲突检查结果可创建 `KnowledgeGovernanceProposal`；重复项应用后只把相关知识库改为 `inactive`，支持回滚；事实冲突只记录审核结论，不自动改正文。
 - 2026-06-17 主线 Phase 4 Collection 健康度：Collection 列表显示健康度分数并提供详情入口；详情页只读检查 Entity、知识库、标题库、图片库、Case、素材-Entity 关联、知识片段向量化、受控标签分组和重复标签，不自动修复素材。
 - 2026-06-19 Codex 业务录入助手 API Phase 0-6：完成 API 能力审计、只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒；scope 包括 `assistant:read` 与 `assistant:write`。后续增强仍禁止绕过草稿箱直接写 CRM、知识库或 Case 最终业务表。
+- 2026-07-11 上游 `f603830` 选择性采纳审核已形成独立主计划 [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)。阶段 1-7 当前均未实施，后续从计划进度表第一个未完成阶段继续；禁止直接 merge `upstream/main`，也不要恢复在线主题源码编辑、首页模块体系或 PostgreSQL volume 目标路径补丁。
 - 不同素材自动推荐 tag 已移除；后续不要在未确认需求前恢复该入口。
 - 新增 `功能说明文档/`，用于用户操作说明。
 

@@ -62,6 +62,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 知识库切片/向量化已完成异步队列状态增强：列表页和详情页可看到 queued/running/completed/failed，后台 Job 会写回时间与错误，失败可重试。
 - 任务回收站已完成核心功能：任务删除为软删除，已生成文章与来源任务关系保留；恢复后任务保持暂停。如需永久删除，必须先确认数据保留策略。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：已新增只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒。仍不能跳过草稿箱直接写 CRM、知识库或 Case 最终业务表。
+- 2026-07-11 已完成上游 `f603830` 的选择性采纳审核，执行清单见 [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)。当前阶段 1-7 均尚未实施，优先顺序为登录重定向、远端同步预览保护、SEO metadata 统一；禁止直接 merge `upstream/main`。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。
 
@@ -75,6 +76,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 阶段/进度判断：再读 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) 和 [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)。
 - 具体功能使用方式：按 [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) 只读相关功能说明。
 - 提示词、任务生成、Skill：再读 [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md)。
+- 上游更新采纳或继续对应阶段：再读 [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)，从阶段进度表第一个未完成项继续。
 
 完整读取策略见 [DOC_READ_POLICY.md](./DOC_READ_POLICY.md)。
 

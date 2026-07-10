@@ -21,6 +21,10 @@
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
 - [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)
 
+如果任务涉及检查、采纳或继续执行原仓库更新，只额外读取：
+
+- [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)
+
 ## 详细功能说明
 
 如果需要理解具体功能怎么使用，再读取：
@@ -56,6 +60,7 @@
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
 | [CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md) | Codex / AI 通过 GEOFlow API 创建客户、订单、售后、Case、知识库录入草稿的规划白皮书 |
+| [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md) | 上游 `f603830` 选择性采纳的阶段清单、禁止项、测试、回滚和断点记录 |
 | [MAINLINE_REMAINING_OPTIMIZATION_PLAN.md](./MAINLINE_REMAINING_OPTIMIZATION_PLAN.md) | 主线剩余优化的已完成归档报告，不再作为待执行清单 |
 | [Entity-to-Entity关联CRM侧实现清单.md](./Entity-to-Entity关联CRM侧实现清单.md) | Entity 关系在 CRM 场景中的长期增强规划，当前不是已完成主线 |
 | [CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md](./CRM_DOCUMENT_PDF_VISUAL_REGRESSION_2026-06-16.md) | CRM 单据 PDF 五类真实样本视觉回归记录 |
@@ -83,3 +88,4 @@
 - 网站设置页已有模板工厂 / 站点模板复刻入口；当前本地浏览器后台入口优先使用 `/admin`。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒均已落地；仍不要新增绕过草稿箱的直接写入捷径。
 - 上游 System Update Center 准备度补丁尚未接入，后续应单独规划。
+- 上游选择性采纳的新主计划已保存；禁止直接 merge `upstream/main`，阶段 1-3 为优先主线，后续按计划文件中的断点继续。

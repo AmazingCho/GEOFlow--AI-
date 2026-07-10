@@ -66,6 +66,7 @@
 | 修改素材管理页 | [素材管理与关联使用说明](../功能说明文档/07-素材管理与关联使用说明.md) |
 | 修改 URL 智能采集 | [URL 智能采集使用说明](../功能说明文档/08-URL智能采集使用说明.md) |
 | 修改 CRM 客户、询盘、商机、活动、待办或单据链路 | [轻量 CRM 与报价使用说明](../功能说明文档/10-轻量CRM与报价使用说明.md)、[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)、[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)；不要读取已删除的旧 CRM 历史计划 |
+| 检查或采纳原仓库更新 | [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)；先看基线与进度表，不重新全量审核已记录提交 |
 
 ## 场景 5：全局审计或阶段回顾
 
