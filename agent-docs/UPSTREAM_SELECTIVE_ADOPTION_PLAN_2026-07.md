@@ -350,7 +350,7 @@ $siteFavicon;     // 可为空
 - [x] 对模板工厂生成隔离草稿并预览，确认 metadata 不报 undefined variable。
 - [x] 运行目标站点包下载测试，确认生成模板仍可独立运行。
 - [x] 更新 changelog、本计划进度表；用户操作未变化，不新建功能说明。
-- [x] 形成独立 commit（本阶段 SEO 契约提交）。
+- [x] 形成独立 commit：`e46e5b8 refactor: unify frontend SEO metadata contract`。
 
 ```bash
 git commit -m "refactor: unify frontend SEO metadata contract"
@@ -645,7 +645,7 @@ git status --short
 | 0 基线保护 | 已完成 | `0c6dbe6` | 当前分支 `codex/upstream-selective-adoption` | 基线测试已执行 | 不适用 | 已审计并保留计划文档改动 |
 | 1 登录重定向 | 已完成 | `0c6dbe6` | `0c1c412` | 7 tests / 25 assertions | 功能测试验证 | 已完成 |
 | 2 同步预览保护 | 跳过 | `0c6dbe6` | 不适用 | 55 tests / 470 assertions | 当前 UI 无同步入口 | 本地已明确禁用设置同步，禁止恢复 |
-| 3 SEO 契约 | 已完成 | `0c1c412` | 待本阶段提交 | 87 tests / 733 assertions | 浏览器检查首页和真实文章页唯一 metadata | 默认/三主题/模板工厂/目标包已统一 |
+| 3 SEO 契约 | 已完成 | `0c1c412` | `e46e5b8` | 87 tests / 733 assertions | 浏览器检查首页和真实文章页唯一 metadata | 默认/三主题/模板工厂/目标包已统一 |
 | 4 Docker assets 门槛 | 跳过 | `0c1c412` | 不适用 | 静态扫描通过 | 无 UI 变更 | 没有运行时 Vite 消费者 |
 | 5 公开询盘表单 | 未开始 | - | - | - | - | 等用户明确执行 |
 | 6 知识草稿工作区 | 未开始 | - | - | - | - | 等用户明确执行 |
