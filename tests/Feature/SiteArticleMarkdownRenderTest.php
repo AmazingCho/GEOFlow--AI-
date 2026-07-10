@@ -15,6 +15,64 @@ class SiteArticleMarkdownRenderTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_frontend_pages_emit_one_complete_seo_metadata_set_across_all_themes(): void
+    {
+        $category = Category::query()->create([
+            'name' => 'SEO Category',
+            'slug' => 'seo-category',
+            'description' => 'SEO category description',
+        ]);
+        $author = Author::query()->create([
+            'name' => 'SEO Author',
+        ]);
+        $article = Article::query()->create([
+            'title' => 'SEO Metadata Article',
+            'slug' => 'seo-metadata-article',
+            'excerpt' => 'SEO metadata article description',
+            'content' => 'SEO metadata article body.',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+
+        foreach ([
+            'missing-theme-falls-back-to-default',
+            'netease-news-20260507',
+            'tdwh-netease-news-en-20260508',
+            'toutiao-news-20260426',
+        ] as $themeId) {
+            SiteSetting::query()->updateOrCreate(
+                ['setting_key' => 'active_theme'],
+                ['setting_value' => $themeId]
+            );
+            SiteSettingsBag::forget();
+
+            $this->assertCompleteSeoMetadata(
+                $this->get(route('site.article', $article->slug))->assertOk()->getContent(),
+                'article'
+            );
+        }
+
+        SiteSetting::query()->updateOrCreate(
+            ['setting_key' => 'active_theme'],
+            ['setting_value' => 'missing-theme-falls-back-to-default']
+        );
+        SiteSettingsBag::forget();
+
+        foreach ([
+            route('site.home'),
+            route('site.category', $category->slug),
+            route('site.archive'),
+        ] as $url) {
+            $this->assertCompleteSeoMetadata(
+                $this->get($url)->assertOk()->getContent(),
+                'website'
+            );
+        }
+    }
+
     public function test_article_markdown_renders_gfm_tables_and_normalizes_legacy_image_urls(): void
     {
         $html = ArticleHtmlPresenter::markdownToHtml(<<<'MD'
@@ -207,5 +265,17 @@ MD);
             ->assertSee('GEOFlow Feed')
             ->assertSee('GEOFlow Demo')
             ->assertSee('Demo homepage description');
+    }
+
+    private function assertCompleteSeoMetadata(string $html, string $expectedOgType): void
+    {
+        $this->assertSame(1, substr_count($html, '<title>'));
+        $this->assertSame(1, substr_count($html, 'rel="canonical"'));
+        $this->assertSame(1, substr_count($html, 'property="og:title"'));
+        $this->assertSame(1, substr_count($html, 'property="og:description"'));
+        $this->assertSame(1, substr_count($html, 'property="og:type"'));
+        $this->assertSame(1, substr_count($html, 'property="og:url"'));
+        $this->assertStringContainsString('property="og:type" content="'.$expectedOgType.'"', $html);
+        $this->assertDoesNotMatchRegularExpression('/rel="canonical" href="\s*"/', $html);
     }
 }

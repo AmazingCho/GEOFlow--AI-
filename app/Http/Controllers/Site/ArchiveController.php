@@ -55,6 +55,8 @@ class ArchiveController extends Controller
             'siteKeywords' => '',
             'pageTitle' => $pageTitle,
             'pageDescription' => $siteDescription,
+            'pageKeywords' => '',
+            'pageOgType' => 'website',
             'canonicalUrl' => route('site.archive'),
         ]);
     }
@@ -112,6 +114,8 @@ class ArchiveController extends Controller
             'siteKeywords' => '',
             'pageTitle' => $pageTitle,
             'pageDescription' => $pageTitle,
+            'pageKeywords' => '',
+            'pageOgType' => 'website',
             'canonicalUrl' => route('site.archive.month', ['year' => $year, 'month' => $month]),
         ]);
     }

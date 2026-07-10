@@ -62,7 +62,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 知识库切片/向量化已完成异步队列状态增强：列表页和详情页可看到 queued/running/completed/failed，后台 Job 会写回时间与错误，失败可重试。
 - 任务回收站已完成核心功能：任务删除为软删除，已生成文章与来源任务关系保留；恢复后任务保持暂停。如需永久删除，必须先确认数据保留策略。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：已新增只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒。仍不能跳过草稿箱直接写 CRM、知识库或 Case 最终业务表。
-- 2026-07-11 已完成上游 `f603830` 的选择性采纳审核，执行清单见 [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md)。当前阶段 1-7 均尚未实施，优先顺序为登录重定向、远端同步预览保护、SEO metadata 统一；禁止直接 merge `upstream/main`。
+- 2026-07-11 上游 `f603830` 选择性采纳主线已完成阶段 1 和阶段 3：后台登录入口重定向已修复，前台/三套主题/模板工厂/目标站点包已统一 SEO metadata。阶段 2 因本地明确禁用远端站点设置同步而跳过，阶段 4 因没有运行时 Vite 消费者而跳过。阶段 5-7 仍需用户明确指令，禁止直接 merge `upstream/main`。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。
 

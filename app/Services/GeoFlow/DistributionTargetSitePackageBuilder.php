@@ -154,10 +154,17 @@ HTACCESS;
         $settings['active_theme'] = (string) ($channel->template_key ?? '');
         $themeClass = $this->targetThemeClass($settings);
         $assetVersion = $this->targetAssetVersion($channel);
+        $canonicalUrl = rtrim((string) $channel->endpoint_url, '/');
+        $escapedTitle = htmlspecialchars('首页 - '.$siteName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedDescription = htmlspecialchars($description, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedCanonicalUrl = htmlspecialchars($canonicalUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         return '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            .'<title>'.htmlspecialchars('首页 - '.$siteName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</title>'
-            .'<meta name="description" content="'.htmlspecialchars($description, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'">'
+            .'<title>'.$escapedTitle.'</title><meta name="description" content="'.$escapedDescription.'">'
+            .'<link rel="canonical" href="'.$escapedCanonicalUrl.'">'
+            .'<meta property="og:title" content="'.$escapedTitle.'"><meta property="og:description" content="'.$escapedDescription.'">'
+            .'<meta property="og:type" content="website"><meta property="og:url" content="'.$escapedCanonicalUrl.'">'
+            .'<meta property="og:site_name" content="'.htmlspecialchars($siteName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'">'
             .'<link rel="stylesheet" href="assets/css/site.css?v='.$assetVersion.'"><script defer src="assets/js/site.js?v='.$assetVersion.'"></script>'
             .'</head><body class="'.htmlspecialchars($themeClass, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'"><header><div class="wrap bar"><div class="brand">'.htmlspecialchars($siteName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</div></div></header><main class="wrap">'
             .'<section class="hero"><h1>'.htmlspecialchars($siteName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</h1><p>'.htmlspecialchars($description, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</p></section>'
@@ -1283,17 +1290,41 @@ function articleDate(array $article, string $format = 'Y-m-d'): string
     return $timestamp ? date($format, $timestamp) : $date;
 }
 
-function pageHeader(array $config, string $title): void
+function seoMetadataHead(array $config, string $pageTitle, string $description, string $ogType = 'website', string $canonicalPath = '/', string $image = ''): string
+{
+    $settings = siteSettings($config);
+    $canonicalUrl = frontSiteUrl($config, $canonicalPath);
+    $html = '<title>'.h($pageTitle).'</title><meta name="description" content="'.h($description).'">';
+    if ((string) $settings['site_keywords'] !== '') {
+        $html .= '<meta name="keywords" content="'.h((string) $settings['site_keywords']).'">';
+    }
+    if ((string) $settings['site_favicon'] !== '') {
+        $html .= '<link rel="icon" href="'.h((string) $settings['site_favicon']).'">';
+    }
+    $html .= '<link rel="canonical" href="'.h($canonicalUrl).'">';
+    $html .= '<meta property="og:title" content="'.h($pageTitle).'">';
+    $html .= '<meta property="og:description" content="'.h($description).'">';
+    $html .= '<meta property="og:type" content="'.h($ogType).'">';
+    $html .= '<meta property="og:url" content="'.h($canonicalUrl).'">';
+    $html .= '<meta property="og:site_name" content="'.h((string) $settings['site_name']).'">';
+    if ($image !== '') {
+        $html .= '<meta property="og:image" content="'.h($image).'">';
+    }
+
+    return $html;
+}
+
+function pageHeader(array $config, string $title, ?string $pageDescription = null, string $ogType = 'website', string $canonicalPath = '/', string $image = ''): void
 {
     $settings = siteSettings($config);
     $siteName = (string) $settings['site_name'];
     $themeClass = themeClass($settings);
     if ($themeClass === 'target-theme-apparel') {
-        apparelPageHeader($config, $settings, $title);
+        apparelPageHeader($config, $settings, $title, $pageDescription, $ogType, $canonicalPath, $image);
 
         return;
     }
-    $description = renderTemplateString((string) $settings['seo_description_template'], [
+    $description = $pageDescription ?? renderTemplateString((string) $settings['seo_description_template'], [
         'description' => (string) $settings['site_description'],
         'site_name' => $siteName,
         'keywords' => (string) $settings['site_keywords'],
@@ -1305,13 +1336,7 @@ function pageHeader(array $config, string $title): void
     ]);
     $homeUrl = frontSitePath($config, '/');
     echo '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
-    echo '<title>'.h($pageTitle).'</title><meta name="description" content="'.h($description).'">';
-    if ((string) $settings['site_keywords'] !== '') {
-        echo '<meta name="keywords" content="'.h((string) $settings['site_keywords']).'">';
-    }
-    if ((string) $settings['site_favicon'] !== '') {
-        echo '<link rel="icon" href="'.h((string) $settings['site_favicon']).'">';
-    }
+    echo seoMetadataHead($config, $pageTitle, $description, $ogType, $canonicalPath, $image);
     echo '<link rel="stylesheet" href="'.h(frontVersionedAssetPath($config, '/assets/css/site.css')).'">';
     echo '<script defer src="'.h(frontVersionedAssetPath($config, '/assets/js/site.js')).'"></script>';
     echo '</head><body class="'.h($themeClass).'"><header><div class="wrap bar"><a class="brand" href="'.h($homeUrl).'">'.h($siteName).'</a><nav><a href="'.h($homeUrl).'">首页</a></nav></div></header><main class="wrap">';
@@ -1329,10 +1354,10 @@ function pageFooter(array $config): void
     echo '</main><footer><div class="wrap">'.h((string) $settings['copyright_info']).'</div></footer></body></html>';
 }
 
-function apparelPageHeader(array $config, array $settings, string $title): void
+function apparelPageHeader(array $config, array $settings, string $title, ?string $pageDescription = null, string $ogType = 'website', string $canonicalPath = '/', string $image = ''): void
 {
     $siteName = (string) $settings['site_name'];
-    $description = renderTemplateString((string) $settings['seo_description_template'], [
+    $description = $pageDescription ?? renderTemplateString((string) $settings['seo_description_template'], [
         'description' => (string) $settings['site_description'],
         'site_name' => $siteName,
         'keywords' => (string) $settings['site_keywords'],
@@ -1344,10 +1369,7 @@ function apparelPageHeader(array $config, array $settings, string $title): void
     ]);
     $homeUrl = frontSitePath($config, '/');
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
-    echo '<title>'.h($pageTitle).'</title><meta name="description" content="'.h($description).'">';
-    if ((string) $settings['site_keywords'] !== '') {
-        echo '<meta name="keywords" content="'.h((string) $settings['site_keywords']).'">';
-    }
+    echo seoMetadataHead($config, $pageTitle, $description, $ogType, $canonicalPath, $image);
     echo '<link rel="stylesheet" href="'.h(frontVersionedAssetPath($config, '/assets/css/site.css')).'">';
     echo '<script defer src="'.h(frontVersionedAssetPath($config, '/assets/js/site.js')).'"></script>';
     echo '</head><body class="target-theme-apparel"><header><div class="asi-topline"><div class="asi-shell asi-topline-row"><span>Global apparel sourcing, trade policy and supplier intelligence</span><span>'.h(date('l, F j, Y')).'</span></div></div>';
@@ -1602,9 +1624,10 @@ function renderArticlePage(array $config, string $slug): void
     }
 
     $title = (string) ($article['title'] ?? '未命名文章');
+    $articleDescription = (string) ($article['meta_description'] ?? $article['excerpt'] ?? '');
     $category = is_array($article['category'] ?? null) ? (string) ($article['category']['name'] ?? '默认分类') : '默认分类';
     $publishedAt = substr((string) ($article['published_at'] ?? $article['updated_at'] ?? ''), 0, 10);
-    pageHeader($config, $title);
+    pageHeader($config, $title, $articleDescription, 'article', '/article/'.rawurlencode($slug), articleImageUrl($article));
     echo jsonLdScript([
         "@context"=>"https://schema.org",
         "@type"=>"Article",

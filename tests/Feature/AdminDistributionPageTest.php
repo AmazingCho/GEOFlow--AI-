@@ -971,6 +971,9 @@ class AdminDistributionPageTest extends TestCase
         $this->assertStringContainsString('暂无文章', $staticIndex);
         $this->assertStringContainsString('assets/css/site.css', $staticIndex);
         $this->assertStringContainsString('class="target-theme-toutiao"', $staticIndex);
+        $this->assertStringContainsString('rel="canonical"', $staticIndex);
+        $this->assertStringContainsString('property="og:type" content="website"', $staticIndex);
+        $this->assertStringContainsString('property="og:url"', $staticIndex);
         $this->assertStringNotContainsString('<style>', $staticIndex);
         $this->assertStringNotContainsString('</style>', $staticIndex);
         $this->assertStringContainsString('# 远程门户', (string) $zip->getFromName('llms.txt'));
@@ -1057,6 +1060,9 @@ class AdminDistributionPageTest extends TestCase
         $this->assertStringContainsString('pruneStaticArticlePages($config, $activeSlugs)', $frontController);
         $this->assertStringContainsString('function frontAssetPath', $frontController);
         $this->assertStringContainsString('function jsonLdScript', $frontController);
+        $this->assertStringContainsString('function seoMetadataHead', $frontController);
+        $this->assertStringContainsString('property="og:type"', $frontController);
+        $this->assertStringContainsString("pageHeader(\$config, \$title, \$articleDescription, 'article'", $frontController);
         $this->assertStringContainsString('function localizeArticleAssets', $frontController);
         $this->assertStringContainsString('application/ld+json', $frontController);
         $this->assertStringContainsString('"@type"=>"Article"', $frontController);

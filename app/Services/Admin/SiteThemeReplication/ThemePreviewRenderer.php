@@ -111,6 +111,8 @@ class ThemePreviewRenderer
             'siteKeywords' => $siteKeywords,
             'pageTitle' => $replication->name.' Preview - '.$siteTitle,
             'pageDescription' => $siteDescription,
+            'pageKeywords' => $siteKeywords,
+            'pageOgType' => $page === 'article' ? 'article' : 'website',
             'canonicalUrl' => route('admin.site-settings.theme-replications.preview', [
                 'replicationId' => (int) $replication->id,
                 'page' => $page,

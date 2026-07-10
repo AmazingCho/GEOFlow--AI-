@@ -10,6 +10,14 @@ This document tracks user-facing updates in the public repository. For future Gi
 - The unauthenticated login page and admin-entry redirect behavior remain unchanged.
 - Added focused admin guest-redirect coverage and regressed the existing first-install hints and login page flow.
 
+### Unified Frontend SEO Metadata
+
+- The default frontend, all three bundled themes, and newly generated theme-factory drafts now share one title, description, canonical, and Open Graph contract.
+- Home, category, and archive pages emit `og:type=website`; article pages emit `og:type=article`. Empty keywords and social images are omitted.
+- GEOFlow Agent target-site packages now include canonical and Open Graph metadata on the initial static homepage and dynamic article pages, including article-specific descriptions and optional images.
+- Existing JSON-LD, article content, and theme visuals remain unchanged, and the disabled remote site-settings sync was not restored.
+- The Docker asset-build gate found no runtime Vite consumer, so no npm install/build step was added to container startup.
+
 ## 2026-07-10
 
 ### Safer Task Defaults and Progressive Configuration

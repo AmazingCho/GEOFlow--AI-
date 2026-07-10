@@ -91,8 +91,8 @@ git log --oneline --decorate f603830..upstream/main
 | --- | --- | --- | --- | --- | --- |
 | 1 | 已登录管理员入口重定向修复 | 高，低风险缺陷 | 0.5 天 | 已完成 | 仅核心 1 行逻辑和测试思路 |
 | 2 | 远端站点同步预览与覆盖保护 | 与现有产品边界冲突 | 0 天 | 跳过 | 否；本地已禁用该同步能力 |
-| 3 | SEO Metadata 统一契约 | 高，减少多主题输出漂移 | 1-2 天 | 未开始 | 可参考 partial，但需适配模板工厂/目标包 |
-| 4 | Docker 前端资源构建必要性门槛 | 当前偏低，现状无运行时 `@vite` | 0.25-2 天 | 未开始 | 不直接搬上游 Compose 补丁 |
+| 3 | SEO Metadata 统一契约 | 高，减少多主题输出漂移 | 1-2 天 | 已完成 | 可参考 partial，但需适配模板工厂/目标包 |
+| 4 | Docker 前端资源构建必要性门槛 | 无运行时消费者 | 0 天 | 跳过 | 不直接搬上游 Compose 补丁 |
 | 5 | 公开询盘表单接入现有 CRM | 中高，取决于是否用 GEOFlow 前台获客 | 4-7 天 | 未开始 | 否，禁止复制第二套 Lead 生命周期 |
 | 6 | 多来源知识草稿工作区 | 中，适合复杂资料整理 | 5-8 天 | 未开始 | 否，必须复用现有 KB/纠错/队列 |
 | 7 | 站点设置页分组导航 | 低，纯体验增强 | 0.5-1 天 | 未开始 | 只借鉴锚点和展开交互 |
@@ -167,7 +167,7 @@ $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
 - [x] 回归 `AdminLoginPageTest`，确认首次部署提示和登录流程未退化。
 - [x] 浏览器验证由 HTTP 功能测试完成；Codex Browser WebView 当前无法附着，最终验收时再次尝试可视检查。
 - [x] 更新中英文 changelog。
-- [ ] 形成独立 commit：
+- [x] 形成独立 commit：`0c1c412 fix: redirect authenticated admins to dashboard`。
 
 ```bash
 git commit -m "fix: redirect authenticated admins to dashboard"
@@ -265,7 +265,7 @@ DistributionHttpClient::syncSiteSettings(DistributionChannel $channel, ?array $s
 - [ ] 浏览器验证桌面与移动端：渠道详情 → 同步预览 → 选择普通字段 → 确认同步；无横向溢出、无双层边框、无控制台错误。
 - [ ] 使用测试目标站或 mock 验证预览不会写远端文件。
 - [ ] 更新功能说明、changelog 和本计划进度表。
-- [ ] 形成独立 commit：
+- [ ] 形成独立 commit（阶段已跳过，不执行此项）。
 
 ```bash
 git commit -m "feat: add guarded distribution settings sync preview"
@@ -336,21 +336,21 @@ $siteFavicon;     // 可为空
 
 ### 实施清单
 
-- [ ] 先扫描所有 layout/article 模板中的 `<title>`、canonical 和 `og:*`，保存基线数量。
-- [ ] 先写失败测试：默认主题和三套内置主题的文章页各只输出一组 metadata。
-- [ ] 先写失败测试：首页、分类、归档和文章页都有非空 canonical；文章页 `og:type=article`。
-- [ ] 新建 `site.partials.seo-head`，只根据统一变量渲染标签。
-- [ ] 默认 layout 和三套主题 layout 引入 partial，并删除各 layout 中重复标签。
-- [ ] 默认 article 和三套主题 article 删除重复 Open Graph push；保留 JSON-LD 和正文结构。
-- [ ] 补齐四个 Site Controller 的变量，保证 preview 和真实页面语义一致。
-- [ ] 更新模板工厂的 preview renderer 与 scaffold writer，新生成主题默认引用统一 partial。
-- [ ] 更新目标站点包生成模板，使远端静态页输出相同 metadata 契约；目标包不能依赖主应用 Blade partial。
-- [ ] 执行聚焦测试和主题/分发回归。
-- [ ] 浏览器查看默认主题和三套主题的页面源代码，确认没有重复标签。
-- [ ] 对模板工厂生成一份隔离草稿并预览，确认 metadata 不报 undefined variable。
-- [ ] 下载一次目标站点包或运行对应测试，确认生成模板仍可独立运行。
-- [ ] 更新 changelog、本计划进度表；用户操作未变化，不新建功能说明。
-- [ ] 形成独立 commit：
+- [x] 先扫描所有 layout/article 模板中的 `<title>`、canonical 和 `og:*`，保存基线数量。
+- [x] 先写失败测试：默认主题和三套内置主题的文章页各只输出一组 metadata。
+- [x] 先写失败测试：首页、分类、归档和文章页都有非空 canonical；文章页 `og:type=article`。
+- [x] 新建 `site.partials.seo-head`，只根据统一变量渲染标签。
+- [x] 默认 layout 和三套主题 layout 引入 partial，并删除各 layout 中重复标签。
+- [x] 默认 article 和三套主题 article 删除重复 Open Graph push；保留 JSON-LD 和正文结构。
+- [x] 补齐四个 Site Controller 的变量，保证 preview 和真实页面语义一致。
+- [x] 更新模板工厂的 preview renderer 与 scaffold writer，新生成主题默认引用统一 partial。
+- [x] 更新目标站点包生成模板，使远端静态页输出相同 metadata 契约；目标包不依赖主应用 Blade partial。
+- [x] 执行聚焦测试和主题/分发回归。
+- [x] 浏览器检查真实首页与文章页 metadata；四套视图组合由自动测试覆盖，无重复标签。
+- [x] 对模板工厂生成隔离草稿并预览，确认 metadata 不报 undefined variable。
+- [x] 运行目标站点包下载测试，确认生成模板仍可独立运行。
+- [x] 更新 changelog、本计划进度表；用户操作未变化，不新建功能说明。
+- [x] 形成独立 commit（本阶段 SEO 契约提交）。
 
 ```bash
 git commit -m "refactor: unify frontend SEO metadata contract"
@@ -373,13 +373,13 @@ git commit -m "refactor: unify frontend SEO metadata contract"
 
 ### 必要性检查
 
-- [ ] 完成阶段 1-3 后执行：
+- [x] 完成阶段 1-3 后执行：
 
 ```bash
 rg -n "@vite|Vite::|public/build|manifest.json" app resources routes
 ```
 
-- [ ] 如果仍无运行时 Vite 引用，把本阶段状态改为“跳过”，理由写为“没有运行时消费者”。
+- [x] 扫描结果仅命中主题描述用 `manifest.json`，没有 `@vite`、`Vite::` 或 `public/build/manifest.json` 运行时消费者；本阶段标记“跳过”。
 - [ ] 如果阶段 2/3 或其他新功能引入 `@vite`，先验证开发和生产容器是否都缺少 `public/build/manifest.json`。
 - [ ] 只有确认存在真实缺陷后，才设计不可变镜像的 Node build stage；不要采用运行时每次安装依赖的常驻方案。
 
@@ -643,10 +643,10 @@ git status --short
 | 阶段 | 状态 | 开始基线 | 完成 commit | 自动测试 | UI/运行验证 | 备注/下一断点 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 基线保护 | 已完成 | `0c6dbe6` | 当前分支 `codex/upstream-selective-adoption` | 基线测试已执行 | 不适用 | 已审计并保留计划文档改动 |
-| 1 登录重定向 | 已完成 | `0c6dbe6` | 待本阶段提交 | 7 tests / 25 assertions | 功能测试验证；Browser WebView 未附着 | 下一断点：提交后进入阶段 3 |
+| 1 登录重定向 | 已完成 | `0c6dbe6` | `0c1c412` | 7 tests / 25 assertions | 功能测试验证 | 已完成 |
 | 2 同步预览保护 | 跳过 | `0c6dbe6` | 不适用 | 55 tests / 470 assertions | 当前 UI 无同步入口 | 本地已明确禁用设置同步，禁止恢复 |
-| 3 SEO 契约 | 进行中 | `0c6dbe6` | - | 基线发现整组测试状态污染 | 待修复后截图 | 先修主题预览跨测试命名空间污染，再统一 metadata |
-| 4 Docker assets 门槛 | 未开始 | - | - | - | - | 默认预期为跳过 |
+| 3 SEO 契约 | 已完成 | `0c1c412` | 待本阶段提交 | 87 tests / 733 assertions | 浏览器检查首页和真实文章页唯一 metadata | 默认/三主题/模板工厂/目标包已统一 |
+| 4 Docker assets 门槛 | 跳过 | `0c1c412` | 不适用 | 静态扫描通过 | 无 UI 变更 | 没有运行时 Vite 消费者 |
 | 5 公开询盘表单 | 未开始 | - | - | - | - | 等用户明确执行 |
 | 6 知识草稿工作区 | 未开始 | - | - | - | - | 等用户明确执行 |
 | 7 设置页导航 | 未开始 | - | - | - | - | 低优先级可选 |

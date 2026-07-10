@@ -71,6 +71,8 @@ class ArticleController extends Controller
             'siteKeywords' => '',
             'pageTitle' => $pageTitle,
             'pageDescription' => $pageDescription,
+            'pageKeywords' => implode(', ', $tags),
+            'pageOgType' => 'article',
             'stickyAd' => $stickyAd,
             'canonicalUrl' => route('site.article', $article->slug),
         ]);

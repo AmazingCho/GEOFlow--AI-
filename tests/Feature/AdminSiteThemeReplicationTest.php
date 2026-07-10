@@ -282,7 +282,10 @@ class AdminSiteThemeReplicationTest extends TestCase
         $this->assertStringNotContainsString('vw', $css);
         $homeBlade = Storage::disk('local')->get("geoflow-theme-replications/{$replication->id}/draft/1/views/home.blade.php");
         $articleBlade = Storage::disk('local')->get("geoflow-theme-replications/{$replication->id}/draft/1/views/article.blade.php");
+        $layoutBlade = Storage::disk('local')->get("geoflow-theme-replications/{$replication->id}/draft/1/views/layout.blade.php");
         $this->assertStringNotContainsString('style=', $homeBlade.$articleBlade);
+        $this->assertStringContainsString("@include('site.partials.seo-head')", $layoutBlade);
+        $this->assertStringNotContainsString('property="og:title"', $articleBlade);
     }
 
     public function test_theme_replication_job_skips_internal_stylesheet_links(): void
@@ -411,7 +414,7 @@ class AdminSiteThemeReplicationTest extends TestCase
         File::deleteDirectory(storage_path("framework/geoflow-theme-replications-preview/{$replication->id}"));
 
         foreach (['home', 'category', 'article'] as $page) {
-            $this->actingAs($this->admin(), 'admin')
+            $response = $this->actingAs($this->admin(), 'admin')
                 ->get(route('admin.site-settings.theme-replications.preview', [
                     'replicationId' => (int) $replication->id,
                     'page' => $page,
@@ -419,6 +422,15 @@ class AdminSiteThemeReplicationTest extends TestCase
                 ->assertOk()
                 ->assertSee('rep-body')
                 ->assertSee('Preview Article Title');
+
+            $html = $response->getContent();
+            $this->assertSame(1, substr_count($html, '<title>'));
+            $this->assertSame(1, substr_count($html, 'rel="canonical"'));
+            $this->assertSame(1, substr_count($html, 'property="og:title"'));
+            $this->assertStringContainsString(
+                'property="og:type" content="'.($page === 'article' ? 'article' : 'website').'"',
+                $html
+            );
         }
 
         $this->actingAs($this->admin(), 'admin')
@@ -463,12 +475,13 @@ class AdminSiteThemeReplicationTest extends TestCase
 
         $replication = $this->runReadyReplication('copy-source-clone');
 
-        $this->actingAs($this->admin(), 'admin')
+        $response = $this->actingAs($this->admin(), 'admin')
             ->post(route('admin.site-settings.theme-replications.copy', ['replicationId' => (int) $replication->id]), [
                 'name' => 'Copied Clone',
                 'theme_id' => 'copied-clone',
             ])
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $copy = SiteThemeReplication::query()->where('theme_id', 'copied-clone')->first();
 
