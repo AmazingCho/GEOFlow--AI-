@@ -152,12 +152,13 @@
                         </select>
                     </div>
                     <div class="lg:col-span-2">
-                        <label class="mb-2 block text-sm font-medium text-gray-700">语言</label>
+                        <label class="mb-2 block text-sm font-medium text-gray-700">默认输出语言</label>
                         <select name="document_language" class="{{ $inputClass }}">
                             @foreach (($languageOptions ?? []) as $value => $label)
                                 <option value="{{ $value }}" @selected(old('document_language', (string) ($quoteForm['document_language'] ?? 'en')) === $value)>{{ $label }}</option>
                             @endforeach
                         </select>
+                        <p class="mt-1 text-xs leading-5 text-gray-500">仅切换系统标题、字段标签和日期；产品、客户、条款及银行资料保持录入原文。</p>
                     </div>
                     <div class="lg:col-span-2">
                         <label class="mb-2 block text-sm font-medium text-gray-700">状态</label>

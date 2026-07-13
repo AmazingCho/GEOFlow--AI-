@@ -56,7 +56,7 @@
 | CRM 数据归档安全 | 已完成核心功能 | 客户及商业对象使用软删除；归档客户不会级联删除商业记录 |
 | CRM 单据独立转换 | 后台保留，前端收敛 | `source_quote_id` 和转换接口暂保留兼容历史数据；详情页“创建副本”入口已移除，默认通过打印类型切换输出 PI / CI / PL / 合同，避免单据列表重复膨胀 |
 | CRM 单据系统阶段 1 | 已完成 | 报价/发票/装箱/合同基础字段结构、正式发票类型、最终合计和明细扩展字段已补齐 |
-| CRM 单据系统阶段 2-10 | 已完成核心功能 | 单据表单 UI、项目图片、报价/PI/发票/装箱单/合同分模板打印、卖方信息读取、基础中英文标签、测试与文档已补齐 |
+| CRM 单据系统阶段 2-10 | 已完成增强 | 单据表单 UI、项目图片、报价/PI/发票/装箱单/合同分模板打印、卖方信息读取、English / 简体中文 / Русский / Español 四语固定标签与日期输出、测试与文档已补齐；业务录入值保持原文 |
 | CRM 卖方常用信息模板 | 已完成核心功能 | 单据卖方信息支持 Seller Company / Bank Account JSON 编辑、格式化、保存常用、导入常用和默认模板 |
 | CRM 询盘与商机边界 | 已完成核心功能 | 询盘状态收敛，一键转商机，商机显示来源询盘上下文，单据支持关联商机 |
 | 关键词和图片库级标签移除 | 已完成 | 只保留标题库库级标签 |
@@ -134,6 +134,7 @@
 - CRM 单据 PDF 视觉回归自动化：新增 `crm:document-pdf-regression` 命令，可生成五类真实样本 PDF、HTML、逐页截图和报告，并校验 PDF 页数与 HTML 页面数一致
 - CRM 单据 PDF 后台回归检查：`/admin/crm/quotes/pdf-regression` 可生成运行记录和报告；默认视觉基线已验证，第二轮截图 diff 结果为 `passed`，五类单据 diff ratio 为 0；`crm:document-pdf-regression:prune --dry-run` 验证不会误删基线或近期记录
 - `AdminCrmPagesTest` PDF 回归聚焦验证通过，共 5 tests / 37 assertions，覆盖后台启动、清理基线保护、渲染基准不一致拦截、命令报告生成和无图片 quotation 单页分页
+- CRM 单据四语输出验证：`CrmDocumentLocaleTest` 与 `AdminCrmPagesTest` 联合通过，共 49 tests / 515 assertions，覆盖语言字典键一致性、未翻译英文标签保护、临时语言优先级、保存校验、PDF/Excel 输出、业务值不翻译、零运费汇总行隐藏，以及预览/PDF统一纵向密度；5 种单据类型 × 俄语/西班牙语浏览器审计通过，单据 `#30` 的西语与俄语报价已验证为单页 A4，汇总、条款、签名和页脚无重叠。
 - 浏览器检查询盘列表、询盘详情、商机创建页和单据创建页，无横向溢出；商机来源卡片和关联商机下拉正常渲染
 - `AdminArticlesPageTest`、`AdminLoginPageTest`、`AdminSiteSettingsPageTest`、`AdminSiteThemeReplicationTest`、`AdminDistributionPageTest` 联合回归通过，共 104 tests / 743 assertions
 - GEO 生成质检与 RAG 解释阶段 1 验证：`ArticleQualityAssessmentServiceTest`、`AdminArticleGenerationTraceTest`、`RagRetrievalServiceTest` 联合通过，共 11 tests / 93 assertions；浏览器检查 `/admin/articles/31/edit` 的质量评分和 RAG 解释卡片正常渲染，无控制台错误

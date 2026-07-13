@@ -8,12 +8,12 @@
     $fullWidthTermFields = ['warranty_terms', 'installation_terms', 'packing_terms'];
 @endphp
 @if (!empty($terms))
-    <h2>Terms &amp; Conditions</h2>
+    <h2>{{ $label('terms_conditions', 'Terms & Conditions') }}</h2>
     <div class="terms-grid">
         @foreach ($terms as $field => $heading)
             @php($termClass = in_array($field, $fullWidthTermFields, true) ? 'term-item full' : 'term-item')
             <div class="{{ $termClass }}" data-term-field="{{ $field }}">
-                <div class="label">{{ $heading }}:</div><div>{{ $field === 'packing_terms' && (string) ($quote->{$field} ?? '') === '' ? ($isZh ? '标准出口木箱' : 'Standard export wooden case') : $quote->{$field} }}</div>
+                <div class="label">{{ $heading }}:</div><div>{{ $field === 'packing_terms' && (string) ($quote->{$field} ?? '') === '' ? $label('standard_export_wooden_case', 'Standard export wooden case') : $quote->{$field} }}</div>
             </div>
         @endforeach
     </div>

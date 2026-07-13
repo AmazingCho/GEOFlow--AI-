@@ -2,6 +2,20 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-07-13
+
+### Russian and Spanish CRM Document Output
+
+- CRM quotations, proforma invoices, commercial invoices, packing lists, and contracts now support English, Simplified Chinese, Russian, and Spanish output.
+- The quote form stores a default output language, while print preview can switch language temporarily without updating the saved default or creating a duplicate document.
+- PDF follows the temporary output language. The retained backend Excel export also accepts an explicit language parameter, but no primary frontend Excel workflow is added. Document titles, fixed labels, page numbers, and dates are localized; customer, product, term, amount, unit, seller, and bank values remain exactly as entered.
+- All four locale catalogs use the same key contract, including the previously scattered Chinese fixed labels, and reuse the same print templates instead of duplicating language-specific pages.
+- PDF rendering now waits for fonts and images before A4 pagination. Longer Russian and Spanish labels reserve layout capacity and final summary content is merged only after real-height measurement, preventing footer overlap and avoidable blank pages.
+- HTML preview and PDF now use the same A4 vertical density, and preview controls sit outside the paper content flow. Russian and Spanish summaries and terms are merged back into the previous page whenever the measured content fits safely.
+- Continuation pages no longer repeat the large document title; they retain only their section purpose and page count.
+- When shipping is blank or zero, print preview and PDF summaries now omit the Shipping Fee / Freight / Shipping row. Positive shipping fees remain visible and continue to be included in the total.
+- Automated coverage passes with `49 tests / 515 assertions`. All five document types were audited in Russian and Spanish for browser print boundaries. Quote `#30` was also verified as a one-page A4 preview and PDF in both Spanish and Russian, with summaries, terms, signatures, page labels, footers, and Cyrillic glyphs rendering correctly.
+
 ## 2026-07-11
 
 ### Admin Login Entry Redirect Fix

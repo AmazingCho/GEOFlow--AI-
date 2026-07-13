@@ -3,6 +3,7 @@
 namespace App\Services\GeoFlow;
 
 use App\Models\CrmQuote;
+use App\Support\GeoFlow\CrmDocumentLocale;
 use App\Support\Site\SiteSettingsBag;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
@@ -234,14 +235,20 @@ class CrmDocumentPdfRegressionService
 
     private function renderDocumentHtml(CrmQuote $quote, string $documentType): string
     {
+        $documentLanguage = CrmDocumentLocale::resolve(null, (string) ($quote->document_language ?? 'en'));
+        $documentTitles = CrmDocumentLocale::documentTitles($documentLanguage);
+
         return view($this->printViewForDocumentType($documentType), [
-            'pageTitle' => $quote->quote_no.' - '.$this->documentTypeLabel($documentType),
+            'pageTitle' => $quote->quote_no.' - '.($documentTitles[$documentType] ?? $this->documentTypeLabel($documentType)),
             'activeMenu' => 'crm',
             'adminSiteName' => config('geoflow.site_name', 'GEOFlow'),
             'quote' => $quote,
             'seller' => $this->sellerProfile($quote),
             'documentKind' => $documentType,
-            'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
+            'documentLanguage' => $documentLanguage,
+            'documentLanguageOptions' => CrmDocumentLocale::options(),
+            'documentTitles' => $documentTitles,
+            'documentLabels' => CrmDocumentLocale::labels($documentLanguage),
         ])->render();
     }
 
@@ -279,95 +286,6 @@ class CrmDocumentPdfRegressionService
             'phone' => trim((string) ($stored['phone'] ?? '')),
             'email' => trim((string) ($stored['email'] ?? '')),
             'website' => trim((string) ($stored['website'] ?? config('app.url', ''))),
-        ];
-    }
-
-    private function documentLabels(string $language): array
-    {
-        if ($language === 'zh_CN') {
-            return [
-                'seller' => '卖方',
-                'buyer' => '买方',
-                'document_no' => '单据号',
-                'date' => '日期',
-                'valid_until' => '有效期',
-                'currency' => '币种',
-                'trade_term' => '贸易条款',
-                'lead_time' => '交期',
-                'origin' => '原产国',
-                'items' => '明细',
-                'item' => '项目',
-                'image' => '图片',
-                'sku_model' => 'SKU / 型号',
-                'hs_code' => 'HS Code',
-                'description' => '描述',
-                'qty' => '数量',
-                'unit_price' => '单价',
-                'amount' => '金额',
-                'summary' => '汇总',
-                'subtotal' => '明细小计',
-                'shipping' => '运费',
-                'discount' => '折扣',
-                'tax' => '税费',
-                'grand_total' => '最终合计',
-                'payment_terms' => '付款条款',
-                'delivery_terms' => '交付条款',
-                'warranty_terms' => '质保条款',
-                'installation_terms' => '安装条款',
-                'packing_terms' => '包装条款',
-                'notes' => '备注',
-                'signature' => '签名',
-                'bank_account' => '银行账户',
-                'contract_terms' => '合同条款',
-                'governing_law' => '适用法律',
-                'dispute_resolution' => '争议解决',
-                'package_count' => '件数',
-                'net_weight' => '净重',
-                'gross_weight' => '毛重',
-                'volume_cbm' => '体积 CBM',
-            ];
-        }
-
-        return [
-            'seller' => 'Seller',
-            'buyer' => 'Buyer',
-            'document_no' => 'Document No.',
-            'date' => 'Date',
-            'valid_until' => 'Valid Until',
-            'currency' => 'Currency',
-            'trade_term' => 'Trade Term',
-            'lead_time' => 'Lead Time',
-            'origin' => 'Origin',
-            'items' => 'Items',
-            'item' => 'Item',
-            'image' => 'Image',
-            'sku_model' => 'SKU / Model',
-            'hs_code' => 'HS Code',
-            'description' => 'Description',
-            'qty' => 'Qty',
-            'unit_price' => 'Unit Price',
-            'amount' => 'Amount',
-            'summary' => 'Summary',
-            'subtotal' => 'Items Subtotal',
-            'shipping' => 'Shipping Fee',
-            'discount' => 'Discount',
-            'tax' => 'Tax',
-            'grand_total' => 'Grand Total',
-            'payment_terms' => 'Payment Terms',
-            'delivery_terms' => 'Delivery Terms',
-            'warranty_terms' => 'Warranty Terms',
-            'installation_terms' => 'Installation Terms',
-            'packing_terms' => 'Packing',
-            'notes' => 'Notes',
-            'signature' => 'Signature',
-            'bank_account' => 'Bank Account',
-            'contract_terms' => 'Contract Terms',
-            'governing_law' => 'Governing Law',
-            'dispute_resolution' => 'Dispute Resolution',
-            'package_count' => 'Packages',
-            'net_weight' => 'Net Weight',
-            'gross_weight' => 'Gross Weight',
-            'volume_cbm' => 'Volume CBM',
         ];
     }
 

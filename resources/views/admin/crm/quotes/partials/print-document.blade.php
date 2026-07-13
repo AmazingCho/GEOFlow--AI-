@@ -1,24 +1,15 @@
 @php
     $documentKind = $documentKind ?? (string) ($quote->document_type ?? 'quotation');
-    $isZh = (string) ($quote->document_language ?? 'en') === 'zh_CN';
-    $titles = $isZh
-        ? [
-            'quotation' => '报价单',
-            'proforma_invoice' => '形式发票',
-            'invoice' => '正式发票',
-            'packing_list' => '装箱单',
-            'contract' => '合同',
-        ]
-        : [
-            'quotation' => 'Quotation',
-            'proforma_invoice' => 'Proforma Invoice',
-            'invoice' => 'Commercial Invoice',
-            'packing_list' => 'Packing List',
-            'contract' => 'Contract',
-        ];
+    $documentLanguage = \App\Support\GeoFlow\CrmDocumentLocale::resolve(
+        isset($documentLanguage) && is_string($documentLanguage) ? $documentLanguage : null,
+        (string) ($quote->document_language ?? 'en'),
+    );
+    $titles = $documentTitles ?? \App\Support\GeoFlow\CrmDocumentLocale::documentTitles($documentLanguage);
+    $languageOptions = $documentLanguageOptions ?? \App\Support\GeoFlow\CrmDocumentLocale::options();
     $title = $titles[$documentKind] ?? $titles['quotation'];
     $labels = $documentLabels ?? [];
     $label = static fn (string $key, string $fallback): string => (string) ($labels[$key] ?? $fallback);
+    $formatDate = static fn (mixed $value): string => \App\Support\GeoFlow\CrmDocumentLocale::formatDate($value, $documentLanguage);
     $seller = $seller ?? ['name' => config('geoflow.site_name', 'GEOFlow'), 'logo' => '', 'address' => '', 'phone' => '', 'email' => '', 'website' => ''];
     $money = static fn (mixed $value): string => number_format((float) $value, 2);
     $weight = static fn (mixed $value): string => ((float) $value > 0) ? number_format((float) $value, 3) : '-';
@@ -77,30 +68,39 @@
         return max(1, $weight);
     };
 
+    // Longer fixed labels consume more vertical space in the summary and signature areas.
+    // Reserve that space up front, then let the browser's A4 measurement merge the final
+    // content page back only when the rendered document genuinely fits.
+    $localizedLayoutPenalty = match ($documentLanguage) {
+        'ru' => 4,
+        'es' => 2,
+        default => 0,
+    };
+
     if ($isPacking) {
-        $singlePageCapacity = 20;
+        $singlePageCapacity = 20 - $localizedLayoutPenalty;
         $firstItemsCapacity = 28;
         $continuationItemsCapacity = 36;
         $finalItemsCapacity = 22;
     } elseif ($hasVisibleItemImages) {
-        $singlePageCapacity = 36;
+        $singlePageCapacity = 36 - $localizedLayoutPenalty;
         // Image thumbnails are fixed at 48px. Let item-only first pages fit up to 8 compact image rows,
         // but keep the single-page threshold lower so summary/terms do not get squeezed into overflow.
         $firstItemsCapacity = 44;
         $continuationItemsCapacity = 42;
         $finalItemsCapacity = 22;
     } elseif ($isInvoice) {
-        $singlePageCapacity = 24;
+        $singlePageCapacity = 24 - $localizedLayoutPenalty;
         $firstItemsCapacity = 32;
         $continuationItemsCapacity = 40;
         $finalItemsCapacity = 26;
     } elseif ($showContract) {
-        $singlePageCapacity = 18;
+        $singlePageCapacity = 18 - $localizedLayoutPenalty;
         $firstItemsCapacity = 28;
         $continuationItemsCapacity = 36;
         $finalItemsCapacity = 18;
     } else {
-        $singlePageCapacity = 24;
+        $singlePageCapacity = 24 - $localizedLayoutPenalty;
         $firstItemsCapacity = 32;
         $continuationItemsCapacity = 40;
         $finalItemsCapacity = 24;
@@ -217,11 +217,22 @@
     $finalContentPageCount = $hasSeparateFinalContentPage ? 1 : 0;
     $bankPageCount = $isPI ? 1 : 0;
     $totalPages = max(1, $totalItemPages + $finalContentPageCount + $bankPageCount);
-    $pageLabel = static fn (int $pageNumber): string => $title.' · Page '.$pageNumber.' of '.$totalPages;
+    $pageCountLabel = static fn (int $pageNumber): string => \App\Support\GeoFlow\CrmDocumentLocale::text(
+        $documentLanguage,
+        'page_of',
+        'Page :current of :total',
+        ['current' => $pageNumber, 'total' => $totalPages],
+    );
+    $pageLabel = static fn (int $pageNumber): string => \App\Support\GeoFlow\CrmDocumentLocale::text(
+        $documentLanguage,
+        'document_page_of',
+        ':title · Page :current of :total',
+        ['title' => $title, 'current' => $pageNumber, 'total' => $totalPages],
+    );
 @endphp
 
 <!doctype html>
-<html lang="{{ $isZh ? 'zh-CN' : 'en' }}">
+<html lang="{{ \App\Support\GeoFlow\CrmDocumentLocale::htmlLang($documentLanguage) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -236,36 +247,39 @@
         }
         * { box-sizing: border-box; }
         @page { size: A4; margin: 0; }
-        body { margin: 0; background: #e9edf3; color: var(--text); font-family: Arial, "WenQuanYi Zen Hei", "Noto Sans CJK SC", "Noto Sans CJK TC", "Microsoft YaHei", Helvetica, sans-serif; font-size: 12px; line-height: 1.35; }
-        .page { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #fff; padding: 12mm 13mm 18mm; position: relative; }
+        body { margin: 0; background: #e9edf3; color: var(--text); font-family: Arial, "DejaVu Sans", "WenQuanYi Zen Hei", "Noto Sans CJK SC", "Noto Sans CJK TC", "Microsoft YaHei", Helvetica, sans-serif; font-size: 11px; line-height: 1.25; }
+        .page { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #fff; padding: 10mm 12mm 18mm; position: relative; }
         .page-break { page-break-before: always; }
-        .topbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-bottom: 10px; text-align: right; }
+        .topbar { display: flex; width: 210mm; max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin: 0 auto 10px; padding-top: 10px; text-align: right; }
         .doc-switcher { border: 1px solid var(--border); background: #fff; padding: 6px 10px; font-size: 11px; cursor: pointer; }
         .doc-action { border: 1px solid var(--border); background: #fff; color: var(--text); padding: 6px 10px; font-size: 11px; font-weight: 700; text-decoration: none; }
         .doc-action:hover { background: var(--light); }
         .print-alert { flex-basis: 100%; border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 7px 9px; text-align: left; font-size: 11px; }
         .header { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; align-items: start; border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
         .continuation-header { margin-bottom: 10px; }
+        .continuation-header .title-box { align-self: center; }
         .continuation-kicker { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+        .continuation-page-count { margin-top: 4px; }
         .brand { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
         .logo { width: 86px; height: 44px; object-fit: contain; }
         .company-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
-        .muted { color: var(--muted); font-size: 11px; }
+        .muted { color: var(--muted); font-size: 10px; }
         .title-box { text-align: right; }
-        h1 { margin: 0 0 6px; font-size: 26px; text-transform: uppercase; letter-spacing: .8px; }
+        h1 { margin: 0 0 6px; font-size: 24px; text-transform: uppercase; letter-spacing: .8px; }
         .doc-meta { display: grid; grid-template-columns: 86px 1fr; gap: 3px 8px; justify-content: end; font-size: 11.5px; max-width: 250px; margin-left: auto; }
         .doc-meta-wide { display: grid; grid-template-columns: 90px 1fr; gap: 3px 8px; justify-content: end; font-size: 11.5px; max-width: 260px; margin-left: auto; }
         .label { color: var(--muted); font-weight: 600; white-space: nowrap; }
-        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .panel { border: 1px solid var(--border); padding: 7px 8px; background: #fff; }
-        .panel-title { padding: 5px 8px; margin: -7px -8px 6px; background: var(--light); border-bottom: 1px solid var(--border); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .02em; }
-        .kv { display: grid; grid-template-columns: 92px 1fr; gap: 3px 8px; }
-        .kv-wide { display: grid; grid-template-columns: 100px 1fr; gap: 3px 8px; }
-        h2 { margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; text-transform: uppercase; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin-top: 7px; }
+        .panel { border: 1px solid var(--border); padding: 5px 6px; background: #fff; }
+        .panel-title { padding: 4px 6px; margin: -5px -6px 5px; background: var(--light); border-bottom: 1px solid var(--border); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .02em; }
+        .kv { display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 58%); gap: 3px 8px; }
+        .kv-wide { display: grid; grid-template-columns: minmax(0, 44%) minmax(0, 56%); gap: 3px 8px; }
+        .kv > .label, .kv-wide > .label { white-space: normal; overflow-wrap: anywhere; }
+        h2 { margin: 9px 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid var(--border); padding: 6px 7px; vertical-align: top; }
+        th, td { border: 1px solid var(--border); padding: 4px 5px; vertical-align: top; }
         th { background: var(--light); font-size: 11px; text-transform: uppercase; letter-spacing: .02em; }
         .right { text-align: right; }
         .center { text-align: center; }
@@ -273,12 +287,12 @@
         .thumb { width: 48px; height: 48px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
         .product-row { display: flex; gap: 7px; align-items: flex-start; }
         .product-name { font-weight: 700; margin-bottom: 2px; }
-        .summary-wrap { display: grid; grid-template-columns: 1fr 250px; gap: 12px; margin-top: 8px; align-items: start; }
-        .notes-box { border: 1px solid var(--border); padding: 7px 8px; min-height: 52px; color: var(--muted); font-size: 11.5px; }
-        .summary-table td { padding: 5px 7px; font-size: 11.5px; }
+        .summary-wrap { display: grid; grid-template-columns: 1fr 250px; gap: 8px; margin-top: 6px; align-items: start; }
+        .notes-box { border: 1px solid var(--border); padding: 7px 8px; min-height: 34px; color: var(--muted); font-size: 10.5px; }
+        .summary-table td { padding: 4px 6px; font-size: 11.5px; }
         .summary-table tr:last-child td { background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; }
-        .terms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 8px; }
-        .term-item { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px; align-items: start; font-size: 11.5px; line-height: 1.45; }
+        .terms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 6px; }
+        .term-item { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px; align-items: start; font-size: 10.5px; line-height: 1.45; }
         .term-item.full { grid-column: span 2; }
         .bank-block { border: 2px solid var(--accent); padding: 14px 16px; margin-top: 12px; }
         .bank-title { font-size: 13px; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
@@ -295,80 +309,62 @@
         .remittance-note { margin-top: 14px; padding: 8px 12px; background: #fef9c3; border-radius: 4px; font-size: 11px; color: #854d0e; }
         .declaration { border: 1px solid var(--border); padding: 7px 8px; min-height: 48px; color: var(--muted); font-size: 11.5px; }
         .section { white-space: pre-wrap; color: #374151; font-size: 13px; line-height: 1.75; }
-        .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 20px; }
-        .sig-box { border: 1px solid var(--border); padding: 10px; }
+        .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+        .sig-box { border: 1px solid var(--border); padding: 7px; }
         .sig-title { font-weight: 700; margin-bottom: 6px; }
         .sig-kv { display: grid; grid-template-columns: 38px 1fr; gap: 3px 8px; font-size: 11px; }
-        .sig-line { margin-top: 36px; border-top: 1px solid var(--accent); }
-        .footer { position: absolute; left: 13mm; right: 13mm; bottom: 8mm; margin-top: 0; padding-top: 8px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; color: #6b7280; font-size: 10.5px; }
+        .sig-line { margin-top: 24px; border-top: 1px solid var(--accent); }
+        .footer { position: absolute; left: 12mm; right: 12mm; bottom: 8mm; margin-top: 0; padding-top: 8px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; color: #6b7280; font-size: 10.5px; }
         .page.is-hidden { display: none; }
+        .page.is-measuring-final-merge { height: 297mm; min-height: 0; overflow: hidden; }
         .final-content-merged [data-final-content-body] h2,
-        .is-measuring-final-merge [data-final-content-body] h2 { margin-top: 7px; }
+        .is-measuring-final-merge [data-final-content-body] h2 { margin-top: 4px; }
         .final-content-merged [data-final-content-body] .summary-wrap,
-        .is-measuring-final-merge [data-final-content-body] .summary-wrap { margin-top: 5px; }
+        .is-measuring-final-merge [data-final-content-body] .summary-wrap { margin-top: 3px; }
         .final-content-merged [data-final-content-body] .terms-grid,
-        .is-measuring-final-merge [data-final-content-body] .terms-grid { margin-top: 4px; }
+        .is-measuring-final-merge [data-final-content-body] .terms-grid { margin-top: 2px; }
+        .final-content-merged [data-final-content-body] .term-item,
+        .is-measuring-final-merge [data-final-content-body] .term-item { line-height: 1.25; }
         .final-content-merged [data-final-content-body] .signature,
-        .is-measuring-final-merge [data-final-content-body] .signature { margin-top: 8px; }
+        .is-measuring-final-merge [data-final-content-body] .signature { margin-top: 4px; }
         .final-content-merged [data-final-content-body] .sig-box,
-        .is-measuring-final-merge [data-final-content-body] .sig-box { padding: 7px; }
+        .is-measuring-final-merge [data-final-content-body] .sig-box { padding: 5px; }
         .final-content-merged [data-final-content-body] .sig-line,
-        .is-measuring-final-merge [data-final-content-body] .sig-line { margin-top: 20px; }
+        .is-measuring-final-merge [data-final-content-body] .sig-line { margin-top: 10px; }
         .panel, .summary-wrap, .notes-box, .terms-grid, .term-item, .bank-block, .summary-card, .declaration, .signature, .sig-box { break-inside: avoid; page-break-inside: avoid; }
         thead { display: table-header-group; }
         tfoot { display: table-footer-group; }
         tr, .product-row { break-inside: avoid; page-break-inside: avoid; }
         @media print {
-            body { background: #fff; font-size: 11px; line-height: 1.25; }
-            .page { width: 210mm; height: 297mm; min-height: 0; margin: 0; padding: 10mm 12mm 18mm; box-shadow: none; }
-            .footer { left: 12mm; right: 12mm; bottom: 8mm; }
-            h1 { font-size: 24px; }
-            h2 { margin: 9px 0 4px; }
-            th, td { padding: 4px 5px; }
-            .muted { font-size: 10px; }
-            .info-grid, .grid-2, .grid-3 { gap: 7px; margin-top: 7px; }
-            .panel { padding: 5px 6px; }
-            .panel-title { padding: 4px 6px; margin: -5px -6px 5px; }
-            .summary-wrap { gap: 8px; margin-top: 6px; }
-            .summary-table td { padding: 4px 6px; }
+            body { background: #fff; }
+            .page { width: 210mm; height: 297mm; min-height: 0; margin: 0; box-shadow: none; }
             .summary-card { margin-top: 7px; }
             .summary-card-title { padding: 6px 9px; }
             .summary-card-grid > div { padding: 7px 9px; }
-            .terms-grid { gap: 4px 12px; margin-top: 6px; }
-            .term-item { font-size: 10.5px; }
-            .notes-box { min-height: 34px; font-size: 10.5px; }
-            .signature { gap: 16px; margin-top: 12px; }
-            .sig-box { padding: 7px; }
-            .sig-line { margin-top: 24px; }
             .topbar, .print-alert { display: none; }
         }
     </style>
 </head>
 <body>
+    <div class="topbar" data-preview-toolbar>
+        @if (session('error'))
+            <div class="print-alert">{{ session('error') }}</div>
+        @endif
+        @include('admin.crm.quotes.partials.print-controls')
+    </div>
+
     @if ($isPI)
         {{-- ====== PI ITEM PAGES: Items + Summary on final item page ====== --}}
         @foreach ($itemPages as $pageIndex => $itemPage)
             @php $pageNumber = $pageIndex + 1; @endphp
             <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}" data-print-page data-item-page>
                 @if ($itemPage['is_first'])
-                    <div class="topbar">
-                        @if (session('error'))
-                            <div class="print-alert">{{ session('error') }}</div>
-                        @endif
-                        <select class="doc-switcher" onchange="if(this.value) window.location.href=this.value">
-                            @foreach (['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'] as $typeVal => $typeLabel)
-                                <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $typeVal, 'language' => $quote->document_language ?? 'en']) }}" @selected($documentKind === $typeVal)>{{ $typeLabel }}</option>
-                            @endforeach
-                        </select>
-                        <a class="doc-action" href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => $documentKind]) }}" onclick="this.textContent='{{ $isZh ? '生成中...' : 'Generating...' }}';">{{ $isZh ? '下载 PDF' : 'Download PDF' }}</a>
-                    </div>
-
-                    @include('admin.crm.quotes.partials.print-header', ['seller' => $seller, 'quote' => $quote, 'title' => $title, 'isZh' => $isZh, 'documentKind' => $documentKind])
+                    @include('admin.crm.quotes.partials.print-header', ['seller' => $seller, 'quote' => $quote, 'title' => $title, 'documentKind' => $documentKind])
 
                     @include('admin.crm.quotes.partials.print-buyer-commercial', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
 
                     <div class="pay-to-bar">
-                        <strong>{{ $isZh ? '收款方' : 'Make Payment To' }}:</strong> {{ $seller['name'] }} &nbsp;|&nbsp; {{ $isZh ? '银行信息见最后一页' : 'Bank details on the final page' }} &rarr;
+                        <strong>{{ $label('make_payment_to', 'Make Payment To') }}:</strong> {{ $seller['name'] }} &nbsp;|&nbsp; {{ $label('bank_details_final_page', 'Bank details on the final page') }} &rarr;
                     </div>
                 @else
                     <div class="header continuation-header">
@@ -379,9 +375,8 @@
                             </div>
                         </div>
                         <div class="title-box">
-                            <div class="continuation-kicker">{{ $isZh ? '明细续页' : 'Items continued' }}</div>
-                            <h1>{{ $title }}</h1>
-                            <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $pageNumber }} of {{ $totalPages }}</div>
+                            <div class="continuation-kicker">{{ $label('items_continued', 'Items continued') }}</div>
+                            <div class="muted continuation-page-count" data-page-count-line>{{ $pageCountLabel($pageNumber) }}</div>
                         </div>
                     </div>
                 @endif
@@ -414,9 +409,8 @@
                         </div>
                     </div>
                     <div class="title-box">
-                        <div class="continuation-kicker">{{ $isZh ? '汇总与条款' : 'Summary & Terms' }}</div>
-                        <h1>{{ $title }}</h1>
-                        <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $finalContentPageNumber }} of {{ $totalPages }}</div>
+                        <div class="continuation-kicker">{{ $label('summary_terms', 'Summary & Terms') }}</div>
+                        <div class="muted continuation-page-count" data-page-count-line>{{ $pageCountLabel($finalContentPageNumber) }}</div>
                     </div>
                 </div>
 
@@ -438,15 +432,6 @@
         {{-- ====== PI FINAL PAGE: Bank Account ====== --}}
         @php $bankPageNumber = $totalItemPages + $finalContentPageCount + 1; @endphp
         <div class="page page-break" data-print-page>
-            <div class="topbar">
-                <select class="doc-switcher" onchange="if(this.value) window.location.href=this.value">
-                    @foreach (['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'] as $typeVal => $typeLabel)
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $typeVal, 'language' => $quote->document_language ?? 'en']) }}" @selected($documentKind === $typeVal)>{{ $typeLabel }}</option>
-                    @endforeach
-                </select>
-                <a class="doc-action" href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => $documentKind]) }}" onclick="this.textContent='{{ $isZh ? '生成中...' : 'Generating...' }}';">{{ $isZh ? '下载 PDF' : 'Download PDF' }}</a>
-            </div>
-
             <div class="header">
                 <div class="brand">
                     <div>
@@ -455,42 +440,42 @@
                     </div>
                 </div>
                 <div class="title-box">
-                    <h1>BANK ACCOUNT</h1>
-                    <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $bankPageNumber }} of {{ $totalPages }}</div>
+                    <h1>{{ $label('bank_account_title', 'BANK ACCOUNT') }}</h1>
+                    <div class="muted" style="margin-top:4px;" data-page-count-line>{{ $pageCountLabel($bankPageNumber) }}</div>
                 </div>
             </div>
 
             @if (!empty(array_filter($bank)))
                 <div class="bank-block">
-                    <div class="bank-title">{{ $isZh ? '银行汇款信息' : 'Bank Account for Wire Transfer' }}</div>
+                    <div class="bank-title">{{ $label('bank_wire_transfer', 'Bank Account for Wire Transfer') }}</div>
                     <div class="bank-grid">
                         @if (!empty($bank['beneficiary']))
-                            <div class="bank-item wide"><div class="label">{{ $isZh ? '收款人' : 'Beneficiary' }}:</div><div>{{ $bank['beneficiary'] }}</div></div>
+                            <div class="bank-item wide"><div class="label">{{ $label('beneficiary', 'Beneficiary') }}:</div><div>{{ $bank['beneficiary'] }}</div></div>
                         @endif
                         @if (!empty($bank['bank_name']))
-                            <div class="bank-item"><div class="label">{{ $isZh ? '银行名称' : 'Bank Name' }}:</div><div>{{ $bank['bank_name'] }}</div></div>
+                            <div class="bank-item"><div class="label">{{ $label('bank_name', 'Bank Name') }}:</div><div>{{ $bank['bank_name'] }}</div></div>
                         @endif
                         @if (!empty($bank['account_no']))
-                            <div class="bank-item"><div class="label">{{ $isZh ? '账号' : 'Account No.' }}:</div><div>{{ $bank['account_no'] }}</div></div>
+                            <div class="bank-item"><div class="label">{{ $label('account_no', 'Account No.') }}:</div><div>{{ $bank['account_no'] }}</div></div>
                         @endif
                         @if (!empty($bank['bank_code']))
-                            <div class="bank-item"><div class="label">{{ $isZh ? '银行代码' : 'Bank Code' }}:</div><div>{{ $bank['bank_code'] }}</div></div>
+                            <div class="bank-item"><div class="label">{{ $label('bank_code', 'Bank Code') }}:</div><div>{{ $bank['bank_code'] }}</div></div>
                         @endif
                         @if (!empty($bank['branch_code']))
-                            <div class="bank-item"><div class="label">{{ $isZh ? '分行代码' : 'Branch Code' }}:</div><div>{{ $bank['branch_code'] }}</div></div>
+                            <div class="bank-item"><div class="label">{{ $label('branch_code', 'Branch Code') }}:</div><div>{{ $bank['branch_code'] }}</div></div>
                         @endif
                         @if (!empty($bank['swift']))
-                            <div class="bank-item"><div class="label">SWIFT:</div><div>{{ $bank['swift'] }}</div></div>
+                            <div class="bank-item"><div class="label">{{ $label('swift', 'SWIFT') }}:</div><div>{{ $bank['swift'] }}</div></div>
                         @endif
-                        <div class="bank-item"><div class="label">{{ $isZh ? '币种' : 'Currency' }}:</div><div>{{ $quote->currency }}</div></div>
+                        <div class="bank-item"><div class="label">{{ $label('currency', 'Currency') }}:</div><div>{{ $quote->currency }}</div></div>
                         @if (!empty($bank['bank_address']))
-                            <div class="bank-item wide"><div class="label">{{ $isZh ? '银行地址' : 'Bank Address' }}:</div><div>{{ $bank['bank_address'] }}</div></div>
+                            <div class="bank-item wide"><div class="label">{{ $label('bank_address', 'Bank Address') }}:</div><div>{{ $bank['bank_address'] }}</div></div>
                         @endif
                     </div>
                 </div>
             @endif
 
-            <h2>Payment Summary</h2>
+            <h2>{{ $label('payment_summary', 'Payment Summary') }}</h2>
             @php
                 $depositPct = max(0, min(100, (int) ($quote->deposit_percent ?? 60)));
                 $balancePct = 100 - $depositPct;
@@ -499,16 +484,16 @@
                 $balanceAmt = round($total * $balancePct / 100, 2);
             @endphp
             <table>
-                <tr><td>Invoice Total</td><td class="right">{{ $quote->currency }} {{ $money($total) }}</td></tr>
-                <tr><td>Deposit Required ({{ $depositPct }}%)</td><td class="right"><strong>{{ $quote->currency }} {{ $money($depositAmt) }}</strong></td></tr>
-                <tr><td>Balance Before Shipment ({{ $balancePct }}%)</td><td class="right">{{ $quote->currency }} {{ $money($balanceAmt) }}</td></tr>
+                <tr><td>{{ $label('invoice_total', 'Invoice Total') }}</td><td class="right">{{ $quote->currency }} {{ $money($total) }}</td></tr>
+                <tr><td>{{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'deposit_required', 'Deposit Required (:percent%)', ['percent' => $depositPct]) }}</td><td class="right"><strong>{{ $quote->currency }} {{ $money($depositAmt) }}</strong></td></tr>
+                <tr><td>{{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'balance_before_shipment', 'Balance Before Shipment (:percent%)', ['percent' => $balancePct]) }}</td><td class="right">{{ $quote->currency }} {{ $money($balanceAmt) }}</td></tr>
             </table>
 
             <div class="remittance-note">
-                &#9888;&#65039; Please include <strong>{{ $quote->quote_no }}</strong> in your remittance reference.
+                {{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'remittance_note', 'Please include :reference in your remittance reference.', ['reference' => $quote->quote_no]) }}
             </div>
 
-            @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'isZh' => $isZh, 'documentKind' => $documentKind])
+            @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
 
             <div class="footer">
                 <div>{{ $seller['website'] ?: '' }}</div>
@@ -521,19 +506,7 @@
             @php $pageNumber = $pageIndex + 1; @endphp
             <div class="page{{ $pageIndex > 0 ? ' page-break' : '' }}" data-print-page data-item-page>
                 @if ($itemPage['is_first'])
-                    <div class="topbar">
-                        @if (session('error'))
-                            <div class="print-alert">{{ session('error') }}</div>
-                        @endif
-                        <select class="doc-switcher" onchange="if(this.value) window.location.href=this.value">
-                            @foreach (['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'] as $typeVal => $typeLabel)
-                                <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $typeVal, 'language' => $quote->document_language ?? 'en']) }}" @selected($documentKind === $typeVal)>{{ $typeLabel }}</option>
-                            @endforeach
-                        </select>
-                        <a class="doc-action" href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => $documentKind]) }}" onclick="this.textContent='{{ $isZh ? '生成中...' : 'Generating...' }}';">{{ $isZh ? '下载 PDF' : 'Download PDF' }}</a>
-                    </div>
-
-                    @include('admin.crm.quotes.partials.print-header', ['seller' => $seller, 'quote' => $quote, 'title' => $title, 'isZh' => $isZh, 'documentKind' => $documentKind])
+                    @include('admin.crm.quotes.partials.print-header', ['seller' => $seller, 'quote' => $quote, 'title' => $title, 'documentKind' => $documentKind])
 
                     @include('admin.crm.quotes.partials.print-buyer-commercial', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
 
@@ -543,7 +516,7 @@
                     @endif
 
                     @if ($isPacking)
-                        @include('admin.crm.quotes.partials.print-pl-shipment', ['quote' => $quote, 'isZh' => $isZh, 'label' => $label])
+                        @include('admin.crm.quotes.partials.print-pl-shipment', ['quote' => $quote, 'label' => $label])
                     @endif
                 @else
                     <div class="header continuation-header">
@@ -554,9 +527,8 @@
                             </div>
                         </div>
                         <div class="title-box">
-                            <div class="continuation-kicker">{{ $isZh ? '明细续页' : 'Items continued' }}</div>
-                            <h1>{{ $title }}</h1>
-                            <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $pageNumber }} of {{ $totalPages }}</div>
+                            <div class="continuation-kicker">{{ $label('items_continued', 'Items continued') }}</div>
+                            <div class="muted continuation-page-count" data-page-count-line>{{ $pageCountLabel($pageNumber) }}</div>
                         </div>
                     </div>
                 @endif
@@ -587,9 +559,8 @@
                         </div>
                     </div>
                     <div class="title-box">
-                        <div class="continuation-kicker">{{ $isZh ? '汇总与条款' : 'Summary & Terms' }}</div>
-                        <h1>{{ $title }}</h1>
-                        <div class="muted" style="margin-top:4px;" data-page-count-line>Page {{ $finalContentPageNumber }} of {{ $totalPages }}</div>
+                        <div class="continuation-kicker">{{ $label('summary_terms', 'Summary & Terms') }}</div>
+                        <div class="muted continuation-page-count" data-page-count-line>{{ $pageCountLabel($finalContentPageNumber) }}</div>
                     </div>
                 </div>
 
@@ -607,7 +578,11 @@
     <script>
         (() => {
             const documentTitle = @json($title);
+            const pageTemplate = @json($label('page_of', 'Page :current of :total'));
+            const documentPageTemplate = @json($label('document_page_of', ':title · Page :current of :total'));
             const safetyGap = 6;
+            const interpolate = (template, replacements) => Object.entries(replacements)
+                .reduce((value, [key, replacement]) => value.split(`:${key}`).join(String(replacement)), template);
 
             const visiblePages = () => Array.from(document.querySelectorAll('[data-print-page]'))
                 .filter((page) => !page.classList.contains('is-hidden'));
@@ -619,10 +594,10 @@
                 pages.forEach((page, index) => {
                     const pageNumber = index + 1;
                     page.querySelectorAll('[data-page-count-line]').forEach((element) => {
-                        element.textContent = `Page ${pageNumber} of ${total}`;
+                        element.textContent = interpolate(pageTemplate, { current: pageNumber, total });
                     });
                     page.querySelectorAll('[data-page-label]').forEach((element) => {
-                        element.textContent = `${documentTitle} · Page ${pageNumber} of ${total}`;
+                        element.textContent = interpolate(documentPageTemplate, { title: documentTitle, current: pageNumber, total });
                     });
                 });
             };

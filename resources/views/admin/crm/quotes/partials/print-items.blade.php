@@ -9,22 +9,22 @@
         @if ($isPacking)
             <tr>
                 <th class="center" style="width:28px;">#</th>
-                <th>{{ $isZh ? '品名' : 'Description of Goods' }}</th>
-                <th style="width:78px;">Model</th>
-                <th class="right" style="width:58px;">{{ $isZh ? '数量' : 'Qty' }}</th>
-                <th class="right" style="width:64px;">{{ $isZh ? '件数' : 'Pkg Qty' }}</th>
-                <th class="right" style="width:64px;">N.W. (kg)</th>
-                <th class="right" style="width:64px;">G.W. (kg)</th>
-                <th style="width:105px;">{{ $isZh ? '包装尺寸(cm)' : 'Pkg Size (cm)' }}</th>
-                <th class="right" style="width:62px;">CBM</th>
+                <th>{{ $label('description_goods', 'Description of Goods') }}</th>
+                <th style="width:78px;">{{ $label('model', 'Model') }}</th>
+                <th class="right" style="width:58px;">{{ $label('qty', 'Qty') }}</th>
+                <th class="right" style="width:64px;">{{ $label('package_qty', 'Pkg Qty') }}</th>
+                <th class="right" style="width:64px;">{{ $label('net_weight_short', 'N.W. (kg)') }}</th>
+                <th class="right" style="width:64px;">{{ $label('gross_weight_short', 'G.W. (kg)') }}</th>
+                <th style="width:105px;">{{ $label('package_size_cm', 'Pkg Size (cm)') }}</th>
+                <th class="right" style="width:62px;">{{ $label('cbm', 'CBM') }}</th>
             </tr>
         @else
             <tr>
                 <th class="center" style="width:28px;">#</th>
-                <th>{{ $isZh ? '品名' : 'Description' }}</th>
-                <th style="width:78px;">Model</th>
+                <th>{{ $label('description', 'Description') }}</th>
+                <th style="width:78px;">{{ $label('model', 'Model') }}</th>
                 @if ($documentKind === 'invoice')<th style="width:78px;">{{ $label('hs_code', 'HS Code') }}</th>@endif
-                <th class="right" style="width:58px;">{{ $isZh ? '数量' : 'Qty' }}</th>
+                <th class="right" style="width:58px;">{{ $label('qty', 'Qty') }}</th>
                 <th class="right" style="width:78px;">{{ $label('unit_price', 'Unit Price') }}</th>
                 <th class="right" style="width:84px;">{{ $label('amount', 'Amount') }}</th>
             </tr>
@@ -75,13 +75,13 @@
                                 <div>
                                     <div class="product-name">{{ $item->item_name }}</div>
                                     @if ((string) ($item->description ?? '') !== '')<div class="muted">{{ $item->description }}</div>@endif
-                                    @if ($documentKind === 'invoice')<div class="muted">Origin: China</div>@endif
+                                    @if ($documentKind === 'invoice')<div class="muted">{{ $label('origin', 'Origin') }}: {{ $quote->origin_country ?: 'China' }}</div>@endif
                                 </div>
                             </div>
                         @else
                             <div class="product-name">{{ $item->item_name }}</div>
                             @if ((string) ($item->description ?? '') !== '')<div class="muted">{{ $item->description }}</div>@endif
-                            @if ($documentKind === 'invoice')<div class="muted">Origin: China</div>@endif
+                            @if ($documentKind === 'invoice')<div class="muted">{{ $label('origin', 'Origin') }}: {{ $quote->origin_country ?: 'China' }}</div>@endif
                         @endif
                     </td>
                     <td>{{ (string) ($item->model ?? '') ?: '-' }}</td>

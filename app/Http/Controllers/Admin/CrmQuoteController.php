@@ -14,24 +14,25 @@ use App\Models\Image;
 use App\Services\GeoFlow\CrmDocumentPdfService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
+use App\Support\GeoFlow\CrmDocumentLocale;
 use App\Support\GeoFlow\CrmOptions;
 use App\Support\GeoFlow\ImageUrlNormalizer;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use App\Support\Site\SiteSettingsBag;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\File;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Throwable;
 
 class CrmQuoteController extends Controller
@@ -189,6 +190,7 @@ class CrmQuoteController extends Controller
             'activeMenu' => 'crm',
             'adminSiteName' => AdminWeb::siteName(),
             'quote' => $quote,
+            'languageOptions' => CrmDocumentLocale::options(),
         ]);
     }
 
@@ -297,13 +299,18 @@ class CrmQuoteController extends Controller
     public function convert(Request $request, int $quoteId): RedirectResponse
     {
         $source = CrmQuote::query()->with('items')->findOrFail($quoteId);
-        $data = $request->validate(['document_type'=>['required','string',Rule::in(self::DOCUMENT_TYPES)]]);
+        $data = $request->validate(['document_type' => ['required', 'string', Rule::in(self::DOCUMENT_TYPES)]]);
         $targetType = (string) $data['document_type'];
-        $copy = $source->replicate(['quote_no','document_type','status','revision','created_at','updated_at']);
-        $copy->fill(['quote_no'=>$this->generateQuoteNo(),'document_type'=>$targetType,'source_quote_id'=>$source->id,'title'=>($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title,'status'=>'draft','revision'=>1]);
+        $copy = $source->replicate(['quote_no', 'document_type', 'status', 'revision', 'created_at', 'updated_at']);
+        $copy->fill(['quote_no' => $this->generateQuoteNo(), 'document_type' => $targetType, 'source_quote_id' => $source->id, 'title' => ($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title, 'status' => 'draft', 'revision' => 1]);
         $copy->save();
-        foreach ($source->items as $item) { $newItem = $item->replicate(['quote_id','created_at','updated_at']); $newItem->quote_id = $copy->id; $newItem->save(); }
-        return redirect()->route('admin.crm.quotes.edit', ['quoteId'=>$copy->id])->with('message','已创建独立单据，请核对后保存');
+        foreach ($source->items as $item) {
+            $newItem = $item->replicate(['quote_id', 'created_at', 'updated_at']);
+            $newItem->quote_id = $copy->id;
+            $newItem->save();
+        }
+
+        return redirect()->route('admin.crm.quotes.edit', ['quoteId' => $copy->id])->with('message', '已创建独立单据，请核对后保存');
     }
 
     public function storeSellerProfile(Request $request): JsonResponse
@@ -380,6 +387,7 @@ class CrmQuoteController extends Controller
             ->firstOrFail();
 
         $documentType = $this->resolvedDocumentType($request, $quote);
+        $documentLanguage = $this->resolvedDocumentLanguage($request, $quote);
         $view = $this->printViewForDocumentType($documentType);
 
         return view($view, [
@@ -389,7 +397,10 @@ class CrmQuoteController extends Controller
             'quote' => $quote,
             'seller' => $this->sellerProfile($quote),
             'documentKind' => $documentType,
-            'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
+            'documentLanguage' => $documentLanguage,
+            'documentLanguageOptions' => CrmDocumentLocale::options(),
+            'documentTitles' => CrmDocumentLocale::documentTitles($documentLanguage),
+            'documentLabels' => CrmDocumentLocale::labels($documentLanguage),
         ]);
     }
 
@@ -401,6 +412,7 @@ class CrmQuoteController extends Controller
             ->firstOrFail();
 
         $documentType = $this->resolvedDocumentType($request, $quote);
+        $documentLanguage = $this->resolvedDocumentLanguage($request, $quote);
         $view = $this->printViewForDocumentType($documentType);
         $fileName = $this->pdfDownloadName($quote, $documentType);
 
@@ -412,7 +424,10 @@ class CrmQuoteController extends Controller
                 'quote' => $quote,
                 'seller' => $this->sellerProfile($quote),
                 'documentKind' => $documentType,
-                'documentLabels' => $this->documentLabels((string) ($quote->document_language ?? 'en')),
+                'documentLanguage' => $documentLanguage,
+                'documentLanguageOptions' => CrmDocumentLocale::options(),
+                'documentTitles' => CrmDocumentLocale::documentTitles($documentLanguage),
+                'documentLabels' => CrmDocumentLocale::labels($documentLanguage),
             ])->render();
 
             $pdfPath = $pdfService->render($html, pathinfo($fileName, PATHINFO_FILENAME));
@@ -420,7 +435,11 @@ class CrmQuoteController extends Controller
             report($exception);
 
             return redirect()
-                ->route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => $documentType])
+                ->route('admin.crm.quotes.print', [
+                    'quoteId' => (int) $quote->id,
+                    'type' => $documentType,
+                    'language' => $documentLanguage,
+                ])
                 ->with('error', 'PDF 生成失败，请先使用打印预览手动保存为 PDF。');
         }
 
@@ -436,6 +455,16 @@ class CrmQuoteController extends Controller
         return in_array($documentType, self::DOCUMENT_TYPES, true)
             ? $documentType
             : (string) ($quote->document_type ?? 'quotation');
+    }
+
+    private function resolvedDocumentLanguage(Request $request, CrmQuote $quote): string
+    {
+        $requested = $request->query('language');
+
+        return CrmDocumentLocale::resolve(
+            is_string($requested) ? $requested : null,
+            (string) ($quote->document_language ?? 'en'),
+        );
     }
 
     private function printViewForDocumentType(string $documentType): string
@@ -481,7 +510,7 @@ class CrmQuoteController extends Controller
             'employeeOptions' => CrmOptions::employeeOptions(),
             'documentTypeOptions' => self::documentTypeOptions(),
             'lineTypeOptions' => self::lineTypeOptions(),
-            'languageOptions' => ['en' => 'English', 'zh_CN' => '简体中文'],
+            'languageOptions' => CrmDocumentLocale::options(),
             'sellerCompanyProfileOptions' => $sellerCompanyProfiles,
             'bankAccountProfileOptions' => $bankAccountProfiles,
             'defaultSellerCompanyJson' => $this->defaultSellerProfileJson('seller_company', $sellerCompanyProfiles, [
@@ -524,7 +553,7 @@ class CrmQuoteController extends Controller
             'buyer_email' => ['nullable', 'email', 'max:200'],
             'buyer_address' => ['nullable', 'string', 'max:10000'],
             'buyer_country' => ['nullable', 'string', 'max:100'],
-            'document_language' => ['nullable', 'string', Rule::in(['en', 'zh_CN'])],
+            'document_language' => ['nullable', 'string', Rule::in(CrmDocumentLocale::supported())],
             'currency' => ['nullable', 'string', 'max:10'],
             'trade_term' => ['nullable', 'string', 'max:80'],
             'port_of_loading' => ['nullable', 'string', 'max:200'],
@@ -625,7 +654,10 @@ class CrmQuoteController extends Controller
             'buyer_email' => trim((string) ($payload['buyer_email'] ?? '')) ?: $customerDefaults['buyer_email'],
             'buyer_address' => trim((string) ($payload['buyer_address'] ?? '')) ?: $customerDefaults['buyer_address'],
             'buyer_country' => trim((string) ($payload['buyer_country'] ?? '')) ?: $customerDefaults['buyer_country'],
-            'document_language' => (string) ($payload['document_language'] ?? 'en') ?: 'en',
+            'document_language' => CrmDocumentLocale::resolve(
+                is_string($payload['document_language'] ?? null) ? $payload['document_language'] : null,
+                'en',
+            ),
             'currency' => strtoupper(trim((string) ($payload['currency'] ?? 'USD'))) ?: 'USD',
             'trade_term' => trim((string) ($payload['trade_term'] ?? '')),
             'port_of_loading' => trim((string) ($payload['port_of_loading'] ?? '')),
@@ -1086,9 +1118,10 @@ class CrmQuoteController extends Controller
 
     private function selectedCollectionId(Request $request): ?int
     {
-        if (!$request->has('collection_id')) {
-            return \App\Support\AdminWeb::defaultCollectionId();
+        if (! $request->has('collection_id')) {
+            return AdminWeb::defaultCollectionId();
         }
+
         return $this->normalizeNullableId($request->query('collection_id', 0));
     }
 
@@ -1227,7 +1260,6 @@ class CrmQuoteController extends Controller
     /**
      * @return array{name:string,logo:string,address:string,phone:string,email:string,website:string}
      */
-
     public function downloadExcel(int $quoteId, Request $request)
     {
         $quote = CrmQuote::query()
@@ -1235,21 +1267,20 @@ class CrmQuoteController extends Controller
             ->whereKey($quoteId)
             ->firstOrFail();
 
-        $documentType = (string) ($request->query('type', $quote->document_type ?? 'quotation'));
-        $isZh = (string) ($quote->document_language ?? 'en') === 'zh_CN';
+        $documentType = $this->resolvedDocumentType($request, $quote);
+        $documentLanguage = $this->resolvedDocumentLanguage($request, $quote);
         $seller = $this->sellerProfile($quote);
-        $labels = $this->documentLabels((string) ($quote->document_language ?? 'en'));
+        $labels = CrmDocumentLocale::labels($documentLanguage);
+        $label = static fn (string $key, string $fallback): string => (string) ($labels[$key] ?? $fallback);
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->setCellValue('A1', $seller['name'] ?? '');
         $sheet->mergeCells('A1:D1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
-        $titles = $isZh
-            ? ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同']
-            : ['quotation' => 'Quotation', 'proforma_invoice' => 'Proforma Invoice', 'invoice' => 'Commercial Invoice', 'packing_list' => 'Packing List', 'contract' => 'Contract'];
+        $titles = CrmDocumentLocale::documentTitles($documentLanguage);
         $title = $titles[$documentType] ?? $titles['quotation'];
 
         $sheet->setCellValue('A2', $title);
@@ -1257,16 +1288,16 @@ class CrmQuoteController extends Controller
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
 
         $row = 4;
-        $sheet->setCellValue("A{$row}", ($isZh ? '单号' : 'Ref No.') . ': ' . $quote->quote_no);
-        $sheet->setCellValue("C{$row}", ($isZh ? '日期' : 'Date') . ': ' . ($quote->created_at ? $quote->created_at->format('Y-m-d') : ''));
+        $sheet->setCellValue("A{$row}", $label('document_no', 'Document No.').': '.$quote->quote_no);
+        $sheet->setCellValue("C{$row}", $label('date', 'Date').': '.CrmDocumentLocale::formatDate($quote->created_at, $documentLanguage));
         $row++;
 
-        $sheet->setCellValue("A{$row}", ($isZh ? '客户' : 'Customer') . ': ' . ($quote->buyer_company ?: $quote->customer?->company_name ?: $quote->customer?->name ?? ''));
-        $sheet->setCellValue("C{$row}", ($isZh ? '币种' : 'Currency') . ': ' . ($quote->currency ?? 'USD'));
+        $sheet->setCellValue("A{$row}", $label('buyer', 'Buyer').': '.($quote->buyer_company ?: $quote->customer?->company_name ?: $quote->customer?->name ?? ''));
+        $sheet->setCellValue("C{$row}", $label('currency', 'Currency').': '.($quote->currency ?? 'USD'));
         $row++;
 
         if ($quote->buyer_address) {
-            $sheet->setCellValue("A{$row}", ($isZh ? '地址' : 'Address') . ': ' . $quote->buyer_address);
+            $sheet->setCellValue("A{$row}", $label('address', 'Address').': '.$quote->buyer_address);
             $row++;
         }
 
@@ -1274,22 +1305,22 @@ class CrmQuoteController extends Controller
         $showPrices = $documentType !== 'packing_list';
         $showLogistics = $documentType === 'packing_list' || $documentType === 'invoice';
 
-        $headers = ['#', $isZh ? '项目名称' : 'Item', $isZh ? '型号' : 'Model', $isZh ? '描述' : 'Description'];
+        $headers = ['#', $label('item', 'Item'), $label('model', 'Model'), $label('description', 'Description')];
         if ($showPrices) {
-            $headers[] = $isZh ? '数量' : 'Qty';
-            $headers[] = $isZh ? '单位' : 'Unit';
-            $headers[] = $isZh ? '单价' : 'Unit Price';
-            $headers[] = $isZh ? '金额' : 'Amount';
+            $headers[] = $label('qty', 'Qty');
+            $headers[] = $label('unit', 'Unit');
+            $headers[] = $label('unit_price', 'Unit Price');
+            $headers[] = $label('amount', 'Amount');
         }
         if ($showLogistics) {
-            $headers[] = $isZh ? '件数' : 'Pkgs';
-            $headers[] = $isZh ? '净重(kg)' : 'Net Wt';
-            $headers[] = $isZh ? '毛重(kg)' : 'Gross Wt';
-            $headers[] = $isZh ? '体积(CBM)' : 'CBM';
-            $headers[] = $isZh ? '尺寸(cm)' : 'Dimensions';
+            $headers[] = $label('package_count', 'Packages');
+            $headers[] = $label('net_weight_short', 'Net Weight (kg)');
+            $headers[] = $label('gross_weight_short', 'Gross Weight (kg)');
+            $headers[] = $label('cbm', 'CBM');
+            $headers[] = $label('package_size_cm', 'Package Size (cm)');
         }
         if ($documentType === 'invoice') {
-            $headers[] = 'HS Code';
+            $headers[] = $label('hs_code', 'HS Code');
         }
 
         $headerStyle = [
@@ -1351,7 +1382,7 @@ class CrmQuoteController extends Controller
                 $c++;
                 $dim = '';
                 if ($item->package_length || $item->package_width || $item->package_height) {
-                    $dim = ($item->package_length ?? '-') . 'x' . ($item->package_width ?? '-') . 'x' . ($item->package_height ?? '-') . ' cm';
+                    $dim = ($item->package_length ?? '-').'x'.($item->package_width ?? '-').'x'.($item->package_height ?? '-').' cm';
                 }
                 $sheet->setCellValue("{$c}{$row}", $dim);
                 $c++;
@@ -1375,10 +1406,10 @@ class CrmQuoteController extends Controller
 
         if ($showPrices) {
             $row++;
-            $totalCol = chr(ord('A') + array_search($isZh ? '金额' : 'Amount', $headers));
+            $totalCol = chr(ord('A') + array_search($label('amount', 'Amount'), $headers, true));
             $subtotal = $quote->items->sum(fn ($item) => (float) ($item->quantity ?? 0) * (float) ($item->unit_price ?? 0));
 
-            $sheet->setCellValue("A{$row}", $isZh ? '合计' : 'Subtotal');
+            $sheet->setCellValue("A{$row}", $label('subtotal', 'Items Subtotal'));
             $sheet->getStyle("A{$row}")->getFont()->setBold(true);
             $sheet->setCellValue("{$totalCol}{$row}", $subtotal);
             $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
@@ -1386,20 +1417,20 @@ class CrmQuoteController extends Controller
             $row++;
 
             if ((float) ($quote->shipping_fee ?? 0) > 0) {
-                $sheet->setCellValue("A{$row}", $isZh ? '运费' : 'Shipping');
+                $sheet->setCellValue("A{$row}", $label('shipping', 'Shipping Fee'));
                 $sheet->setCellValue("{$totalCol}{$row}", (float) $quote->shipping_fee);
                 $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
                 $row++;
             }
 
             if ((float) ($quote->discount_amount ?? 0) > 0) {
-                $sheet->setCellValue("A{$row}", $isZh ? '折扣' : 'Discount');
+                $sheet->setCellValue("A{$row}", $label('discount', 'Discount'));
                 $sheet->setCellValue("{$totalCol}{$row}", (float) $quote->discount_amount);
                 $sheet->getStyle("{$totalCol}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
                 $row++;
             }
 
-            $sheet->setCellValue("A{$row}", $isZh ? '总计' : 'Grand Total');
+            $sheet->setCellValue("A{$row}", $label('grand_total', 'Grand Total'));
             $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setSize(11);
             $total = (float) ($quote->grand_total ?: $quote->total_amount ?: $subtotal);
             $sheet->setCellValue("{$totalCol}{$row}", $total);
@@ -1413,7 +1444,7 @@ class CrmQuoteController extends Controller
             $sheet->getColumnDimension($c)->setAutoSize(true);
         }
 
-        $filename = ($quote->quote_no ?: 'quote') . ' - ' . $documentType . '.xlsx';
+        $filename = ($quote->quote_no ?: 'quote').' - '.$documentType.'.xlsx';
 
         $writer = new Xlsx($spreadsheet);
         ob_start();
@@ -1422,7 +1453,7 @@ class CrmQuoteController extends Controller
 
         return response($excelData, 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }
 
@@ -1438,98 +1469,6 @@ class CrmQuoteController extends Controller
             'phone' => trim((string) ($stored['phone'] ?? '')),
             'email' => trim((string) ($stored['email'] ?? '')),
             'website' => trim((string) ($stored['website'] ?? config('app.url', ''))),
-        ];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function documentLabels(string $language): array
-    {
-        if ($language === 'zh_CN') {
-            return [
-                'seller' => '卖方',
-                'buyer' => '买方',
-                'document_no' => '单据号',
-                'date' => '日期',
-                'valid_until' => '有效期',
-                'currency' => '币种',
-                'trade_term' => '贸易条款',
-                'lead_time' => '交期',
-                'origin' => '原产国',
-                'items' => '明细',
-                'item' => '项目',
-                'image' => '图片',
-                'sku_model' => 'SKU / 型号',
-                'hs_code' => 'HS Code',
-                'description' => '描述',
-                'qty' => '数量',
-                'unit_price' => '单价',
-                'amount' => '金额',
-                'summary' => '汇总',
-                'subtotal' => '明细小计',
-                'shipping' => '运费',
-                'discount' => '折扣',
-                'tax' => '税费',
-                'grand_total' => '最终合计',
-                'payment_terms' => '付款条款',
-                'delivery_terms' => '交付条款',
-                'warranty_terms' => '质保条款',
-                'installation_terms' => '安装条款',
-                'packing_terms' => '包装条款',
-                'notes' => '备注',
-                'signature' => '签名',
-                'bank_account' => '银行账户',
-                'contract_terms' => '合同条款',
-                'governing_law' => '适用法律',
-                'dispute_resolution' => '争议解决',
-                'package_count' => '件数',
-                'net_weight' => '净重',
-                'gross_weight' => '毛重',
-                'volume_cbm' => '体积 CBM',
-            ];
-        }
-
-        return [
-            'seller' => 'Seller',
-            'buyer' => 'Buyer',
-            'document_no' => 'Document No.',
-            'date' => 'Date',
-            'valid_until' => 'Valid Until',
-            'currency' => 'Currency',
-            'trade_term' => 'Trade Term',
-            'lead_time' => 'Lead Time',
-            'origin' => 'Origin',
-            'items' => 'Items',
-            'item' => 'Item',
-            'image' => 'Image',
-            'sku_model' => 'SKU / Model',
-            'hs_code' => 'HS Code',
-            'description' => 'Description',
-            'qty' => 'Qty',
-            'unit_price' => 'Unit Price',
-            'amount' => 'Amount',
-            'summary' => 'Summary',
-            'subtotal' => 'Items Subtotal',
-            'shipping' => 'Shipping Fee',
-            'discount' => 'Discount',
-            'tax' => 'Tax',
-            'grand_total' => 'Grand Total',
-            'payment_terms' => 'Payment Terms',
-            'delivery_terms' => 'Delivery Terms',
-            'warranty_terms' => 'Warranty Terms',
-            'installation_terms' => 'Installation Terms',
-            'packing_terms' => 'Packing',
-            'notes' => 'Notes',
-            'signature' => 'Signature',
-            'bank_account' => 'Bank Account',
-            'contract_terms' => 'Contract Terms',
-            'governing_law' => 'Governing Law',
-            'dispute_resolution' => 'Dispute Resolution',
-            'package_count' => 'Packages',
-            'net_weight' => 'Net Weight',
-            'gross_weight' => 'Gross Weight',
-            'volume_cbm' => 'Volume CBM',
         ];
     }
 }

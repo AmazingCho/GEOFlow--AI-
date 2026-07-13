@@ -23,15 +23,15 @@
                 <div class="relative inline-flex items-center">
                     <select onchange="if(this.value) window.open(this.value, '_blank')" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer appearance-none pr-8">
                         <option value="">打印单据...</option>
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'quotation']) }}">报价单</option>
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'proforma_invoice']) }}">形式发票</option>
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'invoice']) }}">正式发票</option>
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'packing_list']) }}">装箱单</option>
-                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'contract']) }}">合同</option>
+                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'quotation', 'language' => $quote->document_language ?? 'en']) }}">报价单</option>
+                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'proforma_invoice', 'language' => $quote->document_language ?? 'en']) }}">形式发票</option>
+                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'invoice', 'language' => $quote->document_language ?? 'en']) }}">正式发票</option>
+                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'packing_list', 'language' => $quote->document_language ?? 'en']) }}">装箱单</option>
+                        <option value="{{ route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id, 'type' => 'contract', 'language' => $quote->document_language ?? 'en']) }}">合同</option>
                     </select>
                     <i data-lucide="chevron-down" class="pointer-events-none absolute right-2 h-4 w-4 text-gray-400"></i>
                 </div>
-                <a href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => (string) ($quote->document_type ?? 'quotation')]) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" onclick="this.classList.add('opacity-70'); this.querySelector('[data-label]').textContent='生成中...';">
+                <a href="{{ route('admin.crm.quotes.pdf', ['quoteId' => (int) $quote->id, 'type' => (string) ($quote->document_type ?? 'quotation'), 'language' => $quote->document_language ?? 'en']) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" onclick="this.classList.add('opacity-70'); this.querySelector('[data-label]').textContent='生成中...';">
                     <i data-lucide="download" class="mr-2 h-4 w-4"></i>
                     <span data-label>下载 PDF</span>
                 </a>
@@ -159,6 +159,7 @@
                             </dd>
                         </div>
                         <div><dt class="text-gray-500">文档类型</dt><dd class="mt-1 font-medium text-gray-900">{{ ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同'][$quote->document_type] ?? '报价单' }}</dd></div>
+                        <div><dt class="text-gray-500">默认输出语言</dt><dd class="mt-1 font-medium text-gray-900">{{ ($languageOptions ?? [])[$quote->document_language ?? 'en'] ?? 'English' }}</dd></div>
                         <div><dt class="text-gray-500">贸易条款</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->trade_term ?: '未设置' }}</dd></div>
                         <div><dt class="text-gray-500">有效期</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->valid_until?->format('Y-m-d') ?? '未设置' }}</dd></div>
                         <div><dt class="text-gray-500">交期</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->lead_time ?: '未设置' }}</dd></div>

@@ -32,7 +32,28 @@ try {
     timeout: 60000,
   });
   await page.emulateMediaType('print');
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+
+    await Promise.all(Array.from(document.images).map(async (image) => {
+      if (!image.complete) {
+        await new Promise((resolve) => {
+          image.addEventListener('load', resolve, { once: true });
+          image.addEventListener('error', resolve, { once: true });
+        });
+      }
+
+      if (typeof image.decode === 'function') {
+        await image.decode().catch(() => {});
+      }
+    }));
+
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    });
+
     if (typeof window.GeoFlowCrmDocumentAutoPaginate === 'function') {
       window.GeoFlowCrmDocumentAutoPaginate();
     }

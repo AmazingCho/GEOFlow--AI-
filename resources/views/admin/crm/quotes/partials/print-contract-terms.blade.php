@@ -8,4 +8,4 @@
     <h2>{{ $label('dispute_resolution', 'Dispute Resolution') }}</h2>
     <div class="section">{{ $quote->dispute_resolution }}</div>
 @endif
-<div class="muted" style="margin-top: 20px;">{{ $isZh ? '本合同模板仅作为商业草稿，发送前请人工审核。' : 'This contract template is a commercial draft and should be reviewed before sending.' }}</div>
+<div class="muted" style="margin-top: 20px;">{{ $label('contract_review_notice', 'This contract template is a commercial draft and should be reviewed before sending.') }}</div>
