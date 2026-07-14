@@ -2,6 +2,15 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-07-14
+
+### Public Prompt Preset Sanitization
+
+- Removed the private Master Prompt containing product- and sector-specific business methodology from the release package without deleting prompts already stored in a local database.
+- Reduced packaged defaults to four general content prompts, three general Skill Prompts, and one general keyword prompt. Automatic matching for comparison, buying-guide, and use-case structures remains available.
+- Public installs no longer bundle sector-oriented Style Prompts. The Style Prompt feature and admin customization workflow remain available for private local presets.
+- Added an industry-term regression scan for packaged prompts to prevent specific brands, models, products, or business context from returning to public defaults.
+
 ## 2026-07-13
 
 ### Russian and Spanish CRM Document Output
@@ -52,7 +61,7 @@ This document tracks user-facing updates in the public repository. For future Gi
 - The task create/edit form now includes a `Style Prompt` dropdown in content settings. It defaults to "Do not use a Style Prompt".
 - Task persistence, edit-state hydration, lifecycle validation, monitoring details, and generation trace now support `style_prompt_id`.
 - The worker composes prompts in `Master Prompt -> Skill Prompt -> Writing Style Prompt` order. Language detection uses only the title, keyword, and Master/Skill prompts, so English style templates do not override the target article language.
-- Added five packaged Style Prompt presets: engineering procurement advisor, cost breakdown analyst, supplier comparison matrix, DFM risk explainer, and process selection guide.
+- Style Prompt remains available as a custom extension point; public installs do not bundle business- or sector-oriented style content.
 - Boundary: this phase does not add URL crawling, automatic style recognition, author imitation, or retroactive rewriting of existing articles.
 
 ## 2026-06-21
@@ -70,11 +79,11 @@ This document tracks user-facing updates in the public repository. For future Gi
 
 ### Packaged Admin Prompt Presets
 
-- Exported the 13 prompts from the current local admin deployment into repository-packaged presets, covering content prompts, skill prompts, and the keyword-generation prompt.
+- Added public-release-reviewed general prompt presets covering content prompts, skill prompts, and the keyword-generation prompt.
 - Added `PromptPresetSeeder`; running `db:seed` now syncs packaged prompt presets by `type + name` without deleting user-created prompts.
 - Added compatibility aliases for legacy default prompt names so fresh installs can migrate old defaults to the current admin names instead of creating duplicate similar prompts.
 - `DatabaseSeeder` now initializes both the default admin account and packaged prompt presets, covering Docker init, manual installs, and future release packages.
-- Verification: `PromptPresetSeederTest` passed with 2 tests / 17 assertions; `AdminAiPromptsPageTest`, `AdminTasksPageTest`, and `WorkerExecutionServicePromptTest` passed with 25 tests / 174 assertions in total; running `PromptPresetSeeder` against the local Docker PostgreSQL deployment kept the prompt catalog at 13 rows.
+- Packaged presets remain independent from user-created prompts. The seeder syncs only public defaults and does not delete other prompts already stored in the admin.
 
 ## 2026-06-19
 

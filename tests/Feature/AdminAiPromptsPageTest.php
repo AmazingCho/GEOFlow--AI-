@@ -67,21 +67,21 @@ class AdminAiPromptsPageTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->post(route('admin.ai-prompts.store'), [
-                'name' => 'Style - Engineering Procurement Advisor',
+                'name' => 'Style - Clear Decision Support',
                 'type' => 'style',
-                'content' => 'Write in a practical engineering advisor tone.',
+                'content' => 'Use concise criteria, balanced trade-offs, and clear next steps.',
             ])
             ->assertRedirect(route('admin.ai-prompts'));
 
         $this->assertDatabaseHas('prompts', [
-            'name' => 'Style - Engineering Procurement Advisor',
+            'name' => 'Style - Clear Decision Support',
             'type' => 'style',
         ]);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.ai-prompts'))
             ->assertOk()
-            ->assertSee('Style - Engineering Procurement Advisor')
+            ->assertSee('Style - Clear Decision Support')
             ->assertSee(__('admin.ai_prompts.type_style'));
     }
 }

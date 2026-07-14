@@ -58,8 +58,8 @@ return new class extends Migration
                 'content' => "Use this skill when the title implies how to choose, sizing, selection guide, buyer guide, or specifications.\n\nRequired structure:\n- Start with the key selection factors.\n- Explain sizing or configuration logic step by step.\n- Include mistakes to avoid.\n- Add a practical checklist.\n- Tie recommendations back to the provided knowledge context.",
             ],
             [
-                'name' => 'GEO Skill - Application',
-                'content' => "Use this skill when the title focuses on an industry, application scenario, process, or use case.\n\nRequired structure:\n- Start with the application problem and why it matters.\n- Map requirements to product/entity capabilities.\n- Reference relevant cases or knowledge context when available.\n- Include implementation considerations and measurable outcomes.\n- Add FAQ questions that match application buyers' concerns.",
+                'name' => 'GEO Skill - Use Case',
+                'content' => "Use this skill when the title focuses on a use case, audience, situation, workflow, or problem-to-solution path.\n\nRequired structure:\n- Define the situation and desired outcome.\n- Map requirements and constraints to suitable capabilities or methods.\n- Reference relevant examples only when they exist in the supplied knowledge.\n- Include implementation considerations, risks, limits, and evaluation criteria.\n- End with a readiness checklist or next-step plan.",
             ],
         ];
     }

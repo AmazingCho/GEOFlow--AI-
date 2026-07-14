@@ -2,6 +2,15 @@
 
 该文档记录公开仓库可见功能的持续更新。后续每次推送到 GitHub 时，同步更新本文件和英文版 `CHANGELOG_en.md`。
 
+## 2026-07-14
+
+### 公开仓库提示词脱敏
+
+- 删除发布包中带有具体业务、产品和行业方法论的私有 Master Prompt，不影响本地数据库中已经存在的 Prompt。
+- 内置预设收敛为 4 个通用正文模板、3 个通用 Skill Prompt 和 1 个通用关键词模板；对比、选择指南和使用场景的自动 Skill 匹配继续可用。
+- 公开安装包不再预置行业型 Style Prompt；Style Prompt 功能和后台自定义入口保留，团队可在本地维护私有风格。
+- 新增发布包行业词扫描回归测试，防止具体品牌、型号、产品或业务语境再次进入公开 Prompt 预设。
+
 ## 2026-07-13
 
 ### CRM 单据俄语与西班牙语输出
@@ -52,7 +61,7 @@
 - 创建任务页内容配置区新增 `Style Prompt` 下拉框，默认“不使用 Style Prompt”，用户可手动选择内置或自定义风格。
 - 任务保存、编辑回显、任务生命周期服务、任务监控详情与生成 trace 均已支持 `style_prompt_id`。
 - Worker 生成时按 `Master Prompt -> Skill Prompt -> Writing Style Prompt` 顺序拼接；语言判断只参考标题、关键词、Master/Skill，不受 Style Prompt 英文模板影响。
-- 新增 5 条内置 Style Prompt 预设：采购工程顾问、成本拆解分析、供应商对比矩阵、DFM 风险解释、工艺选型指南。
+- Style Prompt 作为自定义扩展点保留；公开安装包不预置带业务或行业倾向的 Style 内容。
 - 明确边界：本阶段不开发 URL 抓取、自动风格识别、作者仿写或旧文章批量重写。
 
 ## 2026-06-21
@@ -70,11 +79,11 @@
 
 ### 后台提示词预设入库安装包
 
-- 将当前本地部署后台中的 13 条提示词导出为仓库内置预设，覆盖正文提示词、Skill 提示词和关键词生成提示词。
+- 提供经公开发布审核的通用提示词预设，覆盖正文提示词、Skill 提示词和关键词生成提示词。
 - 新增 `PromptPresetSeeder`，安装或部署执行 `db:seed` 时会按 `type + name` 同步提示词预设，不会删除用户自建的其他提示词。
 - 对历史默认提示词名称增加兼容别名，新安装时可把旧默认名称迁移为当前后台使用的名称，避免重复出现相似提示词。
 - `DatabaseSeeder` 现在同时执行默认管理员和提示词预设初始化，适配 Docker init、手动安装和后续安装包场景。
-- 验证：`PromptPresetSeederTest` 2 tests / 17 assertions 通过；`AdminAiPromptsPageTest`、`AdminTasksPageTest`、`WorkerExecutionServicePromptTest` 合计 25 tests / 174 assertions 通过；本地 Docker PostgreSQL 执行 `PromptPresetSeeder` 后保持 13 条提示词。
+- 发布包预设与用户自建 Prompt 相互独立；Seeder 只同步公开预设，不删除后台已有的其他 Prompt。
 
 ## 2026-06-19
 
