@@ -62,6 +62,15 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertStringContainsString('制造业售后响应效率提升案例', $result['context']);
         $this->assertStringNotContainsString('医疗客服需要遵守诊疗合规边界', $result['context']);
 
+        $this->assertNotEmpty($result['evidence_package']);
+        $evidenceIds = array_column($result['evidence_package'], 'id');
+        $this->assertTrue(collect($evidenceIds)->contains(fn (string $id): bool => str_starts_with($id, 'KB:'.$knowledgeBase->id.':CHUNK:0:')));
+        $this->assertTrue(collect($evidenceIds)->contains(fn (string $id): bool => str_starts_with($id, 'ENTITY:'.$entity->id.':')));
+        $this->assertTrue(collect($evidenceIds)->contains(fn (string $id): bool => str_starts_with($id, 'CASE:'.$caseRecord->id.':')));
+        foreach ($evidenceIds as $evidenceId) {
+            $this->assertStringContainsString('Evidence ID: '.$evidenceId, $result['context']);
+        }
+
         $trace = $result['trace'];
         $this->assertSame('rag_retrieval_service', $trace['retrieval_engine']);
         $this->assertContains('行业:制造业', $trace['tag_filters']);
@@ -77,10 +86,20 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertSame((int) $trace['chunks'][0]['evidence_score'], (int) $trace['evidence_summary']['average_evidence_score']);
         $this->assertSame(1, (int) $trace['evidence_summary']['chunk_count']);
         $this->assertSame($trace['evidence_summary'], $trace['context_package']['evidence_summary']);
-        $this->assertSame('制造业客户A', $trace['entities'][0]['name']);
+        $this->assertSame((int) $entity->id, (int) $trace['entities'][0]['id']);
         $this->assertArrayHasKey('role', $trace['entities'][0]);
-        $this->assertSame('制造业售后响应效率提升案例', $trace['cases'][0]['title']);
+        $this->assertSame((int) $caseRecord->id, (int) $trace['cases'][0]['id']);
         $this->assertGreaterThan(0, $trace['context_length']);
+        $this->assertArrayHasKey('evidence_audit', $trace);
+        $this->assertCount(count($result['evidence_package']), $trace['evidence_audit']);
+        $this->assertArrayNotHasKey('preview', $trace['chunks'][0]);
+        $traceJson = json_encode($trace, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('智能客服可以降低制造业售后响应时间，并沉淀常见问题。', $traceJson);
+        $this->assertStringNotContainsString('专注精密制造，售后问题量大。', $traceJson);
+        $this->assertStringNotContainsString('响应时间下降 40%', $traceJson);
+        $this->assertStringNotContainsString('制造业售后知识库', $traceJson);
+        $this->assertStringNotContainsString('制造业客户A', $traceJson);
+        $this->assertStringNotContainsString('制造业售后响应效率提升案例', $traceJson);
     }
 
     public function test_it_includes_knowledge_metadata_in_context_and_trace(): void
@@ -197,7 +216,7 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertStringContainsString('SJ4060 电池灌胶应用案例', $result['context']);
         $this->assertContains((int) $knowledgeBase->id, $result['trace']['knowledge_base_ids']);
         $this->assertSame([(int) $entity->id], $result['trace']['entity_filter_ids']);
-        $this->assertSame('SJ4060', $result['trace']['entities'][0]['name']);
+        $this->assertSame((int) $entity->id, (int) $result['trace']['entities'][0]['id']);
         $this->assertSame((int) $caseRecord->id, (int) $result['trace']['cases'][0]['id']);
     }
 
@@ -290,7 +309,7 @@ class RagRetrievalServiceTest extends TestCase
         $this->assertContains((int) $knowledgeBase->id, $result['trace']['context_package']['used_knowledge_base_ids']);
     }
 
-    public function test_collection_general_knowledge_excludes_archive_unless_selected_manually(): void
+    public function test_collection_general_knowledge_excludes_archive_even_when_selected_manually(): void
     {
         $collection = CollectionRecord::query()->create([
             'name' => 'Automation Equipment Retrieval',
@@ -331,7 +350,8 @@ class RagRetrievalServiceTest extends TestCase
             'knowledge_base_id' => (int) $archiveKnowledge->id,
         ]);
         $manualResult = app(RagRetrievalService::class)->retrieveForTask($manualTask, '自动化设备历史版本', '归档');
-        $this->assertStringContainsString('归档资料默认不应参与自动生成', $manualResult['context']);
+        $this->assertStringNotContainsString('归档资料默认不应参与自动生成', $manualResult['context']);
+        $this->assertNotContains((int) $archiveKnowledge->id, $manualResult['trace']['context_package']['used_knowledge_base_ids']);
     }
 
     public function test_inactive_knowledge_is_excluded_from_automatic_retrieval_but_manual_selection_still_works(): void
@@ -376,6 +396,120 @@ class RagRetrievalServiceTest extends TestCase
         ]);
         $manualResult = app(RagRetrievalService::class)->retrieveForTask($manualTask, '自动化设备停用资料', '停用');
         $this->assertStringContainsString('停用资料不应自动参与生成', $manualResult['context']);
+        $this->assertStringNotContainsString('停用资料不应自动参与生成', $manualResult['generation_context']);
+    }
+
+    public function test_fallback_whole_document_has_revision_aware_id_and_safe_trace(): void
+    {
+        $content = 'CANARY-FALLBACK-CONTENT product operating limits.';
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => 'Fallback manual',
+            'description' => '',
+            'content' => $content,
+            'character_count' => mb_strlen($content, 'UTF-8'),
+            'file_type' => 'markdown',
+            'knowledge_type' => 'product_manual',
+            'knowledge_role' => 'primary_source',
+            'importance' => 5,
+            'status' => 'active',
+            'word_count' => mb_strlen($content, 'UTF-8'),
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Fallback evidence task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'knowledge_base_id' => (int) $knowledgeBase->id,
+        ]);
+
+        $first = app(RagRetrievalService::class)->retrieveForTask($task, 'Operating limits', 'limits');
+        $firstItem = collect($first['evidence_package'])->firstWhere('source_type', 'knowledge_full');
+
+        $this->assertNotNull($firstItem);
+        $this->assertStringStartsWith('KB:'.$knowledgeBase->id.':FULL:', $firstItem['id']);
+        $this->assertStringContainsString('Evidence ID: '.$firstItem['id'], $first['context']);
+        $this->assertStringNotContainsString($content, json_encode($first['trace'], JSON_THROW_ON_ERROR));
+
+        $knowledgeBase->update(['content' => $content.' Revised.']);
+        $second = app(RagRetrievalService::class)->retrieveForTask($task, 'Operating limits', 'limits');
+        $secondItem = collect($second['evidence_package'])->firstWhere('source_type', 'knowledge_full');
+
+        $this->assertNotSame($firstItem['id'], $secondItem['id']);
+    }
+
+    public function test_case_evidence_defaults_to_unverified_unknown_scope(): void
+    {
+        $case = CaseRecord::query()->create([
+            'title' => 'Private buyer result',
+            'case_type' => 'customer_case',
+            'summary' => 'Private result summary.',
+            'metrics' => 'Yield increased 12%.',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Case evidence task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'case_filter' => (string) $case->id,
+        ]);
+
+        $result = app(RagRetrievalService::class)->retrieveForTask($task, 'Buyer result', 'yield');
+        $item = collect($result['evidence_package'])->firstWhere('source_type', 'case');
+
+        $this->assertSame('unverified', $item['source_state']);
+        $this->assertSame('unknown', $item['publication_scope']);
+        $this->assertStringContainsString('Private result summary.', $result['context']);
+        $this->assertStringNotContainsString('Private result summary.', $result['generation_context']);
+        $this->assertStringNotContainsString('Yield increased 12%.', $result['generation_context']);
+    }
+
+    public function test_real_rag_chunk_entity_and_case_ids_change_after_source_revision(): void
+    {
+        $knowledgeBase = $this->createKnowledgeBaseWithChunk('Revision manual', 'Rated travel is 300 mm.', '');
+        $entityPrefix = str_repeat('Entity specification context. ', 20);
+        $casePrefix = str_repeat('Case operating context. ', 20);
+        $entity = EntityRecord::query()->create([
+            'name' => 'SJ4060',
+            'entity_type' => 'product_model',
+            'description' => $entityPrefix.'TAIL-A',
+        ]);
+        $case = CaseRecord::query()->create([
+            'entity_id' => (int) $entity->id,
+            'title' => 'SJ4060 application',
+            'case_type' => 'application_case',
+            'summary' => $casePrefix.'TAIL-A',
+        ]);
+        DB::table('entity_material_links')->insert([
+            'entity_id' => (int) $entity->id,
+            'linkable_type' => KnowledgeBase::class,
+            'linkable_id' => (int) $knowledgeBase->id,
+            'link_role' => 'primary_subject',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Revision-aware RAG task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+            'entity_filter' => (string) $entity->id,
+            'case_filter' => (string) $case->id,
+        ]);
+
+        $first = app(RagRetrievalService::class)->retrieveForTask($task, 'SJ4060 travel', 'SJ4060');
+        $firstIds = collect($first['evidence_package'])->mapWithKeys(
+            static fn (array $item): array => [$item['source_type'] => $item['id']]
+        );
+
+        KnowledgeChunk::query()->where('knowledge_base_id', $knowledgeBase->id)->update(['content' => 'Rated travel is 320 mm.']);
+        $entity->update(['description' => $entityPrefix.'TAIL-B']);
+        $case->update(['summary' => $casePrefix.'TAIL-B']);
+
+        $second = app(RagRetrievalService::class)->retrieveForTask($task, 'SJ4060 travel', 'SJ4060');
+        $secondIds = collect($second['evidence_package'])->mapWithKeys(
+            static fn (array $item): array => [$item['source_type'] => $item['id']]
+        );
+
+        $this->assertNotSame($firstIds['knowledge_chunk'], $secondIds['knowledge_chunk']);
+        $this->assertNotSame($firstIds['entity'], $secondIds['entity']);
+        $this->assertNotSame($firstIds['case'], $secondIds['case']);
     }
 
     /**

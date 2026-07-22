@@ -3,6 +3,7 @@
 namespace App\Services\GeoFlow;
 
 use App\Models\Article;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class ArticleQualityAssessmentService
@@ -37,8 +38,15 @@ class ArticleQualityAssessmentService
             $this->checkStructure($content, $plain),
             $this->checkFaq($content, $plain),
             $this->checkImages($imageCount, $traceImages->count(), (string) data_get($generationTrace, 'task.image_tag_filter', '')),
-            $this->checkUniqueness($plain),
+            $this->checkUniqueness($content),
         ];
+
+        $deepReview = is_array($generationTrace['deep_review'] ?? null)
+            ? $generationTrace['deep_review']
+            : [];
+        if ($deepReview !== []) {
+            $items[] = $this->checkDeepReview($deepReview);
+        }
 
         $score = (int) collect($items)->sum('score');
         $issues = collect($items)
@@ -53,10 +61,12 @@ class ArticleQualityAssessmentService
             ->values()
             ->all();
 
+        $deepReviewNeedsAttention = $deepReview !== [] && ! (bool) ($deepReview['passed'] ?? false);
+
         return [
             'score' => max(0, min(100, $score)),
             'grade' => $this->grade($score),
-            'status' => $score >= 80 ? 'good' : ($score >= 60 ? 'warning' : 'poor'),
+            'status' => $score >= 80 && ! $deepReviewNeedsAttention ? 'good' : ($score >= 60 ? 'warning' : 'poor'),
             'detected_language' => $detectedLanguage,
             'issues' => $issues,
             'items' => $items,
@@ -237,15 +247,11 @@ class ArticleQualityAssessmentService
     {
         $wordCount = $this->wordCount($plain);
         $headingCount = preg_match_all('/^\s{0,3}#{2,4}\s+\S+/mu', $content);
-        $paragraphCount = collect(preg_split('/\R{2,}/u', $plain) ?: [])->map(fn ($p) => trim($p))->filter()->count();
-        $hasConclusion = preg_match('/(?:Conclusion|Summary|Key Takeaways|结论|总结|要点)/iu', $content) === 1;
+        $paragraphCount = $this->proseParagraphs($content)->count();
         $score = 0;
         $score += $wordCount >= 500 ? 6 : ($wordCount >= 250 ? 4 : 1);
         $score += $headingCount >= 3 ? 5 : ($headingCount >= 1 ? 3 : 0);
         $score += $paragraphCount >= 4 ? 4 : ($paragraphCount >= 2 ? 2 : 0);
-        if ($hasConclusion && $score < 15) {
-            $score += 1;
-        }
         $reasons = [];
         if ($wordCount < 250) {
             $reasons[] = 'short_article';
@@ -256,15 +262,11 @@ class ArticleQualityAssessmentService
         if ($paragraphCount < 4) {
             $reasons[] = 'few_paragraphs';
         }
-        if (! $hasConclusion) {
-            $reasons[] = 'missing_conclusion';
-        }
 
         return $this->item('structure', min(15, $score), 15, $score >= 12 ? 'passed' : ($score >= 7 ? 'warning' : 'failed'), (string) $wordCount, [
             'word_count' => $wordCount,
             'heading_count' => $headingCount,
             'paragraph_count' => $paragraphCount,
-            'has_conclusion' => $hasConclusion,
         ], $reasons);
     }
 
@@ -272,19 +274,51 @@ class ArticleQualityAssessmentService
     {
         $hasFaqHeading = preg_match('/(?:FAQ|FAQs|Q&A|常见问题|问答|常见问答)/iu', $content) === 1;
         $questionMarks = preg_match_all('/[?？]/u', $plain);
-        $score = $hasFaqHeading && $questionMarks >= 2 ? 10 : ($hasFaqHeading || $questionMarks >= 2 ? 6 : 0);
-        $reasons = [];
+
         if (! $hasFaqHeading) {
-            $reasons[] = 'missing_faq_heading';
+            return $this->item('faq', 10, 10, 'passed', (string) $questionMarks, [
+                'has_faq_heading' => false,
+                'question_count' => $questionMarks,
+            ], ['optional_module_not_used']);
         }
-        if ($questionMarks < 2) {
-            $reasons[] = 'few_questions';
-        }
+
+        $score = $questionMarks >= 2 ? 10 : 5;
+        $reasons = $questionMarks >= 2 ? [] : ['few_questions'];
 
         return $this->item('faq', $score, 10, $score >= 8 ? 'passed' : ($score > 0 ? 'warning' : 'failed'), (string) $questionMarks, [
             'has_faq_heading' => $hasFaqHeading,
             'question_count' => $questionMarks,
         ], $reasons);
+    }
+
+    /** @param array<string,mixed> $deepReview */
+    private function checkDeepReview(array $deepReview): array
+    {
+        $passed = (bool) ($deepReview['passed'] ?? false);
+        $score = max(0, min(100, (int) ($deepReview['score'] ?? 0)));
+        $issueCodes = collect($deepReview['issue_codes'] ?? [])
+            ->map(fn ($code): string => trim((string) $code))
+            ->filter()
+            ->unique()
+            ->take(50)
+            ->values()
+            ->all();
+        $reviewMetrics = collect(is_array($deepReview['metrics'] ?? null) ? $deepReview['metrics'] : [])
+            ->take(20)
+            ->all();
+
+        return $this->item(
+            'deep_review',
+            0,
+            0,
+            $passed ? 'passed' : 'warning',
+            $score.' / 100',
+            array_merge($reviewMetrics, [
+                'deep_review_score' => $score,
+                'requires_manual_review' => (bool) ($deepReview['requires_manual_review'] ?? ! $passed),
+            ]),
+            $issueCodes
+        );
     }
 
     private function checkImages(int $articleImageCount, int $traceImageCount, string $imageTagFilter): array
@@ -307,12 +341,9 @@ class ArticleQualityAssessmentService
         ], $reasons);
     }
 
-    private function checkUniqueness(string $plain): array
+    private function checkUniqueness(string $content): array
     {
-        $paragraphs = collect(preg_split('/\R{2,}/u', $plain) ?: [])
-            ->map(fn ($paragraph) => preg_replace('/\s+/u', ' ', trim((string) $paragraph)) ?: '')
-            ->filter(fn (string $paragraph): bool => mb_strlen($paragraph, 'UTF-8') >= 20)
-            ->values();
+        $paragraphs = $this->proseParagraphs($content);
         if ($paragraphs->count() < 3) {
             return $this->item('uniqueness', 3, 5, 'warning', '0', [
                 'paragraph_count' => $paragraphs->count(),
@@ -331,6 +362,31 @@ class ArticleQualityAssessmentService
             'duplicate_paragraphs' => $duplicates,
             'duplicate_ratio' => (int) round($ratio * 100),
         ], $reasons);
+    }
+
+    /**
+     * Extract semantic prose paragraphs before plain-text normalization removes line breaks.
+     *
+     * @return Collection<int,string>
+     */
+    private function proseParagraphs(string $content): Collection
+    {
+        $content = preg_replace('/```.*?```/su', "\n\n", $content) ?? $content;
+        $htmlParagraphs = [];
+        if (preg_match_all('/<p\b[^>]*>(.*?)<\/p>/isu', $content, $htmlParagraphs) > 0) {
+            $blocks = $htmlParagraphs[1] ?? [];
+        } else {
+            $content = preg_replace('/^\s{0,3}#{1,6}\s+.*$/mu', "\n\n", $content) ?? $content;
+            $content = preg_replace('/^\s*(?:[-*+]\s+|\d+[.)]\s+).+$/mu', "\n\n", $content) ?? $content;
+            $content = preg_replace('/^\s*\|.*\|\s*$/mu', "\n\n", $content) ?? $content;
+            $content = preg_replace('/^\s*!\[[^\]]*\]\([^)]*\)\s*$/mu', "\n\n", $content) ?? $content;
+            $blocks = preg_split('/\R{2,}/u', $content) ?: [];
+        }
+
+        return collect($blocks)
+            ->map(fn ($paragraph) => $this->plainText((string) $paragraph))
+            ->filter(fn (string $paragraph): bool => mb_strlen($paragraph, 'UTF-8') >= 20)
+            ->values();
     }
 
     private function plainText(string $content): string

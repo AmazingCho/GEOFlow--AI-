@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\ApiException;
 use App\Services\Api\IdempotencyService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * API v1 任务（tasks）生命周期：列表、创建、详情、更新、启停、入队、子 Job 列表。
@@ -122,7 +124,7 @@ class TaskController extends BaseApiController
     /**
      * 向队列投递一条 Job；成功 HTTP 201。
      *
-     * 请求体可含 job_type，其余字段进入 payload。幂等键：POST /tasks/{id}/enqueue
+     * 请求体仅接受受控的任务类型与关联元数据。幂等键：POST /tasks/{id}/enqueue
      */
     public function enqueue(Request $request, int $task, TaskLifecycleService $tasks): JsonResponse
     {
@@ -131,7 +133,32 @@ class TaskController extends BaseApiController
             return $cached;
         }
 
-        $body = $request->all();
+        $allowedFields = ['job_type', 'source', 'safe_mode', 'trigger', 'request_id', 'client_reference'];
+        $unknownFields = array_values(array_diff(array_keys($request->all()), $allowedFields));
+        if ($unknownFields !== []) {
+            throw new ApiException('validation_failed', '参数校验失败', 422, [
+                'field_errors' => ['payload' => '包含不受支持的字段：'.implode(', ', $unknownFields)],
+            ]);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'job_type' => ['sometimes', 'string', 'in:generate_article'],
+            'source' => ['sometimes', 'string', 'regex:/\A[a-z0-9_:-]{1,80}\z/'],
+            'safe_mode' => ['sometimes', 'string', 'regex:/\A[a-z0-9_:-]{1,80}\z/'],
+            'trigger' => ['sometimes', 'string', 'regex:/\A[a-z0-9_:-]{1,80}\z/'],
+            'request_id' => ['sometimes', 'string', 'regex:/\A[a-z0-9_:-]{1,80}\z/'],
+            'client_reference' => ['sometimes', 'string', 'regex:/\A[a-z0-9_:-]{1,80}\z/'],
+        ]);
+        if ($validator->fails()) {
+            $fieldErrors = collect($validator->errors()->messages())
+                ->map(static fn (array $messages): string => (string) ($messages[0] ?? '字段无效'))
+                ->all();
+            throw new ApiException('validation_failed', '参数校验失败', 422, [
+                'field_errors' => $fieldErrors,
+            ]);
+        }
+
+        $body = $validator->validated();
         $jobType = trim((string) ($body['job_type'] ?? 'generate_article'));
         $payload = $body;
         unset($payload['job_type']);

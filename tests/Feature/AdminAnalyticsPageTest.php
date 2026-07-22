@@ -83,6 +83,28 @@ class AdminAnalyticsPageTest extends TestCase
         $this->assertStringContainsString('text-blue-600 font-medium', $html);
     }
 
+    public function test_analytics_page_redacts_legacy_task_failure_details(): void
+    {
+        $task = Task::query()->create([
+            'name' => 'Legacy failure task',
+            'status' => 'paused',
+        ]);
+        $privateError = 'CANARY-PRIVATE-PROMPT Authorization: Bearer sk-SECRET';
+        TaskRun::query()->create([
+            'task_id' => $task->id,
+            'status' => 'failed',
+            'error_message' => $privateError,
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->admin(), 'admin')
+            ->get(route('admin.analytics'));
+
+        $response->assertOk()->assertDontSee('CANARY-PRIVATE-PROMPT')->assertDontSee('sk-SECRET');
+        $this->assertStringContainsString(substr(hash('sha256', $privateError), 0, 12), $response->getContent());
+    }
+
     public function test_analytics_page_applies_date_filters_to_content_metrics(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-05-21 12:00:00'));

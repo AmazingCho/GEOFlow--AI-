@@ -6,6 +6,45 @@ use App\Models\Article;
 
 final class ArticleWorkflow
 {
+    public static function articleSha256(Article $article): string
+    {
+        return hash('sha256', (string) ($article->title ?? '')."\0".(string) ($article->content ?? ''));
+    }
+
+    /**
+     * Bind an explicit human approval to the exact title/body revision.
+     * Non-human or revoked states remove any earlier approval binding.
+     *
+     * @return array<string,mixed>
+     */
+    public static function contextSnapshotForReviewStatus(Article $article, string $reviewStatus): array
+    {
+        $snapshot = is_array($article->context_snapshot) ? $article->context_snapshot : [];
+        unset($snapshot['review_approval']);
+
+        if ($reviewStatus === 'approved') {
+            $snapshot['review_approval'] = [
+                'article_sha256' => self::articleSha256($article),
+                'approved_at' => now()->toDateTimeString(),
+            ];
+        }
+
+        return $snapshot;
+    }
+
+    public static function hasCurrentHumanApproval(Article $article): bool
+    {
+        if ((string) ($article->review_status ?? '') !== 'approved') {
+            return false;
+        }
+
+        $approvedHash = data_get($article->context_snapshot, 'review_approval.article_sha256');
+
+        return is_string($approvedHash)
+            && preg_match('/\A[a-f0-9]{64}\z/', $approvedHash) === 1
+            && hash_equals($approvedHash, self::articleSha256($article));
+    }
+
     public static function normalizeState(string $status, string $reviewStatus, ?string $publishedAt = null): array
     {
         $allowedStatuses = ['draft', 'published', 'private'];

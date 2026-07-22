@@ -35,7 +35,8 @@
 - [标签与白名单分组使用说明](../功能说明文档/03-标签与白名单分组使用说明.md)
 - [知识库治理与 RAG 检索使用说明](../功能说明文档/04-知识库治理与RAG检索使用说明.md)
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
-- [Prompt Skill System v1](./PROMPT_SKILL_SYSTEM.md)
+- [Prompt / Skill / Style System V2.2](./PROMPT_SKILL_SYSTEM.md)
+- [V2.2 去模板化与深度生成实施报告](./ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md)
 - [文章质量评分与审核使用说明](../功能说明文档/06-文章质量评分与审核使用说明.md)
 - [素材管理与关联使用说明](../功能说明文档/07-素材管理与关联使用说明.md)
 - [URL 智能采集使用说明](../功能说明文档/08-URL智能采集使用说明.md)
@@ -58,7 +59,8 @@
 | [CODEX_GLOBAL_PERSONAL_PROMPT.md](./CODEX_GLOBAL_PERSONAL_PROMPT.md) | 可复制到 Codex 个性化提示词的全局协作规则 |
 | [AGENT_WORKFLOW_RULES.md](./AGENT_WORKFLOW_RULES.md) | 每个 agent 开发前后必须遵守的交接规则 |
 | [FEATURE_DOC_INDEX.md](./FEATURE_DOC_INDEX.md) | 功能说明文档索引和阅读建议 |
-| [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master Prompt + Skill Prompt 生成层说明 |
+| [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md) | Master + Skill + 可选 Style 与标准/深度生成说明 |
+| [ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md](./ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md) | V2.2 本地实施结果、测试证据和剩余发布门禁 |
 | [CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md](./CODEX_BUSINESS_INTAKE_API_WHITEPAPER.md) | Codex / AI 通过 GEOFlow API 创建客户、订单、售后、Case、知识库录入草稿的规划白皮书 |
 | [UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md](./UPSTREAM_SELECTIVE_ADOPTION_PLAN_2026-07.md) | 上游 `f603830` 选择性采纳的阶段清单、禁止项、测试、回滚和断点记录 |
 | [MAINLINE_REMAINING_OPTIMIZATION_PLAN.md](./MAINLINE_REMAINING_OPTIMIZATION_PLAN.md) | 主线剩余优化的已完成归档报告，不再作为待执行清单 |
@@ -87,5 +89,6 @@
 - 文章创建/编辑页已接入 Vditor Markdown 编辑器，可复制 Markdown 或公众号/微信格式 HTML。
 - 网站设置页已有模板工厂 / 站点模板复刻入口；当前本地浏览器后台入口优先使用 `/admin`。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒均已落地；仍不要新增绕过草稿箱的直接写入捷径。
+- 文章 V2.2 去模板化与 `standard|deep` 双模式已完成本地实现和 UI 验证，但真实模型盲审、业务库 Prompt apply 与实际 Docker 切换尚未批准，当前仍是 No-Go 候选。
 - 上游 System Update Center 准备度补丁尚未接入，后续应单独规划。
 - 上游选择性采纳的新主计划已保存；禁止直接 merge `upstream/main`，阶段 1-3 为优先主线，后续按计划文件中的断点继续。

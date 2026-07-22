@@ -10,6 +10,7 @@ use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\TitleLibrary;
+use App\Support\GeoFlow\ArticleSkillIntents;
 
 class CatalogGeoFlowService
 {
@@ -46,8 +47,13 @@ class CatalogGeoFlowService
         $skillPrompts = Prompt::query()
             ->where('type', 'skill')
             ->orderBy('name')
-            ->get(['id', 'name', 'type'])
-            ->map(fn (Prompt $p) => $p->getAttributes())
+            ->get(['id', 'name', 'type', 'intent_key'])
+            ->map(fn (Prompt $p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'type' => $p->type,
+                'intent_key' => ArticleSkillIntents::normalize($p->intent_key),
+            ])
             ->all();
 
         $titleLibraries = TitleLibrary::query()

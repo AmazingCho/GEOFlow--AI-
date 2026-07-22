@@ -59,6 +59,7 @@
 | --- | --- |
 | 任何新功能、修复、样式调整或流程优化 | [用户需求理解与产品经理式转译规则](./USER_REQUIREMENT_INTERPRETATION.md) |
 | 修改创建任务页 | [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md) |
+| 修改 Prompt、Skill、Style 或深度生成流水线 | [PROMPT_SKILL_SYSTEM.md](./PROMPT_SKILL_SYSTEM.md)、[V2.2 去模板化与深度生成实施报告](./ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md) |
 | 修改 Entity / Case | [Entity 与 Case 使用说明](../功能说明文档/02-Entity与Case使用说明.md) |
 | 修改标签、标签分组、标签治理 | [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)、[标签与白名单分组使用说明](../功能说明文档/03-标签与白名单分组使用说明.md) |
 | 修改知识库或 RAG | [知识库治理与 RAG 检索使用说明](../功能说明文档/04-知识库治理与RAG检索使用说明.md) |

@@ -9,11 +9,14 @@ use App\Models\ArticleDistribution;
 use App\Models\DistributionChannel;
 use App\Models\DistributionChannelSecret;
 use App\Models\DistributionLog;
+use App\Services\GeoFlow\ArticlePublicationBlockedException;
+use App\Services\GeoFlow\ArticlePublicationGuard;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Services\GeoFlow\DistributionPublisherManager;
 use App\Services\GeoFlow\DistributionTargetSitePackageBuilder;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\Site\SiteThemeCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -33,6 +36,7 @@ class DistributionController extends Controller
         private readonly ApiKeyCrypto $apiKeyCrypto,
         private readonly DistributionTargetSitePackageBuilder $targetSitePackageBuilder,
         private readonly SiteThemeCatalog $siteThemeCatalog,
+        private readonly ArticlePublicationGuard $articlePublicationGuard,
     ) {}
 
     public function index(Request $request): View
@@ -400,9 +404,17 @@ class DistributionController extends Controller
 
     public function retry(int $distributionId): RedirectResponse
     {
-        $distribution = ArticleDistribution::query()->whereKey($distributionId)->first();
+        $distribution = ArticleDistribution::query()->with('article')->whereKey($distributionId)->first();
         if (! $distribution) {
             return back()->withErrors(__('admin.distribution.message.job_not_found'));
+        }
+
+        if ((string) $distribution->action !== 'delete' && $distribution->article) {
+            try {
+                $this->articlePublicationGuard->assertCanPublish($distribution->article);
+            } catch (ArticlePublicationBlockedException $exception) {
+                return back()->withErrors($exception->getMessage());
+            }
         }
 
         $distribution->forceFill([
@@ -467,13 +479,32 @@ class DistributionController extends Controller
             'meta_description' => ['nullable', 'string'],
         ]);
 
-        $distribution->article->forceFill([
+        $article = $distribution->article;
+        $contentChanged = (string) $payload['title'] !== (string) $article->title
+            || (string) $payload['content'] !== (string) $article->content;
+
+        $article->forceFill([
             'title' => (string) $payload['title'],
             'excerpt' => filled($payload['excerpt'] ?? null) ? (string) $payload['excerpt'] : null,
             'content' => (string) $payload['content'],
             'keywords' => filled($payload['keywords'] ?? null) ? (string) $payload['keywords'] : null,
             'meta_description' => filled($payload['meta_description'] ?? null) ? (string) $payload['meta_description'] : null,
-        ])->save();
+        ]);
+
+        if ($contentChanged) {
+            $article->forceFill([
+                'status' => 'draft',
+                'review_status' => 'pending',
+                'published_at' => null,
+                'context_snapshot' => ArticleWorkflow::contextSnapshotForReviewStatus($article, 'pending'),
+            ])->save();
+
+            return redirect()
+                ->route('admin.distribution.show', ['channelId' => (int) $distribution->distribution_channel_id])
+                ->with('message', __('admin.distribution.message.remote_article_review_required'));
+        }
+
+        $article->save();
 
         try {
             $distribution->refresh();

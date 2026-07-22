@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessGeoFlowTaskJob;
 use App\Models\Admin;
 use App\Models\AiModel;
 use App\Models\Article;
@@ -14,15 +15,12 @@ use App\Models\DistributionChannel;
 use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\ImageLibrary;
-use App\Models\Keyword;
-use App\Models\KeywordLibrary;
 use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\Title;
 use App\Models\TitleLibrary;
-use App\Jobs\ProcessGeoFlowTaskJob;
 use App\Services\GeoFlow\TagService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ApiKeyCrypto;
@@ -54,7 +52,6 @@ class AdminTasksPageTest extends TestCase
             'role' => 'admin',
             'status' => 'active',
         ]);
-
         $this->actingAs($admin, 'admin')
             ->get(route('admin.tasks.index', ['keyword' => 'demo', 'status' => 'active']))
             ->assertOk()
@@ -62,6 +59,41 @@ class AdminTasksPageTest extends TestCase
             ->assertSee(__('admin.tasks.empty_title'))
             ->assertViewHas('tasks')
             ->assertViewHas('taskI18n');
+    }
+
+    public function test_task_list_explains_terminal_protocol_failure_without_exposing_contract_details(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_protocol_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-protocol@example.com',
+            'display_name' => 'Tasks Protocol Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $task = Task::query()->create([
+            'name' => 'Protocol failure task',
+            'status' => 'active',
+        ]);
+        TaskRun::query()->create([
+            'task_id' => (int) $task->id,
+            'status' => 'failed',
+            'error_message' => '深度生成协议校验失败，未生成文章',
+            'meta' => [
+                'terminal_reason' => 'protocol_failure',
+                'generation_outcome' => 'protocol_failure',
+                'protocol_violation_codes' => ['schema.invalid_enum'],
+                'protocol_violation_paths' => ['$.answer_mode'],
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.index'))
+            ->assertOk()
+            ->assertSee(__('admin.tasks.failure.protocol_failure'))
+            ->assertSee(__('admin.tasks.failure.protocol_failure_detail'))
+            ->assertDontSee('schema.invalid_enum')
+            ->assertDontSee('$.answer_mode');
     }
 
     public function test_authenticated_admin_can_open_task_create_page(): void
@@ -84,12 +116,20 @@ class AdminTasksPageTest extends TestCase
             'name' => '任务分类',
             'slug' => 'task-create-category',
         ]);
+        Prompt::query()->create([
+            'name' => 'Technical Task Skill',
+            'type' => 'skill',
+            'intent_key' => 'technical',
+            'content' => 'Explain working principles.',
+        ]);
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.tasks.create'))
             ->assertOk()
             ->assertSee(__('admin.task_create.page_heading'))
             ->assertSee(__('admin.task_create.option.auto_skill_prompt'))
+            ->assertSee(__('admin.task_create.help.manage_skill_intents'))
+            ->assertSee(__('admin.task_create.skill_recommendation.intent.technical'))
             ->assertSee(__('admin.task_create.option.no_image_library'))
             ->assertSee(__('admin.task_create.option.no_image_count'));
     }
@@ -116,6 +156,9 @@ class AdminTasksPageTest extends TestCase
             ->assertSee('name="need_review" value="1" checked', false)
             ->assertSee('data-task-workflow-summary', false)
             ->assertSee('data-advanced-generation-settings', false)
+            ->assertSee('name="generation_mode"', false)
+            ->assertSee('value="standard" checked', false)
+            ->assertSee(__('admin.task_create.option.generation_mode_deep'))
             ->assertSee('data-entity-filter-status', false)
             ->assertSee('data-case-filter-status', false)
             ->assertSee('data-publish-risk', false)
@@ -361,6 +404,7 @@ class AdminTasksPageTest extends TestCase
             'name' => '带 Skill Prompt 的任务',
             'prompt_id' => (int) $prompt->id,
             'skill_prompt_id' => (int) $skillPrompt->id,
+            'skill_selection_mode' => 'manual',
         ]);
     }
 
@@ -412,6 +456,7 @@ class AdminTasksPageTest extends TestCase
                 'title_library_id' => (int) $titleLibrary->id,
                 'prompt_id' => (int) $prompt->id,
                 'style_prompt_id' => (int) $stylePrompt->id,
+                'generation_mode' => 'deep',
                 'ai_model_id' => (int) $aiModel->id,
                 'fixed_category_id' => (int) $category->id,
                 'status' => 'paused',
@@ -428,10 +473,40 @@ class AdminTasksPageTest extends TestCase
             'name' => '带 Style Prompt 的任务',
             'prompt_id' => (int) $prompt->id,
             'style_prompt_id' => (int) $stylePrompt->id,
+            'generation_mode' => 'deep',
         ]);
     }
 
-    public function test_task_auto_recommends_skill_prompt_from_title_library_intent(): void
+    public function test_task_rejects_an_unknown_generation_mode(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_invalid_generation_mode',
+            'password' => 'secret-123',
+            'email' => 'tasks-invalid-generation-mode@example.com',
+            'display_name' => 'Tasks Invalid Generation Mode Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        Category::query()->create([
+            'name' => 'Invalid Generation Mode Category',
+            'slug' => 'invalid-generation-mode-category',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->from(route('admin.tasks.create'))
+            ->post(route('admin.tasks.store'), [
+                'task_name' => '非法生成模式任务',
+                'generation_mode' => 'unbounded',
+            ])
+            ->assertRedirect(route('admin.tasks.create'))
+            ->assertSessionHasErrors('generation_mode');
+
+        $this->assertDatabaseMissing('tasks', [
+            'name' => '非法生成模式任务',
+        ]);
+    }
+
+    public function test_task_auto_mode_is_persisted_without_freezing_library_recommendation(): void
     {
         $admin = Admin::query()->create([
             'username' => 'tasks_auto_skill_prompt',
@@ -460,11 +535,13 @@ class AdminTasksPageTest extends TestCase
         $comparisonSkill = Prompt::query()->create([
             'name' => 'GEO Skill - Comparison',
             'type' => 'skill',
+            'intent_key' => 'comparison',
             'content' => 'Use this skill when the title implies comparison or differences.',
         ]);
         Prompt::query()->create([
             'name' => 'GEO Skill - Buying Guide',
             'type' => 'skill',
+            'intent_key' => 'buying_guide',
             'content' => 'Use this skill when the title implies how to choose.',
         ]);
         $aiModel = AiModel::query()->create([
@@ -501,7 +578,8 @@ class AdminTasksPageTest extends TestCase
 
         $this->assertDatabaseHas('tasks', [
             'name' => '自动推荐 Skill Prompt 的任务',
-            'skill_prompt_id' => (int) $comparisonSkill->id,
+            'skill_selection_mode' => 'auto',
+            'skill_prompt_id' => null,
         ]);
     }
 
@@ -570,6 +648,34 @@ class AdminTasksPageTest extends TestCase
 
         $task = Task::query()->where('name', '明确不使用 Skill Prompt 的任务')->firstOrFail();
         $this->assertNull($task->skill_prompt_id);
+        $this->assertSame('none', $task->skill_selection_mode);
+    }
+
+    public function test_task_edit_form_preserves_persisted_auto_skill_mode(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_edit_auto_skill',
+            'password' => 'secret-123',
+            'email' => 'tasks-edit-auto-skill@example.com',
+            'display_name' => 'Tasks Edit Auto Skill Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        Category::query()->create(['name' => 'Auto Edit Category', 'slug' => 'auto-edit-category']);
+        $task = Task::query()->create([
+            'name' => 'Persisted Auto Skill Task',
+            'skill_selection_mode' => 'auto',
+            'status' => 'paused',
+            'schedule_enabled' => 0,
+            'publish_interval' => 3600,
+            'draft_limit' => 5,
+            'article_limit' => 10,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.edit', ['taskId' => (int) $task->id]))
+            ->assertOk()
+            ->assertViewHas('taskForm', static fn (array $form): bool => ($form['skill_prompt_id'] ?? null) === '__auto');
     }
 
     public function test_task_create_and_edit_forms_use_full_admin_content_width(): void

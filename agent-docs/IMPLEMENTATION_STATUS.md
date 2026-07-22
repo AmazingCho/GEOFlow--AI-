@@ -19,7 +19,7 @@
 | 知识库向量化异步队列 | 已完成核心功能 | 切片/向量化任务写回 queued/running/completed/failed 状态；列表页和详情页展示状态并轮询；重复更新有保护，失败可重试 |
 | 知识库重复与冲突检测 | 已完成核心功能 | 知识库治理检查页可按 Collection 扫描疑似重复资料和数值型事实冲突，只生成报告和详情跳转，不自动合并或覆盖 |
 | 知识库治理建议工作流 | 已完成核心功能 | 重复/冲突检查结果可创建 proposal；重复项可确认后标记 inactive 并可回滚；冲突项只记录人工审核，不自动改正文 |
-| 生成追踪 | 已完成核心功能 | 文章可记录生成来源、检索 chunk、上下文 |
+| 生成追踪 | 已完成增强 | 文章可记录生成来源、检索 chunk、上下文；新增 Master / Skill / Style 内容指纹，不保存 Prompt 或 RAG 原文，文章页兼容显示旧记录 |
 | 文章质量评分 | 已完成增强 | 列表和编辑页显示评分、审核建议、细化指标和扣分原因 |
 | 文章 Markdown 编辑器 | 已完成 | 文章创建/编辑页接入 Vditor，支持快捷插入和 Markdown 正文编辑 |
 | 文章复制导出与图片上传 | 已完成 | 支持复制 Markdown、复制公众号/微信格式 HTML，编辑器上传图片自动入库并关联文章 |
@@ -39,7 +39,12 @@
 | URL 采集 Entity 语言修复 | 已完成 | 英文等非中文页面不再套中文 Entity 描述模板 |
 | 文章生成语言强制 | 已完成 | 生成语言优先由标题和关键词判断，最终提示词强制目标语言 |
 | 任务回收站 | 已完成 | 任务删除改为软删除；已生成文章和 task_id 来源关系保留；回收站支持查看与恢复，恢复后保持暂停 |
-| Prompt Skill System v1 | 已完成增强 | 任务支持可选 `skill_prompt_id`，提示词页可管理 Master Prompt 与 Skill Prompt；创建任务页支持根据标题库智能推荐 Skill，并保留不使用/手动覆盖 |
+| Prompt Skill System v1 | 已完成增强 | 任务支持可选 `skill_prompt_id`；创建任务页保留智能推荐、不使用和手动覆盖；运行时按字段补齐缺失关键词/RAG 上下文，清理无效系统占位符并禁止正文重复 H1 |
+| 七类 Skill 稳定意图路由 | Phase 5 已完成 | 任务显式保存 `none / manual / auto`；Auto 在 Worker 选定每个标题后结合关键词逐篇路由，低置信度或缺少配置时回退 Master + 可选 Style。Case Study 与 Troubleshooting 会识别证据缺口，但因当前缺少发布授权/匿名化审核和操作安全分级，Auto 保持安全回退，Manual 仍可用；历史有 Skill 任务仅回填 Manual，无 Skill 任务回填 None，不推断历史 Auto |
+| Skill 真实模型评估与发布门禁 | Phase 8.1 已完成，结论 No-Go | 第二轮 DeepSeek V4 Pro 已完成 24 篇固定对照、自动检查与匿名 PM 盲审；Style 可辨认，但事实支持、自然结构和 Case/Troubleshooting 高风险门禁未全部通过。文章 ID 81-104 仅作为待审核草稿保留，未发布或分发 |
+| V2 Master / 七类 Skill 源码契约 | V2.1 基线已冻结；V2.2 未获发布批准 | V2.1 的八份原始内容已从历史执行记录恢复并通过 SHA-256 核对；V2.2 候选只存在源码中，尚未 apply。Seeder 仍不会静默覆盖管理员修改 |
+| 去模板化与深度生成 | 本地功能完成，真实评估 No-Go | V2.2 Prompt 减法、四个可选 Style、`standard|deep` 双模式、冻结证据的 plan/draft/review/单次修正流水线、反模板评估与文章页追踪均已完成。V2.3.1 本地候选新增 `sufficient / limited / insufficient` 证据充足度、真实 provider 六次预算、limited 可执行防扩写门禁、修订绑定人工审批和全写入路径重审。331 tests / 2357 assertions 通过，独立复审无剩余 P0/P1。最终一组 Application 付费门禁共记录 4 次成功 provider 响应，但 control/candidate 都在修复后的 plan 校验阶段失败、没有生成正文，匿名 PM 盲审判定 No-Go；候选 Prompt 未 apply。当前本地 Docker 已挂载优化源码，仅用于开发验证。详见 `ARTICLE_V23_GROUNDING_GOVERNANCE_IMPLEMENTATION_REPORT.md` |
+| Deep Protocol V2.4 结构化重构 | Phase 0-5 已完成 | Plan/Review 专用结构化 Agent、Plan V2 单一未知信息表达、聚合违规、一次有界修复、协议失败不重试及后台安全状态已落地；30/30 离线矩阵和 227 tests / 1177 assertions 通过。未执行付费 Phase 6，不宣称文章质量已提升。详见 `ARTICLE_DEEP_PROTOCOL_V2_IMPLEMENTATION_REPORT.md` |
 | 写作风格 Style Prompt 轻量版 | 已完成核心功能 | 任务支持可选 `style_prompt_id`；提示词页可管理 `type=style`；创建任务页手动选择 Style Prompt；Worker 按 Master -> Skill -> Writing Style 拼接，Style 不参与语言判断；本阶段不包含 URL 抓取、自动风格识别或作者仿写 |
 | 轻量 CRM 阶段 1 | 已完成 | 新增客户、内部负责人、跟进记录，客户可关联 Collection |
 | 轻量 CRM 阶段 2 | 已完成 | 新增询盘管理，支持 AI 需求识别并关联 Entity、知识库、Case、Tag |
@@ -91,6 +96,14 @@
 
 最近已通过的核心测试包括：
 
+- Deep Protocol V2.4 Phase 0-5 离线验收：30/30 协议矩阵符合预期，聚合违规、一次修复耗尽、队列不重试、追踪隐私、Standard 兼容与发布保护共 227 tests / 1177 assertions 通过；未调用付费模型。
+
+- V2.2 Phase 8.1 真实模型评估：24/24 篇成功生成，26 次请求中 2 次长度截断被拒绝并重试；已知使用 115,134 tokens。自动门禁和 PM 发布门禁均判定 `No-Go`，候选 Prompt、Docker 与发布状态未改变。
+- V2.2 去模板化与深度生成最终定向回归：158 tests / 1518 assertions；覆盖 Prompt/Skill 契约、任务/API 兼容、统一模型调用、深度流水线、反模板评估、质量评分和生成追踪，并验证 Case Study 即使深度审核通过仍保持 `pending` 人工治理状态。
+- 完整 Laravel 套件：586 passed / 4509 assertions；另有 2 个不涉及本轮源码的历史文案基线失败（欢迎页旧标题、基础素材页旧作者入口）。
+- 隔离 PostgreSQL Prompt 只读预演未写入数据库，plan fingerprint 为 `114f792c48d1733c3d7d4f35be32bd9b490c87c340af772c35f098ebee0c7f7a`，发现 `article.style.technical_clarity` 本地内容冲突，正式业务库发布前需重新 preview 并人工决策。
+- 创建/编辑任务和文章详情已在 1440x1000、390x844 下检查；无横向溢出、原始翻译键或控制台错误，深度审核卡正确显示实际审核分。
+
 - `AdminMaterialsPagesTest`
 - `AdminTasksPageTest`
 - `AdminAiPromptsPageTest`
@@ -98,6 +111,8 @@
 - `RagRetrievalServiceTest`
 - `UrlImportProcessingServiceTest`
 - `WorkerGenerationPipelineTraceTest`
+- `PromptPresetSeederTest` 与 `PromptPresetSyncCommandTest`：20 tests，覆盖安全 seed、V2 防降级、现有业务库零写入、dry-run、计划指纹、冲突阻断、备份失败、事务回滚、范围限制和 Prompt 引用保持
+- `PromptSkillContractTest`：七类 V2 Skill、职责边界、长度预算、隐私与安全合同
 
 最近补充验证：
 

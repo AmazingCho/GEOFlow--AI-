@@ -4,6 +4,9 @@ return [
     [
         'name' => 'GEO Marketing · Trust-Based Article Generation (English)信任型正文生成',
         'type' => 'content',
+        'preset_key' => 'article.master.trust_based',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['6717e1a24e98af4668bfeebbbb47b85a89d351903ff8ec8f5dfafd6bd624466c'],
         'content' => <<<'PROMPT'
 [Role]
 You are a GEO content editor. Create accurate, useful, well-structured English articles that readers can understand and AI answer systems can reliably summarize and cite.
@@ -59,6 +62,9 @@ PROMPT,
     [
         'name' => 'GEO Ranking-Style Article Generation (English)榜单型正文生成',
         'type' => 'content',
+        'preset_key' => 'article.master.ranking_en',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['cfd0fa6f21a60cc1b3dd1fbc8c273c848c7b418e493fe00be39809419332ce51'],
         'content' => <<<'PROMPT'
 [Role]
 You are a GEO ranking and comparison editor. Create balanced English ranking articles whose ordering, evidence, limitations, and audience fit can be extracted clearly by readers and AI answer systems.
@@ -103,6 +109,9 @@ PROMPT,
     [
         'name' => 'GEO营销学·信任型正文生成',
         'type' => 'content',
+        'preset_key' => 'article.master.trust_based_zh',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['2ba0dda2108fe2793b4999407f24ec9674d08e0d34a98f45f814f79110309507'],
         'content' => <<<'PROMPT'
 【角色】
 你是一名 GEO 内容编辑。请生成准确、实用、结构清晰的中文文章，让读者容易理解，也让 AI 搜索和问答系统能够稳定提取与引用。
@@ -158,6 +167,9 @@ PROMPT,
     [
         'name' => 'GEO榜单型正文生成',
         'type' => 'content',
+        'preset_key' => 'article.master.ranking_zh',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['f2190978233fb8ba14dce9bf10075a962535f067ebc8e04b41e3375e2b26f1bd'],
         'content' => <<<'PROMPT'
 【角色】
 你是一名 GEO 榜单与比较内容编辑。请生成排序依据清楚、信息平衡、限制明确的中文榜单文章，让读者和 AI 问答系统都能准确理解推荐逻辑。
@@ -201,6 +213,10 @@ PROMPT,
     [
         'name' => 'GEO Skill - Comparison',
         'type' => 'skill',
+        'preset_key' => 'article.skill.comparison',
+        'intent_key' => 'comparison',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['0edf0f5c007480ca4dd1065681da18615e439df8fc9f61a2a1fce9016656cba9'],
         'content' => <<<'PROMPT'
 Use this skill when the title asks for a comparison, differences, alternatives, pros and cons, or a choice between options.
 
@@ -220,6 +236,10 @@ PROMPT,
     [
         'name' => 'GEO Skill - Buying Guide',
         'type' => 'skill',
+        'preset_key' => 'article.skill.buying_guide',
+        'intent_key' => 'buying_guide',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['b84953a57f72f742888198b3847524f6c07aa4699e89a7ca07b72cbcf0b20080'],
         'content' => <<<'PROMPT'
 Use this skill when the title asks how to choose, buy, size, configure, or evaluate an option.
 
@@ -239,6 +259,10 @@ PROMPT,
     [
         'name' => 'GEO Skill - Use Case',
         'type' => 'skill',
+        'preset_key' => 'article.skill.application',
+        'intent_key' => 'application',
+        'preset_version' => '1.0.0',
+        'legacy_content_hashes' => ['9cd5dc5e227e2bc4a2d1125642f01a71d0d13b3b31a5d8702e6381a3875369f8'],
         'content' => <<<'PROMPT'
 Use this skill when the title focuses on a use case, audience, situation, workflow, or problem-to-solution path.
 
@@ -258,6 +282,8 @@ PROMPT,
     [
         'name' => '关键词生成提示词',
         'type' => 'keyword',
+        'preset_key' => 'keyword.generation.default',
+        'preset_version' => '1.0.0',
         'content' => <<<'PROMPT'
 你是一名 SEO、GEO 和内容分析助手。
 

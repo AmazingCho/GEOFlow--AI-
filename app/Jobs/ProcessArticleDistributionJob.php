@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ArticleDistribution;
+use App\Services\GeoFlow\ArticlePublicationBlockedException;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Services\GeoFlow\DistributionRetryPolicy;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,6 +29,25 @@ class ProcessArticleDistributionJob implements ShouldQueue
 
         try {
             $orchestrator->process($distribution);
+        } catch (ArticlePublicationBlockedException $exception) {
+            $distribution->forceFill([
+                'status' => 'failed',
+                'last_error_message' => $exception->reasonCode,
+                'last_attempt_at' => now(),
+                'next_retry_at' => null,
+            ])->save();
+
+            $orchestrator->log(
+                'warning',
+                '文章审批状态已失效，分发已终止',
+                $distribution->distribution_channel_id,
+                $distribution->id,
+                $distribution->article_id,
+                [
+                    'event' => 'distribution.approval_revoked',
+                    'reason' => $exception->reasonCode,
+                ]
+            );
         } catch (Throwable $e) {
             $distribution->loadMissing(['article.task.distributionChannels']);
             $attemptCount = (int) $distribution->attempt_count;

@@ -78,6 +78,13 @@
                                         <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full {{ $typeClass }}">
                                             {{ $typeLabel }}
                                         </span>
+                                        @if ($promptType === 'skill')
+                                            <div class="mt-1 text-xs text-gray-500">
+                                                {{ $prompt['intent_key']
+                                                    ? __('admin.ai_prompts.intent.'.(string) $prompt['intent_key'])
+                                                    : __('admin.ai_prompts.intent_manual_only') }}
+                                            </div>
+                                        @endif
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                         {{ __('admin.ai_prompts.task_usage', ['count' => $prompt['task_count']]) }}
@@ -133,6 +140,17 @@
                         <p class="mt-1 text-xs text-gray-500">{{ __('admin.ai_prompts.type_help') }}</p>
                     </div>
 
+                    <div id="prompt_intent_field" class="hidden">
+                        <label for="prompt_intent_key" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_prompts.field_intent') }}</label>
+                        <select name="intent_key" id="prompt_intent_key" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500">
+                            <option value="">{{ __('admin.ai_prompts.intent_manual_only') }}</option>
+                            @foreach ($skillIntents as $intentKey)
+                                <option value="{{ $intentKey }}">{{ __('admin.ai_prompts.intent.'.$intentKey) }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">{{ __('admin.ai_prompts.intent_help') }}</p>
+                    </div>
+
                     <div>
                         <label for="prompt_content" class="block text-sm font-medium text-gray-700">{{ __('admin.ai_prompts.field_content') }}</label>
                         <textarea name="content" id="prompt_content" required rows="12"
@@ -173,13 +191,26 @@
         const deleteActionTemplate = @json(route('admin.ai-prompts.delete', ['promptId' => '__ID__']));
         const deletePromptTemplate = @json(__('admin.ai_prompts.confirm_delete', ['name' => '__NAME__']));
 
+        function syncPromptIntentField() {
+            const type = document.getElementById('prompt_type').value;
+            const field = document.getElementById('prompt_intent_field');
+            const select = document.getElementById('prompt_intent_key');
+            const isSkill = type === 'skill';
+            field.classList.toggle('hidden', !isSkill);
+            if (!isSkill) {
+                select.value = '';
+            }
+        }
+
         function showCreatePromptModal() {
             document.getElementById('promptModalTitle').textContent = createPromptTitle;
             document.getElementById('promptForm').action = createPromptAction;
             document.getElementById('promptFormMethod').value = 'POST';
             document.getElementById('prompt_name').value = '';
             document.getElementById('prompt_type').value = 'content';
+            document.getElementById('prompt_intent_key').value = '';
             document.getElementById('prompt_content').value = '';
+            syncPromptIntentField();
             document.getElementById('promptModal').classList.remove('hidden');
         }
 
@@ -189,7 +220,9 @@
             document.getElementById('promptFormMethod').value = 'PUT';
             document.getElementById('prompt_name').value = prompt.name ?? '';
             document.getElementById('prompt_type').value = prompt.type ?? 'content';
+            document.getElementById('prompt_intent_key').value = prompt.intent_key ?? '';
             document.getElementById('prompt_content').value = prompt.content ?? '';
+            syncPromptIntentField();
             document.getElementById('promptModal').classList.remove('hidden');
         }
 
@@ -214,6 +247,8 @@
         }
 
         document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('prompt_type')?.addEventListener('change', syncPromptIntentField);
+            syncPromptIntentField();
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
             }

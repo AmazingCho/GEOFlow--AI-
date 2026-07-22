@@ -4,11 +4,11 @@
 
 ## 项目根目录
 
-真实项目通常在：
+当前开发项目在：
 
-`/Users/leo/Desktop/GEOFlow`
+`/Users/leo/Documents/GEOWorkflow-optimized/GEOFlow`
 
-开始写文件前必须确认该目录存在 `artisan`、`app/`、`database/`、`resources/`。如果 shell 当前在 `/Users/leo/Documents/GEOWorkflow-optimized`，先切回真实项目根目录。
+开始写文件前必须确认该目录存在 `artisan`、`app/`、`database/`、`resources/`。截至 2026-07-22，`18080` Docker 已确认挂载本目录；仍应在每次接手时用 `docker inspect geoflow-app` 复核，避免目录切换后误判运行源码。
 
 ## 项目定位
 
@@ -33,13 +33,14 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - Tag 只描述可复用属性，分组由白名单控制，避免无限扩展。
 - 关键词库和图片库不使用库级标签；标题库可以保留库级标签。
 - 知识库不使用 `case_study` 作为资料类型，避免和 Case DB 重复。
-- Prompt Skill System v1 是 Master Prompt + 可选 Skill Prompt；创建任务页支持规则版智能推荐，但必须保留不使用和手动覆盖。
+- Prompt / Skill / Style V2.2 采用 Master + 可选 Skill + 可选 Style；创建任务页支持规则版 Skill 智能推荐，但必须保留不使用和手动覆盖。生成策略支持 `standard|deep`，默认 standard。
 
 详细边界见 [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)。
 
 ## 当前状态快照
 
 - 主线阶段 1-7 已完成核心功能。
+- Article V2.3.1 本地治理代码已通过 331 tests / 2357 assertions 和独立复审；最终一组付费 Application 门禁的两个变体都在 plan 校验阶段失败、未产出正文，真实发布结论仍是 No-Go，候选 Prompt 未 apply。
 - Collection、Entity、Case、RAG、质量评分、Prompt Skill v1、URL 智能采集增强已落地。
 - 轻量 CRM 已形成 V2 销售链：客户、多联系人、询盘、商机、活动、待办、单据、订单、售后和内容候选串联。
 - CRM 业务对象使用软删除归档；归档客户不会级联删除询盘、单据、订单和售后记录。
@@ -62,6 +63,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 - 知识库切片/向量化已完成异步队列状态增强：列表页和详情页可看到 queued/running/completed/failed，后台 Job 会写回时间与错误，失败可重试。
 - 任务回收站已完成核心功能：任务删除为软删除，已生成文章与来源任务关系保留；恢复后任务保持暂停。如需永久删除，必须先确认数据保留策略。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：已新增只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒。仍不能跳过草稿箱直接写 CRM、知识库或 Case 最终业务表。
+- 文章 V2.2 去模板化、四个可选 Style 与 standard/deep 深度生成已完成；V2.3.1 本地候选新增证据充足、有限、不足三态，有限证据强制人工审核，不足证据在策划后停止。最终付费门禁记录 4 次成功 provider 响应，但 control/candidate 都未通过修复后的 plan 校验；当前 Docker 仅用于开发验证，业务库 Prompt 未 apply，真实模型发布状态仍为 No-Go。
 - 2026-07-11 上游 `f603830` 选择性采纳主线已完成阶段 1 和阶段 3：后台登录入口重定向已修复，前台/三套主题/模板工厂/目标站点包已统一 SEO metadata。阶段 2 因本地明确禁用远端站点设置同步而跳过，阶段 4 因没有运行时 Vite 消费者而跳过。阶段 5-7 仍需用户明确指令，禁止直接 merge `upstream/main`。
 
 进度细节见 [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)。

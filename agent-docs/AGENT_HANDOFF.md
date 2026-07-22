@@ -18,10 +18,11 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + 轻�
 6. Article generation 不依赖 Entity 字段本身，而依赖 Entity 关联的知识库、案例、关键词和图片。
 7. 知识库 role 和 status 会影响 RAG 检索。
 8. 质量评分用于生成后的审核优先级判断。
-9. 任务生成提示词采用 Master Prompt + 可选 Skill Prompt 分层，Skill 只负责文章结构策略增强。
+9. 任务生成提示词采用 Master Prompt + 可选 Skill Prompt + 可选 Style Prompt 分层；Skill 只负责意图推理，Style 只负责表达。任务支持默认 `standard` 和可选 `deep` 生成，Case Study / Troubleshooting 不能绕过人工治理。
 10. AI 素材分析入口应复用公共规则，不允许用户补充提示词覆盖系统字段、语言和事实约束。
 11. CRM 是轻量销售辅助模块，不要扩展成完整 ERP；客户、询盘、报价、订单、售后工单和内容候选应复用 Collection / Entity / Knowledge / Case 体系。
 12. 模板工厂 / 站点模板复刻是独立的主题草稿与发布流程，不应直接覆盖现有主题文件；发布前必须先预览和保留回滚路径。
+13. V2.3 Grounding Governance Phases 0-4 和 V2.3.1 稀疏证据本地修复已完成：补齐结构化证据、事实/安全门禁、真实 provider 调用预算、limited 防扩写门禁、修订绑定人工审批、全写入路径重审、脱敏离线回放及 `sufficient / limited / insufficient` 策略。331 tests / 2357 assertions 通过，独立复审无剩余 P0/P1。当前本地 Docker 已挂载优化源码用于开发验证，但候选 Prompt 尚未 apply 到业务库，也没有生产发布批准。2026-07-21 的 24 篇真实模型盲审与后续 Application 复测仍是 `No-Go` 基线。
 
 详细规则见 [ARCHITECTURE_RULES.md](./ARCHITECTURE_RULES.md)。
 
@@ -59,10 +60,12 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + 轻�
 - 新增 Entity 与知识库、关键词、图片、Case 的关联能力。
 - 新增知识库 type、role、status、importance、summary、source URL 等治理字段。
 - 新增受控标签分组白名单，支持在标签管理页维护。
+- Article V2.3 Grounding Governance Phases 0-4 已完成：结构化 evidence package、claim marker 校验与剥离、确定性 grounding/safety gate、覆盖所有发布/分发入口的 publication guard、仅限 Master/Application/Case Study/Comparison 的 V2.3 最小提示词修正，以及 5 个测试/47 个断言的零成本脱敏离线回放。实施报告见 [ARTICLE_V23_GROUNDING_GOVERNANCE_IMPLEMENTATION_REPORT.md](./ARTICLE_V23_GROUNDING_GOVERNANCE_IMPLEMENTATION_REPORT.md)。
 - 创建任务页改为 Collection 必选，Entity / Case 多选。
 - 创建任务页受控标签筛选改为 accordion，作为可选高级筛选。
 - 关键词库和图片库移除库级标签，只保留标题库库级标签。
 - 文章提示词配置页支持 `content` Master Prompt 与 `skill` Skill Prompt，任务创建页可选 Skill Prompt。
+- V2.2 真实评估已完成 24 篇固定对照：Style 整体可辨认，但 Case Study、Comparison、Application 和 Troubleshooting 暴露闭集事实、结构或安全问题，正式发布维持 No-Go。评估草稿为文章 ID 81-104，仅供人工复核。
 - Knowledge / Entity / Case 的 AI 自动分析已统一使用公共提示词规则，并支持“补充分析要求”折叠输入区。
 - URL 智能采集创建任务时可选择 AI 分析模型；默认自动选择，指定模型优先执行并保留 failover。
 - URL 智能采集生成 Entity 时已修复非中文页面混入中文描述模板的问题。
@@ -104,6 +107,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + 轻�
 - 知识库重复与冲突检测已完成报告和 proposal 闭环；重复项归档需要确认文本，应用后只改 `inactive` 并可回滚；自动合并正文和冲突优先级仲裁仍未开放。
 - 旧文章可能没有完整生成 trace，因此文章编辑页不一定显示生成来源。
 - Skill Prompt 标题意图智能推荐已实现规则版；尚未接入 AI Intent Classification，人工覆盖入口必须保留。
+- V2.3.1 稀疏证据本地修复已完成，但最终一组 Application control/candidate 付费门禁仍为 No-Go：两边都在 plan 修复后违反结构协议，没有文章正文。下一步先零成本修正 `article_angle` 事实承载和 open-question 协议，再申请新的独立付费门禁；12 篇定向对照、24 篇盲审和 Style matrix 继续冻结，候选 Prompt 不得 apply 或进入生产发布。
 - URL 采集和手动 AI 分析仍依赖模型返回质量；表格保真规则已增强，但复杂表格仍建议人工复核。
 - 不同素材自动 tag 推荐已移除，若后续重新加入，应先确认不会增加误标签和无效标签。
 - CRM 已实现订单、售后工单、跟进记录多端时间线和单据 PDF 下载；单据审批和邮件发送尚未实现。

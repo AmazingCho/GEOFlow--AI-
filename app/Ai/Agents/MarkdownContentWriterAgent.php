@@ -2,13 +2,13 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Agents\Concerns\ConfiguresMaxOutputTokens;
 use App\Jobs\ProcessGeoFlowTaskJob;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasTools;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 
 /**
@@ -21,6 +21,7 @@ use Laravel\Ai\Promptable;
 #[Timeout(240)]
 class MarkdownContentWriterAgent implements Agent, Conversational, HasProviderOptions, HasTools
 {
+    use ConfiguresMaxOutputTokens;
     use Promptable;
 
     /**
@@ -28,7 +29,7 @@ class MarkdownContentWriterAgent implements Agent, Conversational, HasProviderOp
      * @param  iterable<int, mixed>  $tools
      */
     public function __construct(
-        public string $instructions = '你是专业中文写作助手，请输出高质量、可发布的 Markdown 文章。',
+        public string $instructions = 'You are the Markdown drafting stage of an article workflow. Follow the requested target language and return only the complete article body.',
         public iterable $messages = [],
         public iterable $tools = [],
         public ?int $maxTokens = null,
@@ -56,25 +57,5 @@ class MarkdownContentWriterAgent implements Agent, Conversational, HasProviderOp
     public function tools(): iterable
     {
         return $this->tools;
-    }
-
-    /**
-     * {@inheritdoc}
-     *
-     * @return array<string, mixed>
-     */
-    public function providerOptions(Lab|string $provider): array
-    {
-        if ($this->maxTokens === null || $this->maxTokens <= 0) {
-            return [];
-        }
-
-        $providerKey = $provider instanceof Lab ? $provider->value : $provider;
-
-        return match ($providerKey) {
-            'gemini' => ['maxOutputTokens' => $this->maxTokens],
-            'openai' => ['max_output_tokens' => $this->maxTokens],
-            default => ['max_tokens' => $this->maxTokens],
-        };
     }
 }

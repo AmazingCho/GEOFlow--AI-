@@ -68,7 +68,8 @@
 
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
 - [写作风格 Style Prompt 轻量版使用说明](../功能说明文档/13-写作风格StylePrompt轻量版使用说明.md)
-- [Prompt Skill System v1](./PROMPT_SKILL_SYSTEM.md)
+- [Prompt / Skill / Style System V2.2](./PROMPT_SKILL_SYSTEM.md)
+- [V2.2 去模板化与深度生成实施报告](./ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md)
 
 适合理解：
 
@@ -78,6 +79,7 @@
 - 图片配置中“不指定图库”和“不配图”的区别。
 - Master Prompt 与可选 Skill Prompt 的职责边界。
 - Style Prompt 的职责边界：只控制写作风格，不做 URL 抓取、自动识别或作者仿写。
+- 标准生成与深度生成的成本、审核和失败处理差异。
 
 ## 文章质量
 

@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\ArticleSkillIntents;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -32,6 +34,7 @@ class AiPromptController extends Controller
             'activeMenu' => 'ai_config',
             'adminSiteName' => AdminWeb::siteName(),
             'prompts' => $this->loadPrompts(),
+            'skillIntents' => ArticleSkillIntents::all(),
         ]);
     }
 
@@ -40,16 +43,22 @@ class AiPromptController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'type' => ['required', 'string', Rule::in(self::ARTICLE_PROMPT_TYPES)],
+            'intent_key' => ['nullable', 'string', Rule::in(ArticleSkillIntents::all())],
             'content' => ['required', 'string'],
         ], [
             'name.required' => __('admin.ai_prompts.error.required'),
             'type.required' => __('admin.ai_prompts.error.required'),
             'content.required' => __('admin.ai_prompts.error.required'),
         ]);
+        $intentKey = (string) $payload['type'] === 'skill'
+            ? ArticleSkillIntents::normalize($payload['intent_key'] ?? null)
+            : null;
+        $this->assertIntentAvailable($intentKey);
 
         Prompt::query()->create([
             'name' => trim((string) $payload['name']),
             'type' => (string) $payload['type'],
+            'intent_key' => $intentKey,
             'content' => trim((string) $payload['content']),
             'variables' => '',
         ]);
@@ -67,6 +76,7 @@ class AiPromptController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'type' => ['required', 'string', Rule::in(self::ARTICLE_PROMPT_TYPES)],
+            'intent_key' => ['nullable', 'string', Rule::in(ArticleSkillIntents::all())],
             'content' => ['required', 'string'],
         ], [
             'name.required' => __('admin.ai_prompts.error.invalid_fields'),
@@ -78,10 +88,15 @@ class AiPromptController extends Controller
         if ($nextType !== (string) $prompt->type && $this->promptUsageCount($promptId) > 0) {
             return back()->withErrors(__('admin.ai_prompts.error.type_change_in_use'));
         }
+        $intentKey = $nextType === 'skill'
+            ? ArticleSkillIntents::normalize($payload['intent_key'] ?? null)
+            : null;
+        $this->assertIntentAvailable($intentKey, $promptId);
 
         $prompt->update([
             'name' => trim((string) $payload['name']),
             'type' => $nextType,
+            'intent_key' => $intentKey,
             'content' => trim((string) $payload['content']),
         ]);
 
@@ -118,7 +133,7 @@ class AiPromptController extends Controller
     private function loadPrompts(): array
     {
         return Prompt::query()
-            ->select(['id', 'name', 'type', 'content', 'created_at'])
+            ->select(['id', 'name', 'type', 'intent_key', 'content', 'created_at'])
             ->whereIn('type', self::ARTICLE_PROMPT_TYPES)
             ->withCount('tasks')
             ->withCount('skillTasks')
@@ -130,6 +145,7 @@ class AiPromptController extends Controller
                     'id' => (int) $prompt->id,
                     'name' => (string) $prompt->name,
                     'type' => (string) $prompt->type,
+                    'intent_key' => ArticleSkillIntents::normalize($prompt->intent_key),
                     'content' => (string) $prompt->content,
                     'task_count' => (int) ($prompt->tasks_count ?? 0)
                         + (int) ($prompt->skill_tasks_count ?? 0)
@@ -151,5 +167,25 @@ class AiPromptController extends Controller
         }
 
         return (int) $query->count();
+    }
+
+    private function assertIntentAvailable(?string $intentKey, ?int $ignorePromptId = null): void
+    {
+        if ($intentKey === null) {
+            return;
+        }
+
+        $query = Prompt::query()
+            ->where('type', 'skill')
+            ->where('intent_key', $intentKey);
+        if ($ignorePromptId !== null) {
+            $query->whereKeyNot($ignorePromptId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'intent_key' => __('admin.ai_prompts.error.intent_in_use'),
+            ]);
+        }
     }
 }

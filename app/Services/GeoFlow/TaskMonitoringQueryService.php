@@ -5,6 +5,8 @@ namespace App\Services\GeoFlow;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\WorkerHeartbeat;
+use App\Support\GeoFlow\ArticleGenerationModes;
+use App\Support\GeoFlow\SkillSelectionModes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +20,8 @@ use Illuminate\Support\Facades\DB;
 class TaskMonitoringQueryService
 {
     public function __construct(
-        private readonly HorizonMetricsAdapter $horizonMetrics
+        private readonly HorizonMetricsAdapter $horizonMetrics,
+        private readonly ArticleGenerationTraceSanitizer $articleGenerationTraceSanitizer
     ) {}
 
     /**
@@ -238,7 +241,13 @@ class TaskMonitoringQueryService
             // running > pending > paused(idle) > failed/cancelled > waiting。
             $batchStatus = $this->resolveBatchStatus($task, $runs, $latestRun, $articles);
             // 错误信息优先取最近 run 的 error_message，其次退回 tasks.last_error_message。
-            $batchErrorMessage = (string) ($latestRun?->error_message ?: ($task->last_error_message ?? ''));
+            $batchErrorMessage = trim((string) ($latestRun?->error_message ?: ($task->last_error_message ?? '')));
+            $batchErrorMessage = $batchErrorMessage === ''
+                ? ''
+                : $this->articleGenerationTraceSanitizer->sanitizeErrorMessage($batchErrorMessage);
+            $latestRunMeta = $this->articleGenerationTraceSanitizer->sanitizeTaskRunMeta(
+                is_array($latestRun?->meta) ? $latestRun->meta : []
+            );
 
             return [
                 'id' => $taskId,
@@ -255,6 +264,7 @@ class TaskMonitoringQueryService
                 'title_library_id' => $this->nullableInt($task->title_library_id),
                 'prompt_id' => $this->nullableInt($task->prompt_id),
                 'skill_prompt_id' => $this->nullableInt($task->skill_prompt_id),
+                'skill_selection_mode' => (string) ($task->skill_selection_mode ?? SkillSelectionModes::fromLegacySkillId($task->skill_prompt_id)),
                 'style_prompt_id' => $this->nullableInt($task->style_prompt_id),
                 'ai_model_id' => $this->nullableInt($task->ai_model_id),
                 'knowledge_base_id' => $this->nullableInt($task->knowledge_base_id),
@@ -276,6 +286,7 @@ class TaskMonitoringQueryService
                 'title_library_name' => (string) ($titleNames[(int) ($task->title_library_id ?? 0)] ?? ''),
                 'ai_model_name' => (string) ($modelNames[(int) ($task->ai_model_id ?? 0)] ?? ''),
                 'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
+                'generation_mode' => (string) ($task->generation_mode ?? ArticleGenerationModes::STANDARD),
                 'created_at' => $task->created_at?->toDateTimeString(),
                 'updated_at' => $task->updated_at?->toDateTimeString(),
                 'deleted_at' => $task->deleted_at?->toDateTimeString(),
@@ -286,7 +297,8 @@ class TaskMonitoringQueryService
                 'draft_limit' => (int) ($task->draft_limit ?? 10),
                 'publish_interval' => (int) ($task->publish_interval ?? 3600),
                 'batch_status' => $batchStatus,
-                'batch_error_message' => trim($batchErrorMessage),
+                'batch_error_message' => $batchErrorMessage,
+                'batch_terminal_reason' => (string) ($latestRunMeta['terminal_reason'] ?? ''),
                 'batch_last_run' => $task->last_run_at?->toDateTimeString(),
                 'last_error_at' => $task->last_error_at?->toDateTimeString(),
                 'next_run_at' => $task->next_run_at?->toDateTimeString(),
@@ -314,7 +326,7 @@ class TaskMonitoringQueryService
                     'article_limit' => (int) ($task->article_limit ?? $task->draft_limit ?? 10),
                     'draft_limit' => (int) ($task->draft_limit ?? 10),
                     'last_run_at' => $task->last_run_at?->toDateTimeString(),
-                    'last_error_message' => trim((string) ($task->last_error_message ?? '')),
+                    'last_error_message' => $batchErrorMessage,
                 ],
                 // 新契约字段：任务级队列视图（来自 task_runs 聚合，不是全局 Redis 队列长度）。
                 'queue_overview' => [
@@ -411,11 +423,13 @@ class TaskMonitoringQueryService
             ->orderByDesc('id')
             ->limit(5)
             ->get()
-            ->map(static fn (TaskRun $row): array => [
+            ->map(fn (TaskRun $row): array => [
                 'id' => (int) $row->id,
                 'task_id' => (int) $row->task_id,
                 'status' => (string) $row->status,
-                'error_message' => (string) ($row->error_message ?? ''),
+                'error_message' => trim((string) ($row->error_message ?? '')) === ''
+                    ? ''
+                    : $this->articleGenerationTraceSanitizer->sanitizeErrorMessage((string) $row->error_message),
                 'updated_at' => $row->created_at?->toDateTimeString(),
                 'task_name' => (string) ($row->task?->name ?? ''),
             ])

@@ -12,9 +12,23 @@ class Prompt extends Model
     protected $fillable = [
         'name',
         'type',
+        'intent_key',
         'content',
         'variables',
+        'preset_key',
+        'preset_version',
+        'last_synced_hash',
+        'is_system',
+        'is_enabled',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_system' => 'boolean',
+            'is_enabled' => 'boolean',
+        ];
+    }
 
     public function titleLibraries(): HasMany
     {

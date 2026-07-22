@@ -17,6 +17,7 @@ use App\Models\TaskRun;
 use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
+use App\Services\GeoFlow\ArticleGenerationTraceSanitizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,10 @@ use Illuminate\Support\Facades\Schema;
 
 class AnalyticsOverviewService
 {
+    public function __construct(
+        private readonly ArticleGenerationTraceSanitizer $articleGenerationTraceSanitizer
+    ) {}
+
     /**
      * @return array<string, int|float>
      */
@@ -336,6 +341,13 @@ class AnalyticsOverviewService
             ->select('tr.id', 'tr.error_message', 'tr.created_at', 't.name as task_name')
             ->limit(4)
             ->get()
+            ->map(function (object $failure): object {
+                $failure->error_message = $this->articleGenerationTraceSanitizer->sanitizeErrorMessage(
+                    (string) ($failure->error_message ?? '')
+                );
+
+                return $failure;
+            })
             ->all();
 
         return [

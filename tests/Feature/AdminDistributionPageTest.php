@@ -1239,7 +1239,7 @@ class AdminDistributionPageTest extends TestCase
 
         $frontController = (string) $zip->getFromName('public/index.php');
         $this->assertStringContainsString('function frontVersionedAssetPath', $frontController);
-        $this->assertStringNotContainsString("foreach (array_slice(siteCategories(\$config), 0, 7)", $frontController);
+        $this->assertStringNotContainsString('foreach (array_slice(siteCategories($config), 0, 7)', $frontController);
         $this->assertStringNotContainsString("frontSitePath(\$config, '/')\">'.h((string) \$category['name'])", $frontController);
 
         $zip->close();
@@ -2010,7 +2010,7 @@ MD,
         $this->assertSame('file_too_large', $image['skip_reason'] ?? null);
     }
 
-    public function test_admin_can_edit_remote_article_and_write_back_local_article(): void
+    public function test_distribution_content_edit_saves_local_pending_draft_without_overwriting_remote_article(): void
     {
         Http::fake([
             'https://example.com/geoflow-agent/v1/articles/remote-edit-article/update' => Http::response([
@@ -2077,17 +2077,18 @@ MD,
         $this->assertSame('远端新标题', (string) $article->title);
         $this->assertSame("## 新正文\n\n已修正。", (string) $article->content);
         $this->assertSame('geo,分发', (string) $article->keywords);
+        $this->assertSame('draft', (string) $article->status);
+        $this->assertSame('pending', (string) $article->review_status);
+        $this->assertNull($article->published_at);
 
         $this->assertDatabaseHas('article_distributions', [
             'id' => (int) $distribution->id,
-            'action' => 'update',
+            'action' => 'publish',
             'status' => 'synced',
             'remote_url' => 'https://example.com/article/remote-edit-article/',
         ]);
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow-agent/v1/articles/remote-edit-article/update'
-            && $request->hasHeader('X-GEOFlow-Event', 'article.update')
-            && $request['article']['title'] === '远端新标题'
-            && str_contains((string) $request['article']['content_html'], '<h2>新正文</h2>'));
+        Http::assertNotSent(fn ($request): bool => $request->url() === 'https://example.com/geoflow-agent/v1/articles/remote-edit-article/update'
+            && $request->hasHeader('X-GEOFlow-Event', 'article.update'));
     }
 
     public function test_admin_can_delete_remote_article_copy_and_refresh_target_site(): void

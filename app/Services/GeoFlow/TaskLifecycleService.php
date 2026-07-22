@@ -4,7 +4,6 @@ namespace App\Services\GeoFlow;
 
 use App\Exceptions\ApiException;
 use App\Models\AiModel;
-use App\Models\Article;
 use App\Models\Author;
 use App\Models\CaseRecord;
 use App\Models\Category;
@@ -17,6 +16,8 @@ use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\TaskSchedule;
 use App\Models\TitleLibrary;
+use App\Support\GeoFlow\ArticleGenerationModes;
+use App\Support\GeoFlow\SkillSelectionModes;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -43,7 +44,8 @@ class TaskLifecycleService
     public function __construct(
         private JobQueueService $queueService,
         private TaskMonitoringQueryService $taskMonitoringQueryService,
-        private TaskRealtimeBroadcastService $taskRealtimeBroadcastService
+        private TaskRealtimeBroadcastService $taskRealtimeBroadcastService,
+        private ArticleGenerationTraceSanitizer $articleGenerationTraceSanitizer
     ) {}
 
     /**
@@ -90,6 +92,7 @@ class TaskLifecycleService
                 'image_tag_filter' => $normalized['image_tag_filter'],
                 'prompt_id' => $normalized['prompt_id'],
                 'skill_prompt_id' => $normalized['skill_prompt_id'],
+                'skill_selection_mode' => $normalized['skill_selection_mode'],
                 'style_prompt_id' => $normalized['style_prompt_id'],
                 'ai_model_id' => $normalized['ai_model_id'],
                 'need_review' => $normalized['need_review'],
@@ -101,6 +104,7 @@ class TaskLifecycleService
                 'article_limit' => $normalized['article_limit'],
                 'is_loop' => $normalized['is_loop'],
                 'model_selection_mode' => $normalized['model_selection_mode'],
+                'generation_mode' => $normalized['generation_mode'],
                 'status' => $normalized['status'],
                 'publish_scope' => $normalized['publish_scope'],
                 'distribution_strategy' => $normalized['distribution_strategy'],
@@ -308,8 +312,10 @@ class TaskLifecycleService
             // 手动“立即执行”场景下，不把 next_run_at 强行置为 now，
             // 避免与手动入队叠加导致一次点击触发两次执行。
             $this->activateTask($taskId, ! $enqueueNow);
+            DB::commit();
             $jobId = null;
             if ($enqueueNow) {
+                // 先提交任务激活状态，再创建并派发 TaskRun，避免 worker 在外层事务提交前抢到记录。
                 $jobId = $this->queueService->enqueueTaskJob($taskId, 'generate_article', ['source' => 'api_manual_start']);
                 if ($jobId !== null) {
                     Task::query()->whereKey($taskId)->update([
@@ -318,7 +324,6 @@ class TaskLifecycleService
                     ]);
                 }
             }
-            DB::commit();
             $task = $this->getTask($taskId);
             if ($jobId !== null) {
                 $task['started_job_id'] = $jobId;
@@ -425,7 +430,15 @@ class TaskLifecycleService
             $q->where('status', $status);
         }
 
-        return ['items' => $q->get()->map(fn (TaskRun $run) => $run->getAttributes())->all()];
+        return ['items' => $q->get()->map(function (TaskRun $run): array {
+            $attributes = $run->getAttributes();
+            $attributes['meta'] = $this->articleGenerationTraceSanitizer->sanitizeSerializedMeta($attributes['meta'] ?? null);
+            $attributes['error_message'] = trim((string) ($attributes['error_message'] ?? '')) === ''
+                ? ''
+                : $this->articleGenerationTraceSanitizer->sanitizeErrorMessage((string) $attributes['error_message']);
+
+            return $attributes;
+        })->all()];
     }
 
     /**
@@ -443,8 +456,12 @@ class TaskLifecycleService
         if (! $run) {
             throw new ApiException('job_not_found', 'Job 不存在', 404);
         }
-        $meta = is_array($run->meta) ? $run->meta : [];
+        $meta = $this->articleGenerationTraceSanitizer->sanitizeTaskRunMeta(is_array($run->meta) ? $run->meta : []);
         $payload = is_array($meta['payload'] ?? null) ? $meta['payload'] : [];
+
+        $safeError = trim((string) ($run->error_message ?? '')) === ''
+            ? ''
+            : $this->articleGenerationTraceSanitizer->sanitizeErrorMessage((string) $run->error_message);
 
         return [
             'id' => (int) $run->id,
@@ -456,13 +473,13 @@ class TaskLifecycleService
             'worker_id' => is_string($meta['worker_id'] ?? null) ? $meta['worker_id'] : null,
             'claimed_at' => $run->started_at?->format('Y-m-d H:i:s'),
             'finished_at' => $run->finished_at?->format('Y-m-d H:i:s'),
-            'error_message' => $run->error_message ?? '',
+            'error_message' => $safeError,
             'payload' => $payload,
             'task_run_summary' => [
                 'article_id' => $run->article_id !== null ? (int) $run->article_id : null,
                 'duration_ms' => (int) ($run->duration_ms ?? 0),
                 'status' => $run->status ?? null,
-                'error_message' => $run->error_message ?? '',
+                'error_message' => $safeError,
                 'meta' => $meta,
             ],
         ];
@@ -561,6 +578,24 @@ class TaskLifecycleService
             }
         }
 
+        if (array_key_exists('skill_selection_mode', $data)) {
+            $skillSelectionMode = SkillSelectionModes::normalize($data['skill_selection_mode']);
+            if ($skillSelectionMode === null) {
+                $fieldErrors['skill_selection_mode'] = 'Skill 选择模式无效';
+            } else {
+                $output['skill_selection_mode'] = $skillSelectionMode;
+                if ($skillSelectionMode !== SkillSelectionModes::MANUAL) {
+                    $output['skill_prompt_id'] = null;
+                } elseif (empty($output['skill_prompt_id'])) {
+                    $fieldErrors['skill_prompt_id'] = '手动模式必须选择 Skill Prompt';
+                }
+            }
+        } elseif (array_key_exists('skill_prompt_id', $data)) {
+            $output['skill_selection_mode'] = SkillSelectionModes::fromLegacySkillId($output['skill_prompt_id'] ?? null);
+        } elseif (! $isUpdate) {
+            $output['skill_selection_mode'] = SkillSelectionModes::NONE;
+        }
+
         $flagFields = ['need_review', 'auto_keywords', 'auto_description', 'is_loop'];
         foreach ($flagFields as $field) {
             if (array_key_exists($field, $data)) {
@@ -618,6 +653,17 @@ class TaskLifecycleService
             }
         } elseif (! $isUpdate) {
             $output['model_selection_mode'] = 'fixed';
+        }
+
+        if (array_key_exists('generation_mode', $data)) {
+            $generationMode = ArticleGenerationModes::normalize($data['generation_mode']);
+            if ($generationMode === null) {
+                $fieldErrors['generation_mode'] = '生成模式无效';
+            } else {
+                $output['generation_mode'] = $generationMode;
+            }
+        } elseif (! $isUpdate) {
+            $output['generation_mode'] = ArticleGenerationModes::STANDARD;
         }
 
         if (array_key_exists('status', $data)) {
@@ -769,14 +815,26 @@ class TaskLifecycleService
             'updated_at' => now(),
         ]);
 
-        return TaskRun::query()
+        $pendingRuns = TaskRun::query()
             ->where('task_id', $taskId)
             ->where('status', 'pending')
-            ->update([
+            ->lockForUpdate()
+            ->get(['id', 'meta']);
+
+        foreach ($pendingRuns as $run) {
+            $meta = $this->articleGenerationTraceSanitizer->sanitizeTaskRunMeta(
+                is_array($run->meta) ? $run->meta : []
+            );
+            $meta['dispatch_state'] = 'cancelled';
+            TaskRun::query()->whereKey((int) $run->id)->where('status', 'pending')->update([
                 'status' => 'cancelled',
                 'finished_at' => now(),
                 'error_message' => $reason,
+                'meta' => $this->articleGenerationTraceSanitizer->sanitizeTaskRunMeta($meta),
             ]);
+        }
+
+        return $pendingRuns->count();
     }
 
     /**

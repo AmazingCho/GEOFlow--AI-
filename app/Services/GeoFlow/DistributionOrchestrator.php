@@ -16,7 +16,8 @@ class DistributionOrchestrator
     public function __construct(
         private readonly DistributionPayloadBuilder $payloadBuilder,
         private readonly DistributionPublisherManager $publisherManager,
-        private readonly TaskDistributionChannelSelector $channelSelector
+        private readonly TaskDistributionChannelSelector $channelSelector,
+        private readonly ArticlePublicationGuard $articlePublicationGuard
     ) {}
 
     /**
@@ -73,6 +74,7 @@ class DistributionOrchestrator
             if (! $canDistribute) {
                 return;
             }
+            $this->articlePublicationGuard->assertCanPublish($articleModel);
 
             $channels = $articleModel->task?->distributionChannels
                 ?->where('status', 'active') ?? new Collection;
@@ -132,6 +134,7 @@ class DistributionOrchestrator
         if (! $articleModel || $channelIds === []) {
             return 0;
         }
+        $this->articlePublicationGuard->assertCanPublish($articleModel);
 
         $channels = DistributionChannel::query()
             ->whereIn('id', $channelIds)
@@ -183,8 +186,9 @@ class DistributionOrchestrator
 
     public function process(ArticleDistribution $distribution): void
     {
-        $distribution->loadMissing(['article', 'channel']);
-        $article = $distribution->article;
+        $distribution->loadMissing('channel');
+        $action = (string) $distribution->action;
+        $article = $this->freshArticleForAction((int) $distribution->article_id, $action);
         $channel = $distribution->channel;
         if (! $article || ! $channel) {
             throw new \RuntimeException('分发记录缺少文章或渠道');
@@ -197,13 +201,20 @@ class DistributionOrchestrator
             'last_error_message' => null,
         ])->save();
 
-        $payload = $this->payloadBuilder->build($article);
-        if ((string) $distribution->action === 'update') {
+        $publisher = $this->publisherManager->forChannel($channel);
+        $article = $this->freshArticleForAction((int) $distribution->article_id, $action);
+        if (! $article) {
+            throw new \RuntimeException('分发记录缺少文章或渠道');
+        }
+        if ($action !== 'delete') {
+            $this->articlePublicationGuard->assertCanPublish($article);
+        }
+        $payload = $action === 'delete' ? [] : $this->payloadBuilder->build($article);
+        if ($action === 'update') {
             $payload['event'] = 'article.update';
         }
 
-        $publisher = $this->publisherManager->forChannel($channel);
-        $response = match ((string) $distribution->action) {
+        $response = match ($action) {
             'update' => $publisher->update($distribution, $payload),
             'delete' => $publisher->delete($distribution),
             default => $publisher->publish($distribution, $payload),
@@ -238,7 +249,7 @@ class DistributionOrchestrator
         $count = 0;
 
         ArticleDistribution::query()
-            ->with('article:id,status')
+            ->with('article:id,status,review_status,context_snapshot')
             ->where('distribution_channel_id', (int) $channel->id)
             ->where('action', '!=', 'delete')
             ->whereHas('article', function ($query): void {
@@ -248,6 +259,11 @@ class DistributionOrchestrator
             ->chunkById(100, function ($distributions) use (&$count, $channel): void {
                 foreach ($distributions as $distribution) {
                     if (! $distribution instanceof ArticleDistribution || ! $distribution->article) {
+                        continue;
+                    }
+                    try {
+                        $this->articlePublicationGuard->assertCanPublish($distribution->article);
+                    } catch (ArticlePublicationBlockedException) {
                         continue;
                     }
 
@@ -305,20 +321,12 @@ class DistributionOrchestrator
 
     private function sendImmediateAction(ArticleDistribution $distribution, string $action): void
     {
-        $distribution->loadMissing(['article', 'channel']);
-        $article = $distribution->article;
+        $distribution->loadMissing('channel');
+        $article = $this->freshArticleForAction((int) $distribution->article_id, $action);
         $channel = $distribution->channel;
         if (! $article || ! $channel) {
             throw new \RuntimeException('分发记录缺少文章或渠道');
         }
-
-        $payload = $action === 'delete' ? [] : $this->payloadBuilder->build($article);
-        if ($action === 'update') {
-            $payload['event'] = 'article.update';
-        }
-        $payloadHash = $action === 'delete'
-            ? null
-            : hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
 
         $distribution->forceFill([
             'action' => $action,
@@ -326,11 +334,26 @@ class DistributionOrchestrator
             'attempt_count' => (int) $distribution->attempt_count + 1,
             'last_attempt_at' => now(),
             'last_error_message' => null,
-            'payload_hash' => $payloadHash,
             'idempotency_key' => $this->idempotencyKey((int) $article->id, (int) $channel->id, $action),
         ])->save();
 
         $publisher = $this->publisherManager->forChannel($channel);
+        $article = $this->freshArticleForAction((int) $distribution->article_id, $action);
+        if (! $article) {
+            throw new \RuntimeException('分发记录缺少文章或渠道');
+        }
+        if ($action !== 'delete') {
+            $this->articlePublicationGuard->assertCanPublish($article);
+        }
+        $payload = $action === 'delete' ? [] : $this->payloadBuilder->build($article);
+        if ($action === 'update') {
+            $payload['event'] = 'article.update';
+        }
+        $payloadHash = $action === 'delete'
+            ? null
+            : hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+        $distribution->forceFill(['payload_hash' => $payloadHash])->save();
+
         $response = $action === 'delete'
             ? $publisher->delete($distribution)
             : $publisher->update($distribution, $payload);
@@ -355,5 +378,12 @@ class DistributionOrchestrator
             (int) $article->id,
             ['event' => 'article.'.$action, 'remote_result' => $response]
         );
+    }
+
+    private function freshArticleForAction(int $articleId, string $action): ?Article
+    {
+        return $action === 'delete'
+            ? Article::withTrashed()->whereKey($articleId)->first()
+            : Article::query()->whereKey($articleId)->first();
     }
 }

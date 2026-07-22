@@ -5,7 +5,6 @@ namespace App\Services\GeoFlow;
 use App\Models\CaseRecord;
 use App\Models\EntityRecord;
 use App\Models\KnowledgeBase;
-use App\Models\KnowledgeChunk;
 use App\Models\Task;
 use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
@@ -16,11 +15,12 @@ class RagRetrievalService
 {
     public function __construct(
         private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
-        private readonly TagService $tagService
+        private readonly TagService $tagService,
+        private readonly ArticleEvidencePackage $articleEvidencePackage
     ) {}
 
     /**
-     * @return array{context:string,trace:array<string,mixed>}
+     * @return array{context:string,generation_context:string,trace:array<string,mixed>,evidence_package:list<array<string,mixed>>}
      */
     public function retrieveForTask(Task $task, string $title, string $keyword, int $knowledgeMaxChars = 3200, int $entityCaseMaxChars = 2200): array
     {
@@ -33,27 +33,35 @@ class RagRetrievalService
         $knowledgeBaseIds = $this->resolveKnowledgeBaseIds($task, $tagFilters, $entityFilterIds, $caseFilterIds, $retrievalCollectionId);
         $query = trim($title."\n".$keyword);
         $knowledgeContext = '';
+        $generationKnowledgeContext = '';
         $strategy = 'none';
         $chunks = [];
+        $knowledgeEvidence = [];
         $knowledgeBaseTrace = [];
 
         if ($knowledgeBaseIds !== []) {
             $knowledgeBases = KnowledgeBase::query()
                 ->whereIn('id', $knowledgeBaseIds)
+                ->where(fn ($query) => $this->excludeArchivedKnowledge($query))
                 ->orderBy('id')
-                ->get(['id', 'name', 'content', 'knowledge_type', 'knowledge_role', 'importance'])
+                ->get(['id', 'name', 'content', 'knowledge_type', 'knowledge_role', 'importance', 'status'])
                 ->sortBy(static fn (KnowledgeBase $knowledgeBase): int => array_search((int) $knowledgeBase->id, $knowledgeBaseIds, true) ?: 0)
                 ->values()
                 ->filter(static fn (KnowledgeBase $knowledgeBase): bool => trim((string) ($knowledgeBase->content ?? '')) !== '')
                 ->values();
+            $knowledgeBaseIds = $knowledgeBases
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->values()
+                ->all();
 
             $knowledgeBaseTrace = $knowledgeBases
                 ->map(fn (KnowledgeBase $knowledgeBase): array => [
                     'id' => (int) $knowledgeBase->id,
-                    'name' => (string) $knowledgeBase->name,
                     'knowledge_type' => $this->normalizeKnowledgeType((string) ($knowledgeBase->knowledge_type ?? '')),
                     'knowledge_role' => $this->normalizeKnowledgeRole((string) ($knowledgeBase->knowledge_role ?? '')),
                     'importance' => $this->normalizeImportance($knowledgeBase->importance ?? null),
+                    'status' => (string) ($knowledgeBase->status ?? ''),
                 ])
                 ->values()
                 ->all();
@@ -66,11 +74,16 @@ class RagRetrievalService
                     $knowledgeMaxChars
                 );
                 $knowledgeContext = $chunkResult['context'];
+                $generationKnowledgeContext = $chunkResult['generation_context'];
                 $chunks = $chunkResult['chunks'];
+                $knowledgeEvidence = $chunkResult['evidence_package'];
                 $strategy = $chunkResult['strategy'];
 
                 if ($knowledgeContext === '') {
-                    $knowledgeContext = $this->composeFallbackKnowledgeContent($knowledgeBases->all(), $knowledgeMaxChars);
+                    $fallbackResult = $this->composeFallbackKnowledgeContent($knowledgeBases->all(), $knowledgeMaxChars);
+                    $knowledgeContext = $fallbackResult['context'];
+                    $generationKnowledgeContext = $fallbackResult['generation_context'];
+                    $knowledgeEvidence = $fallbackResult['evidence_package'];
                     $strategy = $knowledgeContext !== '' ? 'fallback_content' : 'none';
                 }
             }
@@ -81,6 +94,11 @@ class RagRetrievalService
             [$knowledgeContext, $entityCase['context']],
             static fn (string $part): bool => trim($part) !== ''
         )));
+        $evidencePackage = array_values(array_merge($knowledgeEvidence, $entityCase['evidence_package']));
+        $generationContext = $this->articleEvidencePackage->ids($evidencePackage) === []
+            ? ''
+            : $this->articleEvidencePackage->generationContext($evidencePackage);
+        $evidenceAudit = $this->articleEvidencePackage->audit($evidencePackage);
         $contextPackage = $this->buildContextPackage(
             $collectionId,
             $crossCollectionMode,
@@ -92,13 +110,16 @@ class RagRetrievalService
             $chunks,
             $entityCase,
             $strategy,
-            $context
+            $context,
+            $evidenceAudit
         );
 
         return [
             'context' => $context,
+            'generation_context' => $generationContext,
+            'evidence_package' => $evidencePackage,
             'trace' => [
-                'query' => $query,
+                'query_sha256' => hash('sha256', $query),
                 'collection_id' => $collectionId,
                 'cross_collection_mode' => $crossCollectionMode,
                 'tag_filters' => $this->tagFilterLabels($tagFilters),
@@ -111,9 +132,11 @@ class RagRetrievalService
                 'cases' => $entityCase['cases'],
                 'strategy' => $strategy,
                 'evidence_summary' => $this->evidenceSummary($chunks),
+                'evidence_audit' => $evidenceAudit,
                 'context_package' => $contextPackage,
                 'retrieval_engine' => 'rag_retrieval_service',
                 'context_length' => mb_strlen($context, 'UTF-8'),
+                'generation_context_length' => mb_strlen($generationContext, 'UTF-8'),
             ],
         ];
     }
@@ -326,14 +349,14 @@ class RagRetrievalService
 
     /**
      * @param  list<array{group_name:string,name:string}>  $tagFilters
-     * @return array{context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}
+     * @return array{context:string,generation_context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>,evidence_package:list<array<string,mixed>>}
      */
     private function composeTaggedEntityCaseContext(array $tagFilters, int $maxChars, array $entityFilterIds = [], array $caseFilterIds = [], ?int $collectionId = null): array
     {
         $entityFilterIds = array_values(array_unique(array_filter($entityFilterIds, static fn (int $id): bool => $id > 0)));
         $caseFilterIds = array_values(array_unique(array_filter($caseFilterIds, static fn (int $id): bool => $id > 0)));
         if ($tagFilters === [] && $entityFilterIds === [] && $caseFilterIds === []) {
-            return ['context' => '', 'entities' => [], 'cases' => []];
+            return ['context' => '', 'generation_context' => '', 'entities' => [], 'cases' => [], 'evidence_package' => []];
         }
 
         $entities = EntityRecord::query()
@@ -381,90 +404,133 @@ class RagRetrievalService
             ->limit(12)
             ->get(['id', 'entity_id', 'title', 'case_type', 'summary', 'challenge', 'solution', 'result', 'metrics']);
 
-        $entityTrace = $entities
-            ->map(static fn (EntityRecord $entity): array => [
+        if ($entities->isEmpty() && $cases->isEmpty()) {
+            return ['context' => '', 'generation_context' => '', 'entities' => [], 'cases' => [], 'evidence_package' => []];
+        }
+
+        $parts = [];
+        $generationParts = [];
+        $entityTrace = [];
+        $caseTrace = [];
+        $evidencePackage = [];
+        $charCount = 0;
+
+        foreach ($entities as $entity) {
+            $lines = ['实体：'.(string) $entity->name];
+            if ((string) ($entity->entity_type ?? '') !== '') {
+                $lines[0] .= '（类型：'.(string) $entity->entity_type.'）';
+            }
+            $lines[] = '写作角色：'.EntityTypes::roleDescription((string) ($entity->entity_type ?? ''));
+            if ((string) ($entity->aliases ?? '') !== '') {
+                $lines[] = '别名：'.$this->shortContextText($entity->aliases, 180);
+            }
+            if ((string) ($entity->description ?? '') !== '') {
+                $lines[] = '描述：'.$this->shortContextText($entity->description, 320);
+            }
+            if ((string) ($entity->attributes_json ?? '') !== '' && trim((string) $entity->attributes_json) !== '{}') {
+                $lines[] = '属性：'.$this->shortContextText($entity->attributes_json, 260);
+            }
+            $item = $this->articleEvidencePackage->make(
+                'entity',
+                (int) $entity->id,
+                (string) $entity->name,
+                implode("\n", $lines),
+                revisionContent: $this->evidenceRevisionPayload([
+                    'name' => $entity->name,
+                    'entity_type' => $entity->entity_type,
+                    'aliases' => $entity->aliases,
+                    'description' => $entity->description,
+                    'attributes_json' => $entity->attributes_json,
+                    'canonical_url' => $entity->canonical_url,
+                    'link_policy' => $entity->link_policy,
+                ])
+            );
+            $block = "【Entity DB 参考】\nEvidence ID: {$item['id']}\n".$item['content'];
+            if ($parts !== [] && $charCount + mb_strlen($block, 'UTF-8') > $maxChars) {
+                continue;
+            }
+            $parts[] = $block;
+            $generationParts[] = $block;
+            $charCount += mb_strlen($block, 'UTF-8');
+            $evidencePackage[] = $item;
+            $entityTrace[] = [
                 'id' => (int) $entity->id,
-                'name' => (string) $entity->name,
                 'type' => (string) ($entity->entity_type ?? ''),
                 'role' => EntityTypes::roleDescription((string) ($entity->entity_type ?? '')),
                 'linkable' => EntityTypes::isLinkable((string) ($entity->entity_type ?? ''))
                     && (string) ($entity->link_policy ?? '') === EntityTypes::LINK_POLICY_SUGGEST
                     && trim((string) ($entity->canonical_url ?? '')) !== '',
-            ])
-            ->values()
-            ->all();
-        $caseTrace = $cases
-            ->map(static fn (CaseRecord $caseRecord): array => [
+                'evidence_id' => $item['id'],
+                'content_sha256' => $item['content_sha256'],
+            ];
+        }
+
+        foreach ($cases as $caseRecord) {
+            $line = '案例：'.(string) $caseRecord->title;
+            if ((string) ($caseRecord->case_type ?? '') !== '') {
+                $line .= '（类型：'.(string) $caseRecord->case_type.'）';
+            }
+            if (($entity = $caseRecord->entities->first())) {
+                $line .= '，关联实体：'.(string) $entity->name;
+            }
+            $lines = [$line, '引用规则：'.CaseTypes::referenceRule((string) ($caseRecord->case_type ?? ''))];
+            foreach ([
+                'summary' => '摘要',
+                'challenge' => '挑战',
+                'solution' => '方案',
+                'result' => '结果',
+                'metrics' => '指标',
+            ] as $field => $label) {
+                $value = (string) ($caseRecord->{$field} ?? '');
+                if ($value !== '') {
+                    $lines[] = $label.'：'.$this->shortContextText($value, 260);
+                }
+            }
+            $item = $this->articleEvidencePackage->make(
+                'case',
+                (int) $caseRecord->id,
+                (string) $caseRecord->title,
+                implode("\n", $lines),
+                sourceState: 'unverified',
+                publicationScope: 'unknown',
+                revisionContent: $this->evidenceRevisionPayload([
+                    'title' => $caseRecord->title,
+                    'case_type' => $caseRecord->case_type,
+                    'entity_id' => $caseRecord->entity_id,
+                    'entity_name' => $caseRecord->entities->first()?->name,
+                    'summary' => $caseRecord->summary,
+                    'challenge' => $caseRecord->challenge,
+                    'solution' => $caseRecord->solution,
+                    'result' => $caseRecord->result,
+                    'metrics' => $caseRecord->metrics,
+                ])
+            );
+            $block = "【Case DB 参考】\nEvidence ID: {$item['id']}\n".$item['content'];
+            if ($parts !== [] && $charCount + mb_strlen($block, 'UTF-8') > $maxChars) {
+                continue;
+            }
+            $parts[] = $block;
+            $charCount += mb_strlen($block, 'UTF-8');
+            $evidencePackage[] = $item;
+            $caseTrace[] = [
                 'id' => (int) $caseRecord->id,
-                'title' => (string) $caseRecord->title,
                 'type' => (string) ($caseRecord->case_type ?? ''),
                 'role' => CaseTypes::referenceRule((string) ($caseRecord->case_type ?? '')),
                 'entity_id' => $caseRecord->entity_id !== null ? (int) $caseRecord->entity_id : null,
-                'entity_name' => (string) (($e = $caseRecord->entities->first()) ? $e->name : ''),
-            ])
-            ->values()
-            ->all();
-
-        if ($entities->isEmpty() && $cases->isEmpty()) {
-            return ['context' => '', 'entities' => $entityTrace, 'cases' => $caseTrace];
+                'evidence_id' => $item['id'],
+                'content_sha256' => $item['content_sha256'],
+                'source_state' => 'unverified',
+                'publication_scope' => 'unknown',
+            ];
         }
 
-        $lines = [];
-        if ($entities->isNotEmpty()) {
-            $lines[] = '【Entity DB 参考】';
-            foreach ($entities as $entity) {
-                $line = '- 实体：'.(string) $entity->name;
-                if ((string) ($entity->entity_type ?? '') !== '') {
-                    $line .= '（类型：'.(string) $entity->entity_type.'）';
-                }
-                $lines[] = $line;
-                $lines[] = '  写作角色：'.EntityTypes::roleDescription((string) ($entity->entity_type ?? ''));
-                if ((string) ($entity->aliases ?? '') !== '') {
-                    $lines[] = '  别名：'.$this->shortContextText($entity->aliases, 180);
-                }
-                if ((string) ($entity->description ?? '') !== '') {
-                    $lines[] = '  描述：'.$this->shortContextText($entity->description, 320);
-                }
-                if ((string) ($entity->attributes_json ?? '') !== '' && trim((string) $entity->attributes_json) !== '{}') {
-                    $lines[] = '  属性：'.$this->shortContextText($entity->attributes_json, 260);
-                }
-            }
-        }
-
-        if ($cases->isNotEmpty()) {
-            $lines[] = '【Case DB 参考】';
-            foreach ($cases as $caseRecord) {
-                $line = '- 案例：'.(string) $caseRecord->title;
-                if ((string) ($caseRecord->case_type ?? '') !== '') {
-                    $line .= '（类型：'.(string) $caseRecord->case_type.'）';
-                }
-                if (($e = $caseRecord->entities->first())) {
-                    $line .= '，关联实体：'.(string) $e->name;
-                }
-                $lines[] = $line;
-                $lines[] = '  引用规则：'.CaseTypes::referenceRule((string) ($caseRecord->case_type ?? ''));
-
-                foreach ([
-                    'summary' => '摘要',
-                    'challenge' => '挑战',
-                    'solution' => '方案',
-                    'result' => '结果',
-                    'metrics' => '指标',
-                ] as $field => $label) {
-                    $value = (string) ($caseRecord->{$field} ?? '');
-                    if ($value !== '') {
-                        $lines[] = '  '.$label.'：'.$this->shortContextText($value, 260);
-                    }
-                }
-            }
-        }
-
-        $context = trim(implode("\n", $lines));
-        if (mb_strlen($context, 'UTF-8') > $maxChars) {
-            $context = mb_substr($context, 0, $maxChars, 'UTF-8').'...';
-        }
-
-        return ['context' => $context, 'entities' => $entityTrace, 'cases' => $caseTrace];
+        return [
+            'context' => trim(implode("\n\n", $parts)),
+            'generation_context' => trim(implode("\n\n", $generationParts)),
+            'entities' => $entityTrace,
+            'cases' => $caseTrace,
+            'evidence_package' => $evidencePackage,
+        ];
     }
 
     /**
@@ -474,7 +540,8 @@ class RagRetrievalService
      * @param  list<int>  $knowledgeBaseIds
      * @param  list<array<string,mixed>>  $knowledgeBaseTrace
      * @param  list<array<string,mixed>>  $chunks
-     * @param  array{context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>}  $entityCase
+     * @param  array{context:string,entities:list<array<string,mixed>>,cases:list<array<string,mixed>>,evidence_package:list<array<string,mixed>>}  $entityCase
+     * @param  list<array<string,mixed>>  $evidenceAudit
      * @return array<string,mixed>
      */
     private function buildContextPackage(
@@ -488,7 +555,8 @@ class RagRetrievalService
         array $chunks,
         array $entityCase,
         string $strategy,
-        string $context
+        string $context,
+        array $evidenceAudit
     ): array {
         $usedKnowledgeIds = collect($knowledgeBaseTrace)
             ->pluck('id')
@@ -507,6 +575,7 @@ class RagRetrievalService
             'strategy' => $strategy,
             'context_length' => mb_strlen($context, 'UTF-8'),
             'evidence_summary' => $this->evidenceSummary($chunks),
+            'evidence_audit' => $evidenceAudit,
             'knowledge_bases' => $knowledgeBaseTrace,
             'chunks' => $chunks,
             'entities' => $entityCase['entities'],
@@ -523,15 +592,21 @@ class RagRetrievalService
             : $text;
     }
 
+    /** @param array<string,mixed> $payload */
+    private function evidenceRevisionPayload(array $payload): string
+    {
+        return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: serialize($payload);
+    }
+
     /**
      * @param  list<int>  $knowledgeBaseIds
-     * @return array{context:string,chunks:list<array<string,mixed>>,strategy:string}
+     * @return array{context:string,generation_context:string,chunks:list<array<string,mixed>>,strategy:string,evidence_package:list<array<string,mixed>>}
      */
     private function fetchKnowledgeContextFromChunks(array $knowledgeBaseIds, string $query, int $limit, int $maxChars): array
     {
         $knowledgeBaseIds = array_values(array_unique(array_filter($knowledgeBaseIds, static fn (int $id): bool => $id > 0)));
         if ($knowledgeBaseIds === []) {
-            return ['context' => '', 'chunks' => [], 'strategy' => 'none'];
+            return ['context' => '', 'generation_context' => '', 'chunks' => [], 'strategy' => 'none', 'evidence_package' => []];
         }
 
         if (trim($query) !== '') {
@@ -539,7 +614,13 @@ class RagRetrievalService
             if ($vectorRows !== []) {
                 $composed = $this->composeKnowledgeContext($vectorRows, $limit, $maxChars);
 
-                return ['context' => $composed['context'], 'chunks' => $composed['chunks'], 'strategy' => 'pgvector'];
+                return [
+                    'context' => $composed['context'],
+                    'generation_context' => $composed['generation_context'],
+                    'chunks' => $composed['chunks'],
+                    'strategy' => 'pgvector',
+                    'evidence_package' => $composed['evidence_package'],
+                ];
             }
         }
 
@@ -554,6 +635,7 @@ class RagRetrievalService
                 'kb.knowledge_type',
                 'kb.knowledge_role',
                 'kb.importance',
+                'kb.status',
                 'kc.chunk_index',
                 'kc.content',
                 'kc.embedding_json',
@@ -562,7 +644,7 @@ class RagRetrievalService
             ])
             ->all();
         if ($rows === []) {
-            return ['context' => '', 'chunks' => [], 'strategy' => 'none'];
+            return ['context' => '', 'generation_context' => '', 'chunks' => [], 'strategy' => 'none', 'evidence_package' => []];
         }
 
         $queryTerms = $this->termFrequencies($query);
@@ -602,6 +684,7 @@ class RagRetrievalService
                 'knowledge_type' => $this->normalizeKnowledgeType((string) ($row->knowledge_type ?? '')),
                 'knowledge_role' => $this->normalizeKnowledgeRole((string) ($row->knowledge_role ?? '')),
                 'importance' => $this->normalizeImportance($row->importance ?? null),
+                'status' => (string) ($row->status ?? ''),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => $score,
@@ -626,8 +709,10 @@ class RagRetrievalService
 
         return [
             'context' => $composed['context'],
+            'generation_context' => $composed['generation_context'],
             'chunks' => $composed['chunks'],
             'strategy' => $composed['context'] !== '' ? 'hybrid_vector_lexical' : 'none',
+            'evidence_package' => $composed['evidence_package'],
         ];
     }
 
@@ -769,7 +854,7 @@ class RagRetrievalService
         $rows = DB::select(
             "
                 SELECT kc.knowledge_base_id, kb.name AS knowledge_base_name,
-                       kb.knowledge_type, kb.knowledge_role, kb.importance,
+                       kb.knowledge_type, kb.knowledge_role, kb.importance, kb.status,
                        kc.chunk_index, kc.content,
                        (kc.embedding_vector <=> CAST(? AS vector)) AS vector_distance
                 FROM knowledge_chunks kc
@@ -797,6 +882,7 @@ class RagRetrievalService
                 'knowledge_type' => $this->normalizeKnowledgeType((string) ($row->knowledge_type ?? '')),
                 'knowledge_role' => $this->normalizeKnowledgeRole((string) ($row->knowledge_role ?? '')),
                 'importance' => $this->normalizeImportance($row->importance ?? null),
+                'status' => (string) ($row->status ?? ''),
                 'chunk_index' => (int) ($row->chunk_index ?? 0),
                 'content' => $content,
                 'score' => $vectorScore + $metadataScore,
@@ -846,32 +932,20 @@ class RagRetrievalService
 
     /**
      * @param  list<array{knowledge_base_id?:int,knowledge_base_name?:string,knowledge_type?:string,knowledge_role?:string,importance?:int,chunk_index:int,content:string,score:float}>  $scored
-     * @return array{context:string,chunks:list<array<string,mixed>>}
+     * @return array{context:string,generation_context:string,chunks:list<array<string,mixed>>,evidence_package:list<array<string,mixed>>}
      */
     private function composeKnowledgeContext(array $scored, int $limit, int $maxChars): array
     {
         if ($scored === []) {
-            return ['context' => '', 'chunks' => []];
+            return ['context' => '', 'generation_context' => '', 'chunks' => [], 'evidence_package' => []];
         }
 
         $selected = array_slice($scored, 0, max(1, $limit));
         usort($selected, static fn (array $a, array $b): int => (($a['knowledge_base_id'] ?? 0) <=> ($b['knowledge_base_id'] ?? 0)) ?: ($a['chunk_index'] <=> $b['chunk_index']));
-        $chunkTrace = array_map(fn (array $chunk): array => [
-            'knowledge_base_id' => (int) ($chunk['knowledge_base_id'] ?? 0),
-            'knowledge_base_name' => (string) ($chunk['knowledge_base_name'] ?? ''),
-            'knowledge_type' => $this->normalizeKnowledgeType((string) ($chunk['knowledge_type'] ?? '')),
-            'knowledge_role' => $this->normalizeKnowledgeRole((string) ($chunk['knowledge_role'] ?? '')),
-            'importance' => $this->normalizeImportance($chunk['importance'] ?? null),
-            'chunk_index' => (int) ($chunk['chunk_index'] ?? 0),
-            'score' => round((float) ($chunk['score'] ?? 0), 6),
-            'evidence_score' => $this->evidenceScore($chunk),
-            'retrieval_source' => (string) ($chunk['retrieval_source'] ?? 'lexical_fallback'),
-            'match_reasons' => $this->chunkMatchReasons($chunk),
-            'score_components' => is_array($chunk['score_components'] ?? null) ? $chunk['score_components'] : [],
-            'preview' => mb_substr(trim((string) ($chunk['content'] ?? '')), 0, 160, 'UTF-8'),
-        ], $selected);
-
         $parts = [];
+        $generationParts = [];
+        $chunkTrace = [];
+        $evidencePackage = [];
         $charCount = 0;
         foreach ($selected as $index => $chunk) {
             $content = trim((string) ($chunk['content'] ?? ''));
@@ -886,58 +960,125 @@ class RagRetrievalService
             $type = $this->normalizeKnowledgeType((string) ($chunk['knowledge_type'] ?? ''));
             $role = $this->normalizeKnowledgeRole((string) ($chunk['knowledge_role'] ?? ''));
             $importance = $this->normalizeImportance($chunk['importance'] ?? null);
+            [$sourceState, $publicationScope] = $this->knowledgeEvidenceClassification($role, (string) ($chunk['status'] ?? ''));
+            $item = $this->articleEvidencePackage->make(
+                'knowledge_chunk',
+                (int) ($chunk['knowledge_base_id'] ?? 0),
+                $source,
+                $content,
+                (int) ($chunk['chunk_index'] ?? 0),
+                $sourceState,
+                $publicationScope
+            );
             $heading = '【知识片段'.($index + 1)
                 .($source !== '' ? ' / 知识库：'.$source : '')
                 .' / 类型：'.$this->knowledgeTypeLabel($type)
                 .' / 角色：'.$this->knowledgeRoleLabel($role)
                 .' / 重要度：'.$importance
+                .' / Evidence ID: '.$item['id']
                 .'】';
-            $parts[] = $heading."\n使用方式：".$this->knowledgeRoleInstruction($role)."\n".$content;
+            $block = $heading."\n使用方式：".$this->knowledgeRoleInstruction($role)."\n".$content;
+            $parts[] = $block;
+            if ($sourceState === 'available' && $publicationScope === 'internal_reference') {
+                $generationParts[] = $block;
+            }
             $charCount = $nextLength;
+            $evidencePackage[] = $item;
+            $chunkTrace[] = [
+                'knowledge_base_id' => (int) ($chunk['knowledge_base_id'] ?? 0),
+                'knowledge_type' => $type,
+                'knowledge_role' => $role,
+                'importance' => $importance,
+                'chunk_index' => (int) ($chunk['chunk_index'] ?? 0),
+                'score' => round((float) ($chunk['score'] ?? 0), 6),
+                'evidence_score' => $this->evidenceScore($chunk),
+                'retrieval_source' => (string) ($chunk['retrieval_source'] ?? 'lexical_fallback'),
+                'match_reasons' => $this->chunkMatchReasons($chunk),
+                'score_components' => is_array($chunk['score_components'] ?? null) ? $chunk['score_components'] : [],
+                'evidence_id' => $item['id'],
+                'content_sha256' => $item['content_sha256'],
+                'source_state' => $sourceState,
+                'publication_scope' => $publicationScope,
+            ];
         }
 
-        return ['context' => trim(implode("\n\n", $parts)), 'chunks' => $chunkTrace];
+        return [
+            'context' => trim(implode("\n\n", $parts)),
+            'generation_context' => trim(implode("\n\n", $generationParts)),
+            'chunks' => $chunkTrace,
+            'evidence_package' => $evidencePackage,
+        ];
     }
 
     /**
      * @param  list<KnowledgeBase>  $knowledgeBases
      */
-    private function composeFallbackKnowledgeContent(array $knowledgeBases, int $maxChars): string
+    private function composeFallbackKnowledgeContent(array $knowledgeBases, int $maxChars): array
     {
         $parts = [];
+        $generationParts = [];
+        $evidencePackage = [];
         $charCount = 0;
         foreach ($knowledgeBases as $knowledgeBase) {
-            $content = trim((string) ($knowledgeBase->content ?? ''));
-            if ($content === '') {
+            $revisionContent = trim((string) ($knowledgeBase->content ?? ''));
+            if ($revisionContent === '') {
                 continue;
             }
             $name = trim((string) ($knowledgeBase->name ?? ''));
             $type = $this->normalizeKnowledgeType((string) ($knowledgeBase->knowledge_type ?? ''));
             $role = $this->normalizeKnowledgeRole((string) ($knowledgeBase->knowledge_role ?? ''));
             $importance = $this->normalizeImportance($knowledgeBase->importance ?? null);
+            [$sourceState, $publicationScope] = $this->knowledgeEvidenceClassification($role, (string) ($knowledgeBase->status ?? ''));
+            $remainingContentChars = max(120, $maxChars - $charCount - 260);
+            $content = mb_strlen($revisionContent, 'UTF-8') > $remainingContentChars
+                ? mb_substr($revisionContent, 0, $remainingContentChars, 'UTF-8').'...'
+                : $revisionContent;
+            $item = $this->articleEvidencePackage->make(
+                'knowledge_full',
+                (int) $knowledgeBase->id,
+                $name,
+                $content,
+                sourceState: $sourceState,
+                publicationScope: $publicationScope,
+                revisionContent: $revisionContent
+            );
             $heading = '【知识库'.($name !== '' ? '：'.$name : '')
                 .' / 类型：'.$this->knowledgeTypeLabel($type)
                 .' / 角色：'.$this->knowledgeRoleLabel($role)
                 .' / 重要度：'.$importance
+                .' / Evidence ID: '.$item['id']
                 .'】';
             $block = $heading."\n使用方式：".$this->knowledgeRoleInstruction($role)."\n".$content;
             $blockLength = mb_strlen($block, 'UTF-8');
             if ($parts !== [] && $charCount + $blockLength > $maxChars) {
-                $remaining = $maxChars - $charCount;
-                if ($remaining <= 120) {
-                    break;
-                }
-                $block = mb_substr($block, 0, $remaining, 'UTF-8');
-                $blockLength = mb_strlen($block, 'UTF-8');
+                continue;
             }
             $parts[] = $block;
+            if ($sourceState === 'available' && $publicationScope === 'internal_reference') {
+                $generationParts[] = $block;
+            }
+            $evidencePackage[] = $item;
             $charCount += $blockLength;
             if ($charCount >= $maxChars) {
                 break;
             }
         }
 
-        return trim(implode("\n\n", $parts));
+        return [
+            'context' => trim(implode("\n\n", $parts)),
+            'generation_context' => trim(implode("\n\n", $generationParts)),
+            'evidence_package' => $evidencePackage,
+        ];
+    }
+
+    /** @return array{string,string} */
+    private function knowledgeEvidenceClassification(string $role, string $status): array
+    {
+        if ($role === 'archive' || ($status !== '' && $status !== 'active')) {
+            return ['restricted', 'restricted'];
+        }
+
+        return ['available', 'internal_reference'];
     }
 
     private function normalizeKnowledgeType(string $value): string

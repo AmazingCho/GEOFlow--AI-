@@ -25,8 +25,11 @@ use App\Services\GeoFlow\TaskDistributionChannelSelector;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\Support\AdminWeb;
+use App\Support\GeoFlow\ArticleGenerationModes;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\ControlledTagGroups;
+use App\Support\GeoFlow\SkillSelectionModes;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -257,7 +260,9 @@ class TaskController extends Controller
                 'cross_collection_mode' => (int) ($task['cross_collection_mode'] ?? 0),
                 'title_library_id' => (string) ($task['title_library_id'] ?? ''),
                 'prompt_id' => (string) ($task['prompt_id'] ?? ''),
-                'skill_prompt_id' => (string) (($task['skill_prompt_id'] ?? '') ?: ''),
+                'skill_prompt_id' => ($task['skill_selection_mode'] ?? SkillSelectionModes::fromLegacySkillId($task['skill_prompt_id'] ?? null)) === SkillSelectionModes::AUTO
+                    ? SkillPromptRecommendationService::AUTO_VALUE
+                    : (string) (($task['skill_prompt_id'] ?? '') ?: ''),
                 'style_prompt_id' => (string) (($task['style_prompt_id'] ?? '') ?: ''),
                 'ai_model_id' => (string) ($task['ai_model_id'] ?? ''),
                 'author_id' => (string) (($task['author_id'] ?? 0) ?: 0),
@@ -277,6 +282,7 @@ class TaskController extends Controller
                 'publish_interval' => (string) max(1, (int) (($task['publish_interval'] ?? 3600) / 60)),
                 'category_mode' => (string) ($task['category_mode'] ?? 'smart'),
                 'model_selection_mode' => (string) ($task['model_selection_mode'] ?? 'fixed'),
+                'generation_mode' => (string) ($task['generation_mode'] ?? ArticleGenerationModes::STANDARD),
                 'need_review' => (int) ($task['need_review'] ?? 0),
                 'is_loop' => (int) ($task['is_loop'] ?? 1),
                 'auto_keywords' => (int) ($task['auto_keywords'] ?? 1),
@@ -433,6 +439,8 @@ class TaskController extends Controller
             'modelTimeout' => __('admin.tasks.failure.model_timeout'),
             'modelTimeoutDetail' => __('admin.tasks.failure.model_timeout_detail', ['seconds' => '__SECONDS__']),
             'recentFailed' => __('admin.tasks.failure.recent_failed'),
+            'insufficientEvidence' => __('admin.tasks.failure.insufficient_evidence'),
+            'protocolFailure' => __('admin.tasks.failure.protocol_failure'),
             'syncFailed' => __('admin.tasks.message.status_update_failed'),
             'confirmStart' => __('admin.tasks.confirm.start', ['name' => '__NAME__']),
             'confirmStop' => __('admin.tasks.confirm.stop', ['name' => '__NAME__']),
@@ -479,7 +487,7 @@ class TaskController extends Controller
      *     titleLibraries: list<array{id:int,name:string}>,
      *     prompts: list<array{id:int,name:string}>,
      *     skillPrompts: list<array{id:int,name:string}>,
-     *     stylePrompts: list<array{id:int,name:string}>,
+     *     stylePrompts: list<array{id:int,name:string,description:string}>,
      *     aiModels: list<array{id:int,name:string}>,
      *     imageLibraries: list<array{id:int,name:string,count:int}>,
      *     imageTags: list<array{id:int,label:string,count:int}>,
@@ -516,20 +524,38 @@ class TaskController extends Controller
             ->all();
 
         $skillPromptRows = Prompt::query()
-            ->select(['id', 'name', 'content'])
+            ->select(['id', 'name', 'content', 'intent_key', 'is_system'])
             ->where('type', 'skill')
             ->orderBy('name')
             ->get();
         $skillPrompts = $skillPromptRows
-            ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->map(static fn (Prompt $row): array => [
+                'id' => (int) $row->id,
+                'name' => (string) $row->name,
+                'intent_key' => (string) ($row->intent_key ?? ''),
+            ])
             ->all();
 
         $stylePrompts = Prompt::query()
-            ->select(['id', 'name'])
+            ->select(['id', 'name', 'preset_key'])
             ->where('type', 'style')
             ->orderBy('name')
             ->get()
-            ->map(static fn (Prompt $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->map(static function (Prompt $row): array {
+                $descriptionKey = match ((string) ($row->preset_key ?? '')) {
+                    'article.style.technical_clarity' => 'technical_clarity',
+                    'article.style.buyer_decision' => 'buyer_decision',
+                    'article.style.editorial_flow' => 'editorial_flow',
+                    'article.style.conversational_expert' => 'conversational_expert',
+                    default => 'custom',
+                };
+
+                return [
+                    'id' => (int) $row->id,
+                    'name' => (string) $row->name,
+                    'description' => (string) __('admin.task_create.style_description.'.$descriptionKey),
+                ];
+            })
             ->all();
 
         $aiModels = AiModel::query()
@@ -670,7 +696,8 @@ class TaskController extends Controller
      *     draft_limit: int|null,
      *     publish_interval: int|null,
      *     category_mode: string|null,
-     *     model_selection_mode: string|null
+     *     model_selection_mode: string|null,
+     *     generation_mode: string|null
      * }
      */
     private function validateTaskForm(Request $request): array
@@ -707,6 +734,7 @@ class TaskController extends Controller
             'publish_interval' => ['nullable', 'integer', 'min:1'],
             'category_mode' => ['nullable', 'string', 'in:smart,fixed,random'],
             'model_selection_mode' => ['nullable', 'string', 'in:fixed,smart_failover'],
+            'generation_mode' => ['nullable', 'string', Rule::in(ArticleGenerationModes::values())],
             'publish_scope' => ['nullable', 'string', 'in:local_and_distribution,distribution_only,local_only'],
             'distribution_strategy' => ['nullable', 'string', 'in:'.implode(',', TaskDistributionChannelSelector::strategies())],
             'distribution_channel_ids' => ['nullable', 'array'],
@@ -738,6 +766,8 @@ class TaskController extends Controller
             $categoryMode = 'smart';
         }
 
+        $skillSelection = $this->resolveSkillPromptSelection($payload);
+
         return [
             'name' => (string) $payload['task_name'],
             'collection_id' => isset($payload['collection_id']) ? (int) $payload['collection_id'] : null,
@@ -747,7 +777,8 @@ class TaskController extends Controller
             'image_count' => (int) ($payload['image_count'] ?? 0),
             'image_tag_filter' => $this->normalizeTagLabelFilters($request, 'image_tag_filters'),
             'prompt_id' => (int) $payload['prompt_id'],
-            'skill_prompt_id' => $this->resolveSkillPromptId($payload),
+            'skill_prompt_id' => $skillSelection['skill_prompt_id'],
+            'skill_selection_mode' => $skillSelection['skill_selection_mode'],
             'style_prompt_id' => $this->resolveStylePromptId($payload),
             'ai_model_id' => (int) $payload['ai_model_id'],
             'author_id' => isset($payload['author_id']) && (int) $payload['author_id'] > 0 ? (int) $payload['author_id'] : null,
@@ -770,6 +801,7 @@ class TaskController extends Controller
             'is_loop' => $request->boolean('is_loop') ? 1 : 0,
             'category_mode' => $categoryMode,
             'model_selection_mode' => (string) ($payload['model_selection_mode'] ?? 'fixed'),
+            'generation_mode' => ArticleGenerationModes::normalize($payload['generation_mode'] ?? null) ?? ArticleGenerationModes::STANDARD,
             'auto_keywords' => $request->boolean('auto_keywords') ? 1 : 0,
             'auto_description' => $request->boolean('auto_description') ? 1 : 0,
         ];
@@ -802,25 +834,26 @@ class TaskController extends Controller
     /**
      * @param  array<string,mixed>  $payload
      */
-    private function resolveSkillPromptId(array $payload): ?int
+    private function resolveSkillPromptSelection(array $payload): array
     {
         $rawValue = $payload['skill_prompt_id'] ?? '';
         if (is_array($rawValue) || is_object($rawValue)) {
-            return null;
+            return ['skill_prompt_id' => null, 'skill_selection_mode' => SkillSelectionModes::NONE];
         }
 
         $value = trim((string) $rawValue);
         if ($value === '') {
-            return null;
+            return ['skill_prompt_id' => null, 'skill_selection_mode' => SkillSelectionModes::NONE];
         }
 
         if ($value === SkillPromptRecommendationService::AUTO_VALUE) {
-            $recommendation = $this->skillPromptRecommendationService->recommendForTitleLibrary((int) ($payload['title_library_id'] ?? 0));
-
-            return isset($recommendation['skill_prompt_id']) ? (int) $recommendation['skill_prompt_id'] : null;
+            return ['skill_prompt_id' => null, 'skill_selection_mode' => SkillSelectionModes::AUTO];
         }
 
-        return ctype_digit($value) ? (int) $value : null;
+        return [
+            'skill_prompt_id' => ctype_digit($value) ? (int) $value : null,
+            'skill_selection_mode' => ctype_digit($value) ? SkillSelectionModes::MANUAL : SkillSelectionModes::NONE,
+        ];
     }
 
     /**
@@ -990,7 +1023,7 @@ class TaskController extends Controller
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
+     * @param  class-string<Model>  $modelClass
      */
     private function assertSelectedMaterialInCollection(string $modelClass, int $modelId, int $collectionId, string $field, string $message): void
     {

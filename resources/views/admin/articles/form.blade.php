@@ -147,6 +147,8 @@
                                                 @php
                                                     $itemKey = (string) ($item['key'] ?? 'structure');
                                                     $itemStatus = (string) ($item['status'] ?? 'warning');
+                                                    $itemMax = (int) ($item['max'] ?? 0);
+                                                    $itemDetail = (string) ($item['detail'] ?? '');
                                                     $itemTone = match($itemStatus) {
                                                         'passed' => 'bg-emerald-50 text-emerald-700',
                                                         'warning' => 'bg-amber-50 text-amber-700',
@@ -160,10 +162,12 @@
                                                 <div class="flex items-center justify-between gap-3">
                                                     <div class="font-medium text-gray-800">{{ __('admin.articles.quality.items.'.$itemKey) }}</div>
                                                     <span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $itemTone }}">
-                                                        {{ (int) ($item['score'] ?? 0) }}/{{ (int) ($item['max'] ?? 0) }}
+                                                        {{ $itemMax > 0 ? (int) ($item['score'] ?? 0).'/'.$itemMax : $itemDetail }}
                                                     </span>
                                                 </div>
-                                                <div class="mt-1 text-xs text-gray-500">{{ __('admin.articles.quality.status.'.(string) ($item['status'] ?? 'warning')) }} · {{ (string) ($item['detail'] ?? '') }}</div>
+                                                <div class="mt-1 text-xs text-gray-500">
+                                                    {{ __('admin.articles.quality.status.'.(string) ($item['status'] ?? 'warning')) }}@if($itemMax > 0 && $itemDetail !== '') · {{ $itemDetail }}@endif
+                                                </div>
                                                 @if($itemMetrics->isNotEmpty())
                                                     <div class="mt-2 flex flex-wrap gap-1.5">
                                                         @foreach($itemMetrics->take(6) as $metricKey => $metricValue)
@@ -385,6 +389,10 @@
                             $traceModel = is_array($trace['model'] ?? null) ? $trace['model'] : [];
                             $traceKnowledge = is_array($trace['knowledge'] ?? null) ? $trace['knowledge'] : [];
                             $tracePrompt = is_array($trace['prompt'] ?? null) ? $trace['prompt'] : null;
+                            $traceSkillPrompt = is_array($trace['skill_prompt'] ?? null) ? $trace['skill_prompt'] : null;
+                            $traceSkillRouting = is_array($trace['skill_routing'] ?? null) ? $trace['skill_routing'] : [];
+                            $traceStylePrompt = is_array($trace['style_prompt'] ?? null) ? $trace['style_prompt'] : null;
+                            $tracePromptHashes = is_array($trace['prompt_hashes'] ?? null) ? $trace['prompt_hashes'] : [];
                             $traceAuthor = is_array($trace['author'] ?? null) ? $trace['author'] : null;
                             $traceCategory = is_array($trace['category'] ?? null) ? $trace['category'] : null;
                             $traceImages = collect($trace['images'] ?? [])->filter(fn ($image) => is_array($image))->values();
@@ -400,6 +408,12 @@
                             $traceCases = collect($traceKnowledge['cases'] ?? [])->filter(fn ($case) => is_array($case))->values();
                             $traceTags = collect($traceKnowledge['tag_filters'] ?? [])->map(fn ($tag) => trim((string) $tag))->filter()->values();
                             $tracePipeline = collect($trace['pipeline'] ?? [])->filter(fn ($step) => is_array($step))->values();
+                            $traceGenerationMode = (string) ($traceTask['generation_mode'] ?? 'standard');
+                            $traceGenerationModeKey = 'admin.article_edit.generation_trace.generation_modes.'.$traceGenerationMode;
+                            $traceGenerationModeLabel = __($traceGenerationModeKey);
+                            if ($traceGenerationModeLabel === $traceGenerationModeKey) {
+                                $traceGenerationModeLabel = str($traceGenerationMode)->replace('_', ' ')->title()->toString();
+                            }
                             $formatTraceValue = static function (mixed $value): string {
                                 if (is_bool($value)) {
                                     return $value ? __('admin.article_edit.generation_trace.value_yes') : __('admin.article_edit.generation_trace.value_no');
@@ -428,7 +442,7 @@
                                         {{ __('admin.article_edit.generation_trace.empty') }}
                                     </div>
                                 @else
-                                    <div class="grid grid-cols-2 gap-3">
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         <div>
                                             <div class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ __('admin.article_edit.generation_trace.run') }}</div>
                                             <div class="mt-1 text-gray-900">#{{ (int) ($traceRun['id'] ?? 0) }}</div>
@@ -436,6 +450,10 @@
                                         <div>
                                             <div class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ __('admin.article_edit.generation_trace.duration') }}</div>
                                             <div class="mt-1 text-gray-900">{{ (int) ($traceRun['duration_ms'] ?? 0) }} ms</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ __('admin.article_edit.generation_trace.generation_mode') }}</div>
+                                            <div class="mt-1 text-gray-900">{{ $traceGenerationModeLabel }}</div>
                                         </div>
                                     </div>
                                 @endif
@@ -452,7 +470,55 @@
                                     <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.keyword') }}:</span> {{ (string) ($traceTitle['keyword'] ?? '-') }}</div>
                                     <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.model') }}:</span> {{ (string) ($traceModel['name'] ?? '-') }}</div>
                                     @if($tracePrompt)
-                                        <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.prompt') }}:</span> {{ (string) ($tracePrompt['name'] ?? '-') }}</div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.prompt') }}:</span> {{ (string) ($tracePrompt['name'] ?? '-') }}</span>
+                                            @if(!empty($tracePromptHashes['master_sha256']))
+                                                <code class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{{ substr((string) $tracePromptHashes['master_sha256'], 0, 12) }}</code>
+                                            @endif
+                                        </div>
+                                    @endif
+                                    @if($traceSkillPrompt)
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.skill_prompt') }}:</span> {{ (string) ($traceSkillPrompt['name'] ?? '-') }}</span>
+                                            @if(!empty($tracePromptHashes['skill_sha256']))
+                                                <code class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{{ substr((string) $tracePromptHashes['skill_sha256'], 0, 12) }}</code>
+                                            @endif
+                                        </div>
+                                    @endif
+                                    @if($traceSkillRouting !== [])
+                                        @php
+                                            $skillMode = (string) ($traceSkillRouting['mode'] ?? 'none');
+                                            $skillIntent = (string) ($traceSkillRouting['intent'] ?? '');
+                                            $skillReason = (string) ($traceSkillRouting['reason'] ?? 'skill_disabled');
+                                            $skillModeKey = 'admin.article_edit.generation_trace.skill_modes.'.$skillMode;
+                                            $skillIntentKey = 'admin.task_create.skill_recommendation.intent.'.$skillIntent;
+                                            $skillReasonKey = 'admin.article_edit.generation_trace.skill_reasons.'.$skillReason;
+                                            $skillModeLabel = __($skillModeKey);
+                                            $skillIntentLabel = $skillIntent !== '' ? __($skillIntentKey) : '-';
+                                            $skillReasonLabel = __($skillReasonKey);
+                                        @endphp
+                                        <div class="mt-2 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 text-xs leading-5 text-gray-600">
+                                            <div class="font-medium text-gray-800">{{ __('admin.article_edit.generation_trace.skill_routing') }}</div>
+                                            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                                                <span>{{ __('admin.article_edit.generation_trace.skill_mode') }}: {{ $skillModeLabel === $skillModeKey ? $skillMode : $skillModeLabel }}</span>
+                                                <span>{{ __('admin.article_edit.generation_trace.skill_intent') }}: {{ $skillIntentLabel === $skillIntentKey ? ($skillIntent ?: '-') : $skillIntentLabel }}</span>
+                                                @if(($traceSkillRouting['confidence'] ?? null) !== null)
+                                                    <span>{{ __('admin.article_edit.generation_trace.skill_confidence') }}: {{ (int) $traceSkillRouting['confidence'] }}%</span>
+                                                @endif
+                                            </div>
+                                            <div class="mt-1">{{ $skillReasonLabel === $skillReasonKey ? $skillReason : $skillReasonLabel }}</div>
+                                        </div>
+                                    @endif
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.style_prompt') }}:</span> {{ $traceStylePrompt ? (string) ($traceStylePrompt['name'] ?? '-') : __('admin.article_edit.generation_trace.style_prompt_none') }}</span>
+                                        @if($traceStylePrompt)
+                                            @if(!empty($tracePromptHashes['style_sha256']))
+                                                <code class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{{ substr((string) $tracePromptHashes['style_sha256'], 0, 12) }}</code>
+                                            @endif
+                                        @endif
+                                    </div>
+                                    @if(($tracePrompt || $traceSkillPrompt || $traceStylePrompt) && $tracePromptHashes === [])
+                                        <div class="text-xs text-gray-500">{{ __('admin.article_edit.generation_trace.prompt_hash_legacy') }}</div>
                                     @endif
                                     @if($traceAuthor)
                                         <div><span class="font-medium text-gray-700">{{ __('admin.article_edit.generation_trace.author') }}:</span> {{ (string) ($traceAuthor['name'] ?? '-') }}</div>
@@ -482,14 +548,20 @@
                                                             $statusLabel = str($stepStatus)->replace('_', ' ')->title()->toString();
                                                         }
                                                         $summaryParts = [];
-                                                        foreach (['title', 'keyword', 'knowledge_strategy', 'context_length', 'image_count', 'word_count', 'attempts'] as $metaKey) {
+                                                        foreach (['title', 'keyword', 'knowledge_strategy', 'context_length', 'image_count', 'word_count', 'attempts', 'section_count', 'open_question_count', 'attempt_count', 'duration_ms', 'prompt_tokens', 'completion_tokens', 'output_length', 'score', 'passed', 'issue_codes', 'blocking', 'requested_issue_codes'] as $metaKey) {
                                                             if (array_key_exists($metaKey, $stepMeta) && $stepMeta[$metaKey] !== null && $stepMeta[$metaKey] !== '') {
                                                                 $summaryKey = 'admin.article_edit.generation_trace.pipeline_meta.'.$metaKey;
                                                                 $summaryLabel = __($summaryKey);
                                                                 if ($summaryLabel === $summaryKey) {
                                                                     $summaryLabel = str($metaKey)->replace('_', ' ')->title()->toString();
                                                                 }
-                                                                $summaryParts[] = $summaryLabel.': '.(string) $stepMeta[$metaKey];
+                                                                $metaValue = $stepMeta[$metaKey];
+                                                                if (in_array($metaKey, ['issue_codes', 'requested_issue_codes'], true) && is_array($metaValue)) {
+                                                                    $metaValue = collect($metaValue)
+                                                                        ->map(fn ($code) => str((string) $code)->replace('_', ' ')->title()->toString())
+                                                                        ->implode(', ');
+                                                                }
+                                                                $summaryParts[] = $summaryLabel.': '.$formatTraceValue($metaValue);
                                                             }
                                                         }
                                                     @endphp
@@ -580,8 +652,7 @@
                                                 <div class="mt-2 flex flex-wrap gap-1.5">
                                                     @foreach($traceKnowledgeBases->take(8) as $knowledgeBase)
                                                         <span class="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
-                                                            <span class="truncate">{{ (string) ($knowledgeBase['name'] ?? '-') }}</span>
-                                                            <span class="ml-1 text-gray-400">#{{ (int) ($knowledgeBase['id'] ?? 0) }}</span>
+                                                            <span class="text-gray-600">KB #{{ (int) ($knowledgeBase['id'] ?? 0) }}</span>
                                                         </span>
                                                     @endforeach
                                                 </div>
@@ -594,7 +665,9 @@
                                                     <div class="rounded border border-gray-200 bg-white p-2">
                                                         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                                             <div class="min-w-0">
-                                                                <div class="font-medium text-gray-800">{{ (string) ($chunk['knowledge_base_name'] ?? '-') }} #{{ (int) ($chunk['chunk_index'] ?? 0) }}</div>
+                                                                <div class="font-medium text-gray-800">
+                                                                    KB #{{ (int) ($chunk['knowledge_base_id'] ?? 0) }} · Chunk #{{ (int) ($chunk['chunk_index'] ?? 0) }}
+                                                                </div>
                                                                 <div class="mt-1 flex flex-wrap gap-1.5">
                                                                     @if((string) ($chunk['knowledge_type'] ?? '') !== '')
                                                                         <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{{ __('admin.article_edit.generation_trace.knowledge_type') }}: {{ (string) $chunk['knowledge_type'] }}</span>
@@ -654,7 +727,6 @@
                                                                 @endforeach
                                                             </div>
                                                         @endif
-                                                        <div class="mt-1 line-clamp-2 text-xs text-gray-500">{{ (string) ($chunk['preview'] ?? '') }}</div>
                                                     </div>
                                                 @endforeach
                                             </div>
@@ -669,7 +741,7 @@
                                                 @foreach($traceEntities->take(6) as $entity)
                                                     <div class="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs">
                                                         <div class="flex flex-wrap items-center gap-1.5">
-                                                            <span class="font-semibold text-violet-900">Entity: {{ (string) ($entity['name'] ?? '-') }}</span>
+                                                            <span class="font-semibold text-violet-900">Entity: #{{ (int) ($entity['id'] ?? 0) }}</span>
                                                             @if((string) ($entity['type'] ?? '') !== '')
                                                                 <span class="rounded-full bg-white px-2 py-0.5 font-medium text-violet-700 ring-1 ring-violet-100">{{ (string) $entity['type'] }}</span>
                                                             @endif
@@ -687,12 +759,9 @@
                                                 @foreach($traceCases->take(6) as $case)
                                                     <div class="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs">
                                                         <div class="flex flex-wrap items-center gap-1.5">
-                                                            <span class="font-semibold text-amber-900">Case: {{ (string) ($case['title'] ?? '-') }}</span>
+                                                            <span class="font-semibold text-amber-900">Case: #{{ (int) ($case['id'] ?? 0) }}</span>
                                                             @if((string) ($case['type'] ?? '') !== '')
                                                                 <span class="rounded-full bg-white px-2 py-0.5 font-medium text-amber-700 ring-1 ring-amber-100">{{ (string) $case['type'] }}</span>
-                                                            @endif
-                                                            @if((string) ($case['entity_name'] ?? '') !== '')
-                                                                <span class="rounded-full bg-white px-2 py-0.5 font-medium text-amber-700 ring-1 ring-amber-100">{{ __('admin.article_edit.generation_trace.linked_entity') }}: {{ (string) $case['entity_name'] }}</span>
                                                             @endif
                                                         </div>
                                                         @if((string) ($case['role'] ?? '') !== '')

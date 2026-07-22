@@ -97,15 +97,21 @@
     $selectedSkillPromptValue = (string) old('skill_prompt_id', $isEdit ? (string) ($taskForm['skill_prompt_id'] ?? '') : $autoSkillPromptValue);
     $selectedStylePromptValue = (string) old('style_prompt_id', (string) ($taskForm['style_prompt_id'] ?? ''));
     $selectedModelSelectionMode = (string) old('model_selection_mode', (string) ($taskForm['model_selection_mode'] ?? 'fixed'));
+    $selectedGenerationMode = (string) old('generation_mode', (string) ($taskForm['generation_mode'] ?? \App\Support\GeoFlow\ArticleGenerationModes::STANDARD));
     $selectedNeedReview = (string) old('need_review', (string) ($taskForm['need_review'] ?? ($isEdit ? '0' : '1'))) === '1';
     $hasAdvancedGenerationConfiguration = $selectedStylePromptValue !== ''
         || $selectedSkillPromptValue !== $autoSkillPromptValue
-        || $selectedModelSelectionMode !== 'fixed';
+        || $selectedModelSelectionMode !== 'fixed'
+        || $selectedGenerationMode !== \App\Support\GeoFlow\ArticleGenerationModes::STANDARD;
     $skillPromptRecommendations = $formOptions['skillPromptRecommendations'] ?? [];
     $skillPromptIntentLabels = [
         'comparison' => $t('task_create.skill_recommendation.intent.comparison'),
         'buying_guide' => $t('task_create.skill_recommendation.intent.buying_guide'),
         'application' => $t('task_create.skill_recommendation.intent.application'),
+        'technical' => $t('task_create.skill_recommendation.intent.technical'),
+        'troubleshooting' => $t('task_create.skill_recommendation.intent.troubleshooting'),
+        'case_study' => $t('task_create.skill_recommendation.intent.case_study'),
+        'definition' => $t('task_create.skill_recommendation.intent.definition'),
     ];
     $fieldClass = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
     $compactFieldClass = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
@@ -332,17 +338,24 @@
                                     </span>
                                     <span class="shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700">{{ $t('task_create.workflow.optional') }}</span>
                                 </summary>
-                                <div class="grid grid-cols-1 gap-5 border-t border-gray-200 bg-white px-4 py-4 lg:grid-cols-3">
+                                <div class="grid grid-cols-1 gap-5 border-t border-gray-200 bg-white px-4 py-4 lg:grid-cols-2">
                                     <div>
                                         <label for="skill_prompt_id" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.skill_prompt') }}</label>
                                         <select name="skill_prompt_id" id="skill_prompt_id" class="{{ $fieldClass }}">
                                             <option value="{{ $autoSkillPromptValue }}" @selected($selectedSkillPromptValue === $autoSkillPromptValue)>{{ $t('task_create.option.auto_skill_prompt') }}</option>
                                             <option value="" @selected($selectedSkillPromptValue === '')>{{ $t('task_create.option.no_skill_prompt') }}</option>
                                             @foreach (($formOptions['skillPrompts'] ?? []) as $prompt)
-                                                <option value="{{ $prompt['id'] }}" @selected($selectedSkillPromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                                <option value="{{ $prompt['id'] }}" @selected($selectedSkillPromptValue === (string) $prompt['id'])>
+                                                    {{ $prompt['name'] }}{{ ! empty($prompt['intent_key']) ? ' · '.($skillPromptIntentLabels[$prompt['intent_key']] ?? '') : '' }}
+                                                </option>
                                             @endforeach
                                         </select>
-                                        <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.skill_prompt') }}</p>
+                                        <p class="mt-1 text-sm text-gray-500">
+                                            {{ $t('task_create.help.skill_prompt') }}
+                                            <a href="{{ route('admin.ai-prompts') }}" target="_blank" rel="noopener" class="ml-1 font-medium text-blue-600 hover:text-blue-700 hover:underline">
+                                                {{ $t('task_create.help.manage_skill_intents') }}
+                                            </a>
+                                        </p>
                                         <div
                                             data-skill-prompt-recommendation
                                             data-recommendations='@json($skillPromptRecommendations)'
@@ -361,11 +374,30 @@
                                         <select name="style_prompt_id" id="style_prompt_id" class="{{ $fieldClass }}">
                                             <option value="" @selected($selectedStylePromptValue === '')>{{ $t('task_create.option.no_style_prompt') }}</option>
                                             @foreach (($formOptions['stylePrompts'] ?? []) as $prompt)
-                                                <option value="{{ $prompt['id'] }}" @selected($selectedStylePromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
+                                                <option value="{{ $prompt['id'] }}" data-description="{{ $prompt['description'] ?? '' }}" @selected($selectedStylePromptValue === (string) $prompt['id'])>{{ $prompt['name'] }}</option>
                                             @endforeach
                                         </select>
-                                        <p class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.style_prompt') }}</p>
+                                        <p data-style-prompt-description class="mt-1 text-sm text-gray-500">{{ $t('task_create.help.style_prompt') }}</p>
                                     </div>
+                                    <fieldset>
+                                        <legend class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.generation_mode') }}</legend>
+                                        <div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            <label class="flex cursor-pointer items-start gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 has-[:checked]:ring-1 has-[:checked]:ring-blue-500">
+                                                <input type="radio" name="generation_mode" value="standard" @checked($selectedGenerationMode === 'standard') class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                <span>
+                                                    <span class="block text-sm font-semibold text-gray-800">{{ $t('task_create.option.generation_mode_standard') }}</span>
+                                                    <span class="mt-0.5 block text-xs leading-5 text-gray-500">{{ $t('task_create.help.generation_mode_standard') }}</span>
+                                                </span>
+                                            </label>
+                                            <label class="flex cursor-pointer items-start gap-3 rounded-md border border-gray-300 bg-white px-3 py-2.5 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 has-[:checked]:ring-1 has-[:checked]:ring-blue-500">
+                                                <input type="radio" name="generation_mode" value="deep" @checked($selectedGenerationMode === 'deep') class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                <span>
+                                                    <span class="block text-sm font-semibold text-gray-800">{{ $t('task_create.option.generation_mode_deep') }}</span>
+                                                    <span class="mt-0.5 block text-xs leading-5 text-gray-500">{{ $t('task_create.help.generation_mode_deep') }}</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </fieldset>
                                     <div>
                                         <label for="model_selection_mode" class="block text-sm font-medium text-gray-700">{{ $t('task_create.field.model_selection_mode') }}</label>
                                         <select name="model_selection_mode" id="model_selection_mode" class="{{ $fieldClass }}">
@@ -766,7 +798,9 @@
             const titleLibrarySelect = document.getElementById('title_library_id');
             const skillPromptSelect = document.getElementById('skill_prompt_id');
             const stylePromptSelect = document.getElementById('style_prompt_id');
+            const stylePromptDescription = document.querySelector('[data-style-prompt-description]');
             const modelSelectionModeSelect = document.getElementById('model_selection_mode');
+            const generationModeInputs = document.querySelectorAll('input[name="generation_mode"]');
             const skillPromptRecommendationPanel = document.querySelector('[data-skill-prompt-recommendation]');
             const skillPromptRecommendationTitle = document.querySelector('[data-skill-recommendation-title]');
             const skillPromptRecommendationReason = document.querySelector('[data-skill-recommendation-reason]');
@@ -884,7 +918,18 @@
                 const skill = selectedOptionLabel(skillPromptSelect);
                 const style = selectedOptionLabel(stylePromptSelect);
                 const mode = selectedOptionLabel(modelSelectionModeSelect);
-                advancedGenerationSummary.textContent = [skill, style, mode].filter(Boolean).join(' · ');
+                const generationMode = document.querySelector('input[name="generation_mode"]:checked');
+                const generationLabel = String(generationMode?.closest('label')?.querySelector('.font-semibold')?.textContent || '').trim();
+                advancedGenerationSummary.textContent = [skill, style, generationLabel, mode].filter(Boolean).join(' · ');
+            }
+
+            function syncStylePromptDescription() {
+                if (!stylePromptDescription || !stylePromptSelect) {
+                    return;
+                }
+
+                const description = String(stylePromptSelect.selectedOptions?.[0]?.dataset?.description || '').trim();
+                stylePromptDescription.textContent = description || @json($t('task_create.help.style_prompt'));
             }
 
             function syncSkillPromptRecommendation() {
@@ -903,19 +948,31 @@
                 const intentLabel = skillPromptIntentLabels[recommendation.intent] || recommendation.intent || '';
                 const confidence = recommendation.confidence ? ` · ${recommendation.confidence}%` : '';
                 if (skillPromptRecommendationTitle) {
-                    skillPromptRecommendationTitle.textContent = `${recommendation.skill_prompt_name || ''}${confidence}`;
+                    skillPromptRecommendationTitle.textContent = recommendation.status === 'recommended'
+                        ? `${recommendation.skill_prompt_name || ''}${confidence}`
+                        : `${intentLabel}${confidence}`;
                 }
 
                 const samples = Array.isArray(recommendation.sample_titles)
                     ? recommendation.sample_titles.filter(Boolean).slice(0, 2).join(' / ')
                     : '';
                 if (skillPromptRecommendationReason) {
-                    skillPromptRecommendationReason.textContent = samples
+                    if (recommendation.status === 'manual_only') {
+                        skillPromptRecommendationReason.textContent = @json($t('task_create.skill_recommendation.manual_only'))
+                            .replace('__INTENT__', intentLabel)
+                            .replace('__SAMPLES__', samples || '-');
+                    } else if (recommendation.status === 'unconfigured') {
+                        skillPromptRecommendationReason.textContent = @json($t('task_create.skill_recommendation.unconfigured'))
+                            .replace('__INTENT__', intentLabel)
+                            .replace('__SAMPLES__', samples || '-');
+                    } else {
+                        skillPromptRecommendationReason.textContent = samples
                         ? @json($t('task_create.skill_recommendation.reason_with_samples'))
                             .replace('__INTENT__', intentLabel)
                             .replace('__SAMPLES__', samples)
                         : @json($t('task_create.skill_recommendation.reason_without_samples'))
                             .replace('__INTENT__', intentLabel);
+                    }
                 }
             }
 
@@ -1231,8 +1288,12 @@
                 syncSkillPromptRecommendation();
                 syncAdvancedGenerationSummary();
             });
-            stylePromptSelect?.addEventListener('change', syncAdvancedGenerationSummary);
+            stylePromptSelect?.addEventListener('change', function () {
+                syncStylePromptDescription();
+                syncAdvancedGenerationSummary();
+            });
             modelSelectionModeSelect?.addEventListener('change', syncAdvancedGenerationSummary);
+            generationModeInputs.forEach((input) => input.addEventListener('change', syncAdvancedGenerationSummary));
             crmSourceTypeSelect?.addEventListener('change', syncCrmSourceOptions);
             needReviewCheckbox.addEventListener('change', function () {
                 togglePublishInterval();
@@ -1293,6 +1354,7 @@
             syncImageLibrariesByEntities();
             syncContextOptionsByCollection();
             syncSkillPromptRecommendation();
+            syncStylePromptDescription();
             syncAdvancedGenerationSummary();
             togglePublishInterval();
             handleCategoryModeChange();

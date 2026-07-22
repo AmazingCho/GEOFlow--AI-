@@ -27,8 +27,14 @@
         }
         return mb_substr($message, 0, $maxLength - 1, 'UTF-8').'…';
     };
-    $describeTaskFailure = static function (?string $message) use ($formatTaskErrorSnippet): array {
+    $describeTaskFailure = static function (?string $message, ?string $terminalReason = null) use ($formatTaskErrorSnippet): array {
         $message = trim((string) $message);
+        if ($terminalReason === 'insufficient_evidence') {
+            return ['label' => __('admin.tasks.failure.insufficient_evidence'), 'detail' => __('admin.tasks.failure.insufficient_evidence_detail'), 'tone' => 'amber'];
+        }
+        if ($terminalReason === 'protocol_failure') {
+            return ['label' => __('admin.tasks.failure.protocol_failure'), 'detail' => __('admin.tasks.failure.protocol_failure_detail'), 'tone' => 'amber'];
+        }
         if ($message === '') {
             return ['label' => __('admin.tasks.failure.execution_failed'), 'detail' => '', 'tone' => 'red'];
         }
@@ -116,7 +122,7 @@
                         <tbody class="bg-white divide-y divide-gray-200">
                         @foreach ($tasks as $task)
                             @php
-                                $failureInfo = $describeTaskFailure($task['batch_error_message'] ?? '');
+                                $failureInfo = $describeTaskFailure($task['batch_error_message'] ?? '', $task['batch_terminal_reason'] ?? '');
                                 $failureClasses = $getFailureToneClasses($failureInfo['tone']);
                                 $hasVisibleFailure = !empty($task['batch_error_message']) && in_array($task['batch_status'], ['failed', 'cancelled'], true);
                             @endphp
@@ -442,7 +448,11 @@ function formatEstimatedTime(seconds) { if (seconds < 60) return `${seconds}${TA
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
 function truncateText(value, maxLength) { return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`; }
 function normalizeRuntimeError(message) { return String(message || '').trim(); }
-function getFailureMeta() { return {label: TASK_I18N.recentFailed, chipClasses: 'bg-red-50 text-red-700 border-red-200', detailClasses: 'text-red-700'}; }
+function getFailureMeta(terminalReason = '') {
+    if (terminalReason === 'insufficient_evidence') return {label: TASK_I18N.insufficientEvidence, chipClasses: 'bg-amber-50 text-amber-700 border-amber-200', detailClasses: 'text-amber-700'};
+    if (terminalReason === 'protocol_failure') return {label: TASK_I18N.protocolFailure, chipClasses: 'bg-amber-50 text-amber-700 border-amber-200', detailClasses: 'text-amber-700'};
+    return {label: TASK_I18N.recentFailed, chipClasses: 'bg-red-50 text-red-700 border-red-200', detailClasses: 'text-red-700'};
+}
 function formatTaskDateTime(value) {
     if (!value) return '';
     const date = new Date(String(value).replace(' ', 'T'));
@@ -462,7 +472,7 @@ function updateBatchStatus(task) {
     const errorMessage = normalizeRuntimeError(task.batch_error_message || '');
     if (!isRunning) {
         if (task.batch_status === 'failed') {
-            const failureMeta = getFailureMeta(errorMessage);
+            const failureMeta = getFailureMeta(task.batch_terminal_reason || '');
             statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex items-center justify-center rounded-full border px-2 py-1 ${failureMeta.chipClasses}">${escapeHtml(failureMeta.label)}</span>${errorMessage ? `<div class="mx-auto max-w-[220px] break-words leading-5 ${failureMeta.detailClasses}">${escapeHtml(truncateText(errorMessage, 60))}</div>` : ''}</div>`;
         } else if (task.batch_status === 'completed') {
             statusDiv.innerHTML = `<span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">${escapeHtml(TASK_I18N.completed)}</span>`;

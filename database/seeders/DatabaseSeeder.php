@@ -24,7 +24,7 @@ class DatabaseSeeder extends Seeder
         // 后台默认管理员（账号与密码由 GEOFLOW_ADMIN_* 环境变量控制，见 AdminUserSeeder）
         $this->call(AdminUserSeeder::class);
 
-        // 当前发布包内置提示词预设；会按 type + name 更新，不覆盖用户自建的其他提示词。
+        // 仅在可证明为全新默认安装时写入 V1 预设；已有业务库的升级必须走受控同步命令。
         $this->call(PromptPresetSeeder::class);
     }
 }

@@ -13,7 +13,7 @@ class ArticleQualityAssessmentServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_quality_assessment_flags_missing_knowledge_images_and_faq(): void
+    public function test_quality_assessment_flags_missing_knowledge_and_images_without_forcing_optional_faq(): void
     {
         $category = Category::query()->create(['name' => 'Quality', 'slug' => 'quality']);
         $author = Author::query()->create(['name' => 'Quality Author']);
@@ -37,13 +37,45 @@ class ArticleQualityAssessmentServiceTest extends TestCase
         $this->assertLessThan(70, $report['score']);
         $this->assertContains('knowledge', collect($report['issues'])->pluck('key')->all());
         $this->assertContains('images', collect($report['issues'])->pluck('key')->all());
-        $this->assertContains('faq', collect($report['issues'])->pluck('key')->all());
+        $this->assertNotContains('faq', collect($report['issues'])->pluck('key')->all());
+        $faqItem = collect($report['items'])->firstWhere('key', 'faq');
+        $this->assertSame('passed', $faqItem['status']);
+        $this->assertContains('optional_module_not_used', $faqItem['reasons']);
         $knowledgeItem = collect($report['items'])->firstWhere('key', 'knowledge');
         $this->assertIsArray($knowledgeItem);
         $this->assertSame(0, (int) data_get($knowledgeItem, 'metrics.context_length'));
         $this->assertContains('no_rag_context', data_get($knowledgeItem, 'reasons'));
         $imageItem = collect($report['items'])->firstWhere('key', 'images');
         $this->assertContains('no_images', data_get($imageItem, 'reasons'));
+    }
+
+    public function test_quality_assessment_surfaces_unresolved_deep_review_issues(): void
+    {
+        $category = Category::query()->create(['name' => 'Deep Review', 'slug' => 'deep-review']);
+        $author = Author::query()->create(['name' => 'Deep Review Author']);
+        $article = Article::query()->create([
+            'title' => 'Deep Review Article',
+            'slug' => 'deep-review-article',
+            'content' => "## Decision\n\nA complete decision paragraph explains the current evidence boundary.",
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $report = app(ArticleQualityAssessmentService::class)->assess($article, [
+            'deep_review' => [
+                'passed' => false,
+                'score' => 74,
+                'issue_codes' => ['insufficient_negative_fit'],
+                'requires_manual_review' => true,
+            ],
+        ]);
+
+        $deepItem = collect($report['items'])->firstWhere('key', 'deep_review');
+        $this->assertSame('warning', $deepItem['status']);
+        $this->assertContains('insufficient_negative_fit', $deepItem['reasons']);
+        $this->assertContains('deep_review', collect($report['issues'])->pluck('key')->all());
     }
 
     public function test_quality_assessment_rewards_supported_structured_articles(): void
@@ -107,5 +139,47 @@ MARKDOWN;
         $factsItem = collect($report['items'])->firstWhere('key', 'facts');
         $this->assertSame(1, (int) data_get($factsItem, 'metrics.entity_count'));
         $this->assertSame(1, (int) data_get($factsItem, 'metrics.case_count'));
+    }
+
+    public function test_quality_assessment_counts_markdown_prose_paragraphs_before_plain_text_normalization(): void
+    {
+        $category = Category::query()->create(['name' => 'Paragraph Quality', 'slug' => 'paragraph-quality']);
+        $author = Author::query()->create(['name' => 'Paragraph Author']);
+        $repeatedParagraph = 'This repeated paragraph documents the same supported operating condition for duplicate detection.';
+        $content = <<<MARKDOWN
+## Overview
+The opening paragraph explains the article scope and gives the reader enough context to understand the decision.
+
+The second paragraph adds a distinct supported detail without repeating the opening explanation.
+
+## Operating Conditions
+{$repeatedParagraph}
+
+{$repeatedParagraph}
+
+## Conclusion
+The final paragraph summarizes the documented decision and gives the reader a clear next step.
+MARKDOWN;
+        $article = Article::query()->create([
+            'title' => 'Paragraph Structure Assessment',
+            'slug' => 'paragraph-structure-assessment',
+            'excerpt' => 'Paragraph structure regression coverage.',
+            'content' => $content,
+            'keywords' => 'paragraph structure',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'draft',
+            'review_status' => 'pending',
+        ]);
+
+        $report = app(ArticleQualityAssessmentService::class)->assess($article);
+        $structureItem = collect($report['items'])->firstWhere('key', 'structure');
+        $uniquenessItem = collect($report['items'])->firstWhere('key', 'uniqueness');
+
+        $this->assertSame(5, (int) data_get($structureItem, 'metrics.paragraph_count'));
+        $this->assertNotContains('few_paragraphs', data_get($structureItem, 'reasons'));
+        $this->assertSame(5, (int) data_get($uniquenessItem, 'metrics.paragraph_count'));
+        $this->assertSame(1, (int) data_get($uniquenessItem, 'metrics.duplicate_paragraphs'));
+        $this->assertContains('duplicate_paragraphs', data_get($uniquenessItem, 'reasons'));
     }
 }

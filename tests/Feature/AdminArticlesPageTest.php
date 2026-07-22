@@ -335,9 +335,15 @@ class AdminArticlesPageTest extends TestCase
             'content' => 'SJ4060 适合视觉点胶应用。本文介绍 SJ4060 的能力。',
             'category_id' => (int) $category->id,
             'author_id' => (int) $author->id,
-            'status' => 'draft',
-            'review_status' => 'pending',
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
             'selected_entity_ids' => [(int) $entity->id],
+            'context_snapshot' => [
+                'review_approval' => [
+                    'article_sha256' => hash('sha256', "SJ4060 应用文章\0SJ4060 适合视觉点胶应用。本文介绍 SJ4060 的能力。"),
+                ],
+            ],
         ]);
 
         $this->actingAs($admin, 'admin')
@@ -354,6 +360,10 @@ class AdminArticlesPageTest extends TestCase
 
         $article->refresh();
         $this->assertStringContainsString('[SJ4060](https://example.com/sj4060)', (string) $article->content);
+        $this->assertSame('draft', (string) $article->status);
+        $this->assertSame('pending', (string) $article->review_status);
+        $this->assertNull($article->published_at);
+        $this->assertNull(data_get($article->context_snapshot, 'review_approval'));
         $this->assertDatabaseHas('article_internal_links', [
             'article_id' => (int) $article->id,
             'entity_id' => (int) $entity->id,
@@ -400,6 +410,49 @@ class AdminArticlesPageTest extends TestCase
 
         $this->assertTrue((bool) $article->is_hot);
         $this->assertTrue((bool) $article->is_featured);
+    }
+
+    public function test_admin_content_edit_resets_published_approval_to_pending_draft(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'article_reapproval_admin',
+            'password' => 'secret-123',
+            'email' => 'article-reapproval@example.com',
+            'display_name' => 'Article Reapproval Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $category = Category::query()->create(['name' => 'Review Reset', 'slug' => 'review-reset']);
+        $author = Author::query()->create(['name' => 'Review Reset Author']);
+        $article = Article::query()->create([
+            'title' => 'Approved article',
+            'slug' => 'approved-article',
+            'content' => 'Original approved content.',
+            'category_id' => $category->id,
+            'author_id' => $author->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.articles.update', ['articleId' => $article->id]), [
+                'title' => $article->title,
+                'excerpt' => '',
+                'content' => 'Changed content that needs a new review.',
+                'keywords' => '',
+                'meta_description' => '',
+                'category_id' => $category->id,
+                'author_id' => $author->id,
+                'status' => 'published',
+                'review_status' => 'approved',
+            ])
+            ->assertRedirect(route('admin.articles.edit', ['articleId' => $article->id]));
+
+        $article->refresh();
+        $this->assertSame('draft', $article->status);
+        $this->assertSame('pending', $article->review_status);
+        $this->assertNull($article->published_at);
     }
 
     public function test_article_list_shows_hot_and_featured_badges(): void

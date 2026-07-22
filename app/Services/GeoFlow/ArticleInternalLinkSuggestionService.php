@@ -5,6 +5,7 @@ namespace App\Services\GeoFlow;
 use App\Models\Article;
 use App\Models\ArticleInternalLink;
 use App\Models\EntityRecord;
+use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\GeoFlow\EntityTypes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,7 @@ class ArticleInternalLinkSuggestionService
                 $suggestion = $this->suggestForEntity($content, $entity);
                 if ($suggestion === null) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -84,7 +86,17 @@ class ArticleInternalLinkSuggestionService
                 $applied++;
             }
 
-            $article->forceFill(['content' => $content])->save();
+            if ($content !== (string) ($article->content ?? '')) {
+                $article->forceFill([
+                    'content' => $content,
+                    'status' => 'draft',
+                    'review_status' => 'pending',
+                    'published_at' => null,
+                ]);
+                $article->forceFill([
+                    'context_snapshot' => ArticleWorkflow::contextSnapshotForReviewStatus($article, 'pending'),
+                ])->save();
+            }
         });
 
         return ['applied' => $applied, 'skipped' => $skipped];

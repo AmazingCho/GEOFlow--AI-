@@ -5,11 +5,14 @@ namespace App\Jobs;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\WorkerHeartbeat;
+use App\Services\GeoFlow\ArticleGenerationProtocolException;
+use App\Services\GeoFlow\ArticleInsufficientEvidenceException;
 use App\Services\GeoFlow\JobQueueService;
 use App\Services\GeoFlow\WorkerExecutionService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -36,8 +39,14 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
     public int $timeout = 300;
 
     public function __construct(
-        public readonly int $taskRunId
+        public readonly int $taskRunId,
+        public readonly ?string $dispatchToken = null,
+        public readonly ?string $executionToken = null
     ) {}
+
+    private ?string $resolvedExecutionToken = null;
+
+    private ?string $resolvedClaimToken = null;
 
     /**
      * 为 Horizon 监控提供稳定标签，便于按任务维度聚合队列表现。
@@ -59,12 +68,18 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
     public function handle(JobQueueService $queueService, WorkerExecutionService $workerExecutionService): void
     {
         $workerId = gethostname().':queue:'.getmypid();
-        $job = $queueService->claimPendingJobById($this->taskRunId, $workerId);
+        $job = $queueService->claimPendingJobById(
+            $this->taskRunId,
+            $workerId,
+            $this->dispatchToken,
+            $this->resolveClaimToken($queueService)
+        );
         if (! is_array($job)) {
             return;
         }
 
         $taskId = (int) Arr::get($job, 'task_id', 0);
+        $claimToken = is_string(Arr::get($job, 'claim_token')) ? (string) Arr::get($job, 'claim_token') : null;
         if ($taskId <= 0) {
             return;
         }
@@ -78,7 +93,18 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
 
         $startedAt = microtime(true);
         try {
-            $result = $workerExecutionService->executeTask($taskId);
+            $result = $workerExecutionService->executeTask(
+                $taskId,
+                $claimToken === null
+                    ? null
+                    : fn (): bool => $queueService->renewExecutionLease($this->taskRunId, $claimToken),
+                fn (int $articleId): bool => $queueService->associateArticleWithExecution(
+                    $this->taskRunId,
+                    $taskId,
+                    $articleId,
+                    $claimToken
+                )
+            );
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
             $queueService->completeJob(
@@ -86,16 +112,34 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
                 taskId: $taskId,
                 articleId: Arr::get($result, 'article_id') !== null ? (int) Arr::get($result, 'article_id') : null,
                 durationMs: $durationMs,
-                meta: is_array(Arr::get($result, 'meta')) ? Arr::get($result, 'meta') : []
+                meta: is_array(Arr::get($result, 'meta')) ? Arr::get($result, 'meta') : [],
+                claimToken: $claimToken
             );
         } catch (Throwable $exception) {
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $message = $exception->getMessage();
 
             if ($this->shouldCancel($taskId, $message)) {
-                $queueService->cancelJob($this->taskRunId, $taskId, '管理员手动停止');
+                $queueService->cancelJob($this->taskRunId, $taskId, '管理员手动停止', $claimToken);
             } else {
-                $queueService->failJob($this->taskRunId, $taskId, $message, $durationMs);
+                $queueService->failJob(
+                    $this->taskRunId,
+                    $taskId,
+                    $message,
+                    $durationMs,
+                    60,
+                    $claimToken,
+                    ! ($exception instanceof ArticleInsufficientEvidenceException || $exception instanceof ArticleGenerationProtocolException),
+                    $exception instanceof ArticleInsufficientEvidenceException
+                        ? [
+                            'terminal_reason' => 'insufficient_evidence',
+                            'generation_outcome' => 'insufficient_evidence',
+                            'missing_information_categories' => $exception->categoryCodes,
+                        ]
+                        : ($exception instanceof ArticleGenerationProtocolException
+                            ? $this->protocolFailureMeta($exception)
+                            : [])
+                );
             }
         } finally {
             $this->heartbeat($workerId, 'idle', [
@@ -114,7 +158,7 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
     {
         try {
             $run = TaskRun::query()->whereKey($this->taskRunId)->first(['id', 'task_id', 'status']);
-            if (! $run || ($run->status ?? '') !== 'running') {
+            if (! $run || ! in_array(($run->status ?? ''), ['pending', 'running'], true)) {
                 return;
             }
 
@@ -123,15 +167,87 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
                 $message = '队列任务异常退出';
             }
 
-            app(JobQueueService::class)->failJob(
+            $queueService = app(JobQueueService::class);
+            $transitionToken = ($run->status ?? '') === 'running'
+                ? $this->resolveClaimToken($queueService)
+                : $this->dispatchToken;
+            $isInsufficientEvidence = $exception instanceof ArticleInsufficientEvidenceException;
+            $isProtocolFailure = $exception instanceof ArticleGenerationProtocolException;
+            $queueService->failJob(
                 (int) $run->id,
                 (int) $run->task_id,
-                '队列中断: '.$message,
-                0
+                $isInsufficientEvidence ? $message : '队列中断: '.$message,
+                0,
+                60,
+                $transitionToken,
+                ! ($isInsufficientEvidence || $isProtocolFailure),
+                $isInsufficientEvidence
+                    ? [
+                        'terminal_reason' => 'insufficient_evidence',
+                        'generation_outcome' => 'insufficient_evidence',
+                        'missing_information_categories' => $exception->categoryCodes,
+                    ]
+                    : ($isProtocolFailure ? $this->protocolFailureMeta($exception) : [])
             );
         } catch (Throwable) {
             // 避免失败回调自身再抛错导致 Horizon 日志刷屏
         }
+    }
+
+    private function resolveExecutionToken(): string
+    {
+        if ($this->resolvedExecutionToken !== null) {
+            return $this->resolvedExecutionToken;
+        }
+
+        $candidate = $this->executionToken;
+        if (($candidate === null || trim($candidate) === '') && $this->job !== null) {
+            $candidate = $this->job->uuid();
+        }
+
+        return $this->resolvedExecutionToken = is_string($candidate) && trim($candidate) !== ''
+            ? trim($candidate)
+            : (string) Str::uuid();
+    }
+
+    /** @return array<string,mixed> */
+    private function protocolFailureMeta(ArticleGenerationProtocolException $exception): array
+    {
+        $attempts = collect($exception->attempts)
+            ->filter(static fn (mixed $attempt): bool => is_array($attempt))
+            ->map(static fn (array $attempt): array => Arr::only($attempt, [
+                'stage',
+                'model_id',
+                'model_name',
+                'status',
+                'duration_ms',
+                'finish_reason',
+                'prompt_tokens',
+                'completion_tokens',
+                'reasoning_tokens',
+            ]))
+            ->values()
+            ->all();
+
+        return [
+            'terminal_reason' => 'protocol_failure',
+            'generation_outcome' => 'protocol_failure',
+            'protocol_version' => $exception->protocolVersion,
+            'protocol_stage' => $exception->stage->value,
+            'protocol_violation_count' => count($exception->violations),
+            'protocol_violation_codes' => array_values(array_unique(array_column($exception->violations, 'code'))),
+            'protocol_violation_paths' => array_values(array_unique(array_column($exception->violations, 'path'))),
+            'provider_attempt_count' => count($attempts),
+            'model_attempts' => $attempts,
+        ];
+    }
+
+    private function resolveClaimToken(JobQueueService $queueService): string
+    {
+        return $this->resolvedClaimToken ??= $queueService->claimTokenForDelivery(
+            $this->resolveExecutionToken(),
+            max(1, (int) $this->attempts())
+        );
     }
 
     /**

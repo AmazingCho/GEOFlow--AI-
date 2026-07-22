@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\DistributionChannel;
-use App\Models\AiModel;
 use App\Models\KnowledgeBase;
 use App\Models\Task;
 use App\Models\TaskRun;
-use App\Services\GeoFlow\ArticleQualityAssessmentService;
+use App\Services\GeoFlow\ArticleGenerationTraceSanitizer;
 use App\Services\GeoFlow\ArticleInternalLinkSuggestionService;
+use App\Services\GeoFlow\ArticlePublicationBlockedException;
+use App\Services\GeoFlow\ArticlePublicationGuard;
+use App\Services\GeoFlow\ArticleQualityAssessmentService;
 use App\Services\GeoFlow\DistributionOrchestrator;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\ArticleWorkflow;
@@ -34,12 +37,14 @@ use Throwable;
  */
 class ArticleController extends Controller
 {
-    private const QUALITY_CACHE_VERSION = 'v2';
+    private const QUALITY_CACHE_VERSION = 'v3';
 
     public function __construct(
         private readonly DistributionOrchestrator $distributionOrchestrator,
         private readonly ArticleQualityAssessmentService $qualityAssessmentService,
-        private readonly ArticleInternalLinkSuggestionService $internalLinkSuggestionService
+        private readonly ArticleInternalLinkSuggestionService $internalLinkSuggestionService,
+        private readonly ArticleGenerationTraceSanitizer $articleGenerationTraceSanitizer,
+        private readonly ArticlePublicationGuard $articlePublicationGuard
     ) {}
 
     /**
@@ -80,17 +85,22 @@ class ArticleController extends Controller
             'distribution_channel_ids.*' => ['integer', 'min:1'],
         ]);
 
-        if ((string) $article->status !== 'published') {
-            $article->forceFill([
-                'status' => 'published',
-                'published_at' => $article->published_at ?: now(),
-            ])->save();
-        }
+        try {
+            $this->articlePublicationGuard->assertCanPublish($article);
+            if ((string) $article->status !== 'published') {
+                $article->forceFill([
+                    'status' => 'published',
+                    'published_at' => $article->published_at ?: now(),
+                ])->save();
+            }
 
-        $queued = $this->distributionOrchestrator->enqueueArticleToChannels(
-            $article,
-            collect($payload['distribution_channel_ids'] ?? [])->map(static fn ($id): int => (int) $id)->filter()->unique()->values()->all()
-        );
+            $queued = $this->distributionOrchestrator->enqueueArticleToChannels(
+                $article,
+                collect($payload['distribution_channel_ids'] ?? [])->map(static fn ($id): int => (int) $id)->filter()->unique()->values()->all()
+            );
+        } catch (ArticlePublicationBlockedException $exception) {
+            return back()->withErrors($exception->getMessage());
+        }
 
         return back()->with('message', '文章已加入发布队列，共 '.$queued.' 个渠道。');
     }
@@ -258,6 +268,11 @@ class ArticleController extends Controller
         );
 
         try {
+            if ($workflowState['status'] === 'published') {
+                $this->articlePublicationGuard->assertCanPublish((new Article)->forceFill([
+                    'review_status' => $workflowState['review_status'],
+                ]));
+            }
             $article = Article::query()->create([
                 'title' => $payload['title'],
                 'slug' => ArticleWorkflow::generateUniqueSlug($payload['title']),
@@ -484,7 +499,9 @@ class ArticleController extends Controller
             }
 
             $meta = is_array($run->meta) ? $run->meta : [];
-            $trace = is_array($meta['generation_trace'] ?? null) ? $meta['generation_trace'] : [];
+            $trace = is_array($meta['generation_trace'] ?? null)
+                ? $this->articleGenerationTraceSanitizer->sanitizeGenerationTrace($meta['generation_trace'])
+                : [];
             if ($trace === []) {
                 continue;
             }
@@ -517,7 +534,9 @@ class ArticleController extends Controller
         }
 
         $meta = is_array($run->meta) ? $run->meta : [];
-        $trace = is_array($meta['generation_trace'] ?? null) ? $meta['generation_trace'] : [];
+        $trace = is_array($meta['generation_trace'] ?? null)
+            ? $this->articleGenerationTraceSanitizer->sanitizeGenerationTrace($meta['generation_trace'])
+            : [];
         if ($trace === []) {
             return [];
         }
@@ -540,6 +559,13 @@ class ArticleController extends Controller
         $payload = $this->validateArticleForm($request, true);
         $article = Article::query()->whereKey($articleId)->firstOrFail();
 
+        $contentChanged = $payload['title'] !== (string) $article->title
+            || $payload['content'] !== (string) $article->content;
+        if ($contentChanged) {
+            $payload['status'] = 'draft';
+            $payload['review_status'] = 'pending';
+        }
+
         $workflowState = ArticleWorkflow::normalizeState(
             $payload['status'],
             $payload['review_status'],
@@ -547,6 +573,22 @@ class ArticleController extends Controller
         );
 
         try {
+            $candidate = clone $article;
+            $candidate->forceFill([
+                'title' => $payload['title'],
+                'content' => $payload['content'],
+                'review_status' => $workflowState['review_status'],
+            ]);
+            $reviewStateChanged = $contentChanged
+                || $workflowState['review_status'] !== (string) $article->review_status;
+            $contextSnapshot = $reviewStateChanged
+                ? ArticleWorkflow::contextSnapshotForReviewStatus($candidate, $workflowState['review_status'])
+                : (is_array($article->context_snapshot) ? $article->context_snapshot : []);
+            $candidate->forceFill(['context_snapshot' => $contextSnapshot]);
+
+            if ($workflowState['status'] === 'published') {
+                $this->articlePublicationGuard->assertCanPublish($candidate);
+            }
             $article->fill([
                 'title' => $payload['title'],
                 'slug' => $payload['title'] === $article->title
@@ -561,6 +603,7 @@ class ArticleController extends Controller
                 'status' => $workflowState['status'],
                 'review_status' => $workflowState['review_status'],
                 'published_at' => $workflowState['published_at'],
+                'context_snapshot' => $contextSnapshot,
                 'is_hot' => (bool) ($payload['is_hot'] ?? false),
                 'is_featured' => (bool) ($payload['is_featured'] ?? false),
             ])->save();
@@ -889,16 +932,28 @@ class ArticleController extends Controller
         }
 
         $articles = Article::query()
-            ->select(['id', 'review_status', 'published_at'])
+            ->select(['id', 'title', 'content', 'review_status', 'published_at', 'context_snapshot'])
             ->whereIn('id', $articleIds)
             ->get();
 
+        $workflowStates = [];
         foreach ($articles as $article) {
             $workflowState = ArticleWorkflow::normalizeState(
                 $newStatus,
                 (string) ($article->review_status ?? 'pending'),
                 $article->published_at?->format('Y-m-d H:i:s')
             );
+
+            if ($workflowState['status'] === 'published') {
+                $candidate = clone $article;
+                $candidate->forceFill(['review_status' => $workflowState['review_status']]);
+                $this->articlePublicationGuard->assertCanPublish($candidate);
+            }
+            $workflowStates[(int) $article->id] = $workflowState;
+        }
+
+        foreach ($articles as $article) {
+            $workflowState = $workflowStates[(int) $article->id];
 
             Article::query()->whereKey((int) $article->id)->update([
                 'status' => $workflowState['status'],
@@ -926,10 +981,11 @@ class ArticleController extends Controller
 
         $articles = Article::query()
             ->with(['task:id,need_review,deleted_at'])
-            ->select(['id', 'status', 'review_status', 'published_at', 'task_id'])
+            ->select(['id', 'title', 'content', 'status', 'review_status', 'published_at', 'task_id', 'context_snapshot'])
             ->whereIn('id', $articleIds)
             ->get();
 
+        $workflowStates = [];
         foreach ($articles as $article) {
             $desiredStatus = (string) ($article->status ?? 'draft');
             $needsReview = (int) ($article->task->need_review ?? 0);
@@ -943,10 +999,29 @@ class ArticleController extends Controller
                 $article->published_at?->format('Y-m-d H:i:s')
             );
 
+            $candidate = clone $article;
+            $candidate->forceFill(['review_status' => $workflowState['review_status']]);
+            $contextSnapshot = ArticleWorkflow::contextSnapshotForReviewStatus(
+                $candidate,
+                $workflowState['review_status']
+            );
+            $candidate->forceFill(['context_snapshot' => $contextSnapshot]);
+
+            if ($workflowState['status'] === 'published') {
+                $this->articlePublicationGuard->assertCanPublish($candidate);
+            }
+            $workflowState['context_snapshot'] = $contextSnapshot;
+            $workflowStates[(int) $article->id] = $workflowState;
+        }
+
+        foreach ($articles as $article) {
+            $workflowState = $workflowStates[(int) $article->id];
+
             Article::query()->whereKey((int) $article->id)->update([
                 'status' => $workflowState['status'],
                 'review_status' => $workflowState['review_status'],
                 'published_at' => $workflowState['published_at'],
+                'context_snapshot' => json_encode($workflowState['context_snapshot'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ]);
 
             if ($workflowState['status'] === 'published') {

@@ -2,6 +2,124 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-07-22
+
+### Deep Protocol V2.4 structured contract
+
+- Split planning, review, and Markdown writing into dedicated agent responsibilities.
+- Replaced duplicated Plan fields with typed answer mode, supported sections, exact evidence mapping, and categorized verification items.
+- Aggregate all safe contract violations, allow one bounded repair, and terminate repair exhaustion as non-retryable `protocol_failure` while preserving safe usage audit data.
+- Added clear task-list labels for insufficient evidence and protocol failure without exposing raw Plan, Prompt, or evidence content.
+- Offline Phase 0-5 qualification passed 30/30 matrix cases and 227 tests / 1177 assertions. No paid model call was made; Phase 6 still requires separate approval.
+
+### V2.3 Grounding Gate and Deep-Protocol Validation
+
+- Added the V2.3.1 sparse-evidence policy: `sufficient` follows the normal Deep path, `limited` may produce a shorter bounded article and always requires human review, while `insufficient` stops after planning and reports missing information instead of padding the article to meet length or section targets.
+- The Application candidate now forbids inventing process stages, components, consequences, maintenance actions, or integration details to complete a conventional outline. Deep review no longer treats a complete evidence-limited short article as structurally thin by default.
+- Insufficient evidence is a non-retryable business outcome rather than a transient provider failure. The admin task error receives only allowlisted missing-information categories; raw model questions and source content are not persisted.
+- The six-call Deep ceiling now counts real provider attempts, including failed failover requests. Limited evidence also has an executable over-expansion gate rather than relying on Prompt compliance alone.
+- Human approval is bound to the current title/body revision. Admin/API edits, internal-link application, and distribution-side content edits return changed content to a pending draft; distribution edits do not overwrite the remote article before re-review, and `insufficient` cannot be bypassed by changing review status.
+- Prompt synchronization fingerprints now bind source/target versions and reject downgrades. Generation traces retain the Deep protocol and Prompt preset key/version, while the final grounding hash is computed after image insertion.
+- Local Docker now mounts the optimized source for runtime verification. Prompt synchronization remained read-only with `applied=false`; no additional paid model call or release-status change occurred. Final related regression: 331 tests / 2357 assertions, with no remaining P0/P1 in independent re-review.
+- Removed 54 explicitly tagged evaluation articles and three empty evaluation categories from the business database. Normal content was preserved; verification returned 52 normal articles and zero evaluation articles.
+- Invalid Deep plans receive at most one structured repair. Evidence-marker correction no longer sends article prose to an AI model and now uses deterministic local normalization, preventing marker repair from silently rewriting content or adding a paid call.
+- Local normalization accepts only fully consumed references whose exact IDs all match the frozen allowlist. Unknown, truncated, case-altered, zero-width, or garbage-suffixed references still fail closed.
+- Added safe compatibility for one standard Markdown blank line between a claim and its marker; two or more blank lines still break local association. A non-sensitive normalization count is retained in generation tracing.
+- Tightened the candidate Application numeric-evidence boundary, but the bounded DeepSeek V4 Pro recheck remained `No-Go`: the candidate single-turn output was blocked for an unsupported numeric claim, and independent blind review preferred the V2.2 control while rejecting both drafts for publication-level factual support.
+- The candidate was not applied to business Prompts, deployed, or published. Recheck outputs stayed in private evaluation files and were not inserted into the article list. Final related regression: 233 tests / 1487 assertions.
+- The authorized final Application gate compared one V2.2 control and one V2.3.1 candidate through the Deep workflow. Its runner added a process-wide lock, fail-closed handling for interrupted `in_progress` variants, and frozen Prompt/model/evidence/Deep-protocol hashes. The ceiling was 12 provider attempts; four successful responses were recorded and the model counter moved from 183 to 187.
+- Both variants still failed deterministic plan validation after their single repair: the control carried an unmapped fact in `article_angle`, while the candidate's open-question contribution violated the structured protocol. Neither produced an article body, so independent blind PM review returned `No-Go`; no business Prompt, article, task, publication, or distribution record was written.
+
+## 2026-07-21
+
+### V2.2 Real-Model Blind Review and Release Gate
+
+- DeepSeek V4 Pro completed 24 fixed comparisons: six V2.1/V2.2 no-Style pairs plus three titles tested with no Style and three representative Styles. Prompt versions and Style names were hidden during PM review.
+- All 24 outputs remain private draft/pending articles (IDs 81-104) with no task, publication time, or distribution. Two of 26 requests were rejected for length truncation and retried; known usage is 115,134 tokens.
+- The aggregate Style-recognition gate passed, confirming that optional Styles create perceptible expression differences. The 24 outputs also produced no matching heading skeletons or repeated openings.
+- The release decision remains `No-Go`: V2.2 factual support regressed against V2.1 for Case Study and Comparison, some Application/no-Style outputs lacked natural structure, and the Case Study/Troubleshooting privacy-safety gates did not fully pass.
+- This evaluation did not apply V2.2 Prompts to the business database, switch the active Docker source, publish, or distribute evaluation articles. The next candidate must harden closed-world factual and high-risk output validation, then rerun the same matrix.
+
+### Article De-Templating V2.2 and Deep Generation
+
+- Upgraded the candidate Master and seven Skills to V2.2. Closed-world evidence, privacy, safety, and wrong-product isolation remain, while fixed heading sequences and mandatory FAQ, tables, Key Takeaways, and Conclusion were removed.
+- Added four optional Style candidates: Technical Clarity, Buyer Decision, Editorial Flow, and Conversational Expert. Styles control tone, sentence rhythm, and paragraph density only; they cannot override factual or safety boundaries.
+- Added Standard and Deep generation strategies. Existing and new tasks default to Standard. Deep mode freezes one evidence package and runs planning, drafting, and review, with at most one targeted revision and five model calls per article.
+- Extracted a shared model-call service so Standard and Deep modes reuse candidate selection, failover, usage accounting, truncation handling, and non-sensitive stage tracing.
+- Deep mode does not persist articles after invalid planning, truncation, unsafe output, or blocking review issues. A useful draft with unresolved non-blocking issues is retained as pending. Case Study and Troubleshooting always keep the human-governance gate regardless of model score.
+- Extended anti-template evaluation with heading-skeleton, opening-pattern, generic-module density, paragraph-fragmentation, section-information-gain, Style-fitness, and Style-boundary checks. FAQ and Conclusion are no longer universal article requirements.
+- Article editing now displays generation mode, Style, deep stages, call counts, duration, token use, review score, and issue codes. Desktop and 390px mobile visual checks passed.
+- The implementation phase performed only a read-only Prompt preview in an isolated database. A later run completed the 24 real-model comparisons and PM blind review but did not pass the release gate. V2.2 remains unapplied to the business database, and the active `18080` Docker mount was not switched.
+- The full Laravel regression produced 586 passes / 4509 assertions. Two unrelated historical copy-baseline failures remain documented without reverting current product copy.
+
+### Article Skill V2.1 Targeted Quality Corrections
+
+- Added a closed-world evidence rule and claim inventory to the Master Prompt. Product-, application-, and project-specific claims now require direct support instead of plausible industry-detail completion.
+- Added first-run failure boundaries to Comparison, Buying Guide, Application, Troubleshooting, Case Study, and Definition. Technical remains `2.0.0` and inherits the stronger Master rule.
+- Added a runtime completeness gate. Token-limited responses, unclosed code fences, unfinished sentences, dangling headings, and empty list items are rejected before article persistence, while a complete punctuated final list item remains valid.
+- A completed provider call rejected as truncated is still counted. Smart failover may try the next model, while fixed-model tasks return an actionable error instead of saving a broken draft.
+- The active Docker database received only a read-only preview for the seven V2.1 presets; every entry was a safe update. No apply or paid-model request was performed before real-model re-evaluation.
+- Isolated Docker verification: 39 tests / 487 assertions for the correction, including truncated-primary to complete-fallback switching, and 73 tests / 564 assertions for sync, Seeder, Auto routing, generation trace, and evaluator regression.
+
+## 2026-07-20
+
+### Skill Phase 6 Real-Model Paired Evaluation and Release Gate
+
+- Added a fixed 15-case Skill evaluation catalog with clear and boundary cases for all seven intents plus one Master-only control.
+- Added the read-only `geoflow:article-skills:evaluate` command. Its default deterministic fixture has no model-selection or generation option and makes no network or paid-AI request.
+- Automatic checks cover routing, Prompt size, language, body H1, heading density, one-sentence sections, repeated modules, Case evidence/privacy, and Troubleshooting safety escalation.
+- Evaluation reports are stored privately with `0600` permissions and contain only hashes, counts, and non-sensitive check metadata, not Prompt bodies, RAG context, full outputs, restricted customer terms, provider secrets, or free-form review notes.
+- After explicit approval, DeepSeek V4 Pro generated the fixed 15 outputs and ten Master-only pairs in 25 successful requests using 124,073 tokens. Twenty comparison articles remain as draft/pending records with no task, Collection, publication timestamp, or distribution.
+- The approved eight-preset V2 Master/Skill scope was synchronized in place to the local Docker business database after a private backup. Prompt IDs and existing task references were preserved; unapproved presets were not changed.
+- The real evaluation remains No-Go: all 15 routes passed, two one-sentence-section checks failed, and five cases missed independent PM thresholds. The ten paired improvement scores averaged 3.2/5, which does not support a universal improvement claim.
+- Independent risk review further hardened the gate: external outputs must exactly match the fixed catalog; real-model flags, model metadata, and file permissions use strict validation; paired Skill output must match the evaluated output and include shared-context/model-configuration hashes; imported files always retain an unverified-provenance blocker.
+- Troubleshooting checks now detect energized or pressurized disassembly and disabled safeguards while allowing explicit prohibitions such as “never bypass the guard.” The relative-to-Master PM score applies only to cases with a validated paired control.
+
+### Per-Title Skill Auto Routing
+
+- Tasks now persist explicit `none / manual / auto` modes. Historical fixed-Skill tasks are backfilled as Manual, tasks without a Skill as None, and historical Auto is never inferred.
+- Auto no longer freezes one title-library recommendation at task save. The Worker evaluates each selected title independently, so a mixed title library can resolve different Skills for different articles.
+- Low-confidence and unconfigured outcomes still fall back safely to Master plus optional Style. Case Study checks structured evidence but continues to fall back because publication consent and anonymization review cannot be verified; Troubleshooting checks knowledge evidence and human review but continues to fall back because operational safety classification is not available. Administrators may still select either Skill manually.
+- Article Generation Sources now include a Skill routing explanation with mode, detected intent, confidence, and apply/fallback reason without storing Prompt bodies or customer knowledge content.
+- Generation trace now records the actual routing mode, intent, confidence, status, reason, and resolved Skill ID without storing Prompt bodies or customer/RAG source text.
+- Task create/edit keeps the existing Skill dropdown with no extra form burden. The title-library result is presented only as a configuration preview, with runtime behavior explained in the UI.
+
+### Stable Seven-Intent Skill Routing
+
+- Added optional controlled intent metadata for Skill Prompts: Comparison, Buying Guide, Application, Technical, Troubleshooting, Case Study, and Definition. Empty means manual-only, and non-Skill Prompts cannot retain an intent.
+- Smart recommendation no longer scans Prompt names or bodies. It matches only explicit intent metadata, with independently tested Chinese/English title rules, a confidence threshold, and deterministic tie-breaking.
+- Low-confidence or unconfigured eligible intents safely fall back to Master plus optional Style instead of guessing a Skill. Case Study and Troubleshooting can be detected and explained, but remain manual-only until evidence/privacy and safety gates exist.
+- Prompt management and task creation show localized intent, confidence, and title evidence while preserving manual selection and no-Skill paths. No unrelated task sections were moved.
+- Each intent can own only one Auto-matched Skill; alternatives remain manual-only. Task help now explains that Phase 4 makes one title-library-level choice at save time and stores it as fixed, and links directly to intent configuration.
+- Preset synchronization treats an administrator-edited or cleared `intent_key` as a conflict, supports preserving it with `keep-local`, and Seeder will not silently restore intent metadata on a governed Prompt.
+- At that stage the local database received only the nullable field and no historical inference. A later explicitly approved sync applied only the eight V2 evaluation presets while preserving historical task relationships.
+
+### Safe Prompt Preset Governance and Synchronization Preview
+
+- Added stable preset keys, versions, last-synchronized hashes, and system flags. Editable display names are no longer used as preset identity, and custom Prompts may remain ungoverned.
+- Removed the risk of production `AUTO_SEED=true` changing or resurrecting administrator Prompts. Seeder performs a one-time V1 initialization only on a provably pristine install and persists completion in `prompt_preset_installations`; a deleted default is not recreated later even without task references. Existing business databases, unknown Prompts, and untrusted bodies receive zero Prompt writes, while newer versions and disabled state are not downgraded or reset.
+- Added `geoflow:prompt-presets:sync`. Its default mode is a read-only preview of `create / rename / update / unchanged / conflict / skip`; preview neither mutates the database nor creates backups.
+- Apply requires the reviewed `plan_fingerprint`. A changed plan or any unresolved conflict blocks the entire transaction. Repeated `--preset` options can limit scope, conflicts require an explicit `keep-local` or `use-preset` decision, and a shared lock serializes concurrent apply processes.
+- Apply updates Prompt records in place, preserving task and title-library foreign keys. Before mutation it exports Prompts and both mapping sets to Git-ignored private storage with restricted file permissions.
+- Focused SQLite coverage and an isolated Docker PostgreSQL migrate/sync/second-preview run passed. The initial dry-run changed no Prompt records; a later approved operation backed up, fingerprint-locked, applied, and re-verified only the eight evaluation presets.
+
+### V2 Master Prompt and Seven Article Skill Source Contracts
+
+- Refocused the shared Master Prompt on source priority, evidence states, privacy, relationship evidence, claim discipline, anti-hype rules, and GEO extractability. It no longer hard-codes English, a body H1, unsupported runtime placeholders, or a fixed article template.
+- Added the independent `prompt_presets_v2.php` candidate package for Comparison, Buying Guide, Application, Technical, Troubleshooting, Case Study, and Definition. Every Skill declares applies/does-not-apply boundaries, unique reasoning, evidence requirements, optional modules, and failure checks.
+- Added Case Study evidence-state, publication-permission, default-anonymization, and sales-assessment safeguards. Troubleshooting now separates safe operator checks from hazardous or technician-only work and defines stop-and-escalate boundaries.
+- Added source contract tests for canonical uniqueness, responsibility structure, word budgets, combined Master + Skill budgets, body H1, reserved placeholders, and industry-neutral packaging.
+- This phase adds a version-controlled candidate file only. Seeder continues to consume V1 content, so production auto-seeding cannot apply V2. Phase 3 later added stable identity and trusted historical hashes to V1 plus preview/diff/apply governance; existing task Skills and Auto recommendation remain unchanged.
+
+### Article Prompt Runtime and Version Trace Improvements
+
+- Fixed partial custom templates that could omit keyword or RAG reference context. Runtime now appends only missing fields without duplicating explicitly rendered values.
+- Removed unsupported reserved legacy placeholders (`language`, `audience`, and `SkillPrompt`) while preserving unknown custom extension placeholders.
+- The final language instruction now explicitly prevents a duplicate body H1 because the page template renders the article title.
+- New generation traces store SHA-256 content fingerprints for the Master, Skill, and Style Prompts without storing prompt bodies or fingerprinting title, customer, or RAG context.
+- The article Generation Sources panel now shows the actual Master, Skill, Style, and short fingerprints. Historical records remain compatible and show a missing-fingerprint note.
+- Existing Auto recommendation, manual selection, no-Skill, Style Prompt, and language behavior remain unchanged. This phase does not synchronize or overwrite Prompt content stored in the database.
+
 ## 2026-07-14
 
 ### Public Prompt Preset Sanitization

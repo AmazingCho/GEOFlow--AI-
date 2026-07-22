@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\ApiException;
+use App\Services\Api\ApiTokenService;
 use App\Services\Api\IdempotencyService;
 use App\Services\GeoFlow\ArticleGeoFlowService;
+use App\Support\GeoFlow\ArticleWorkflow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -55,8 +58,19 @@ class ArticleController extends BaseApiController
     /**
      * 创建文章；成功 HTTP 201。幂等键：POST /articles。
      */
-    public function store(Request $request, ArticleGeoFlowService $articles): JsonResponse
+    public function store(Request $request, ArticleGeoFlowService $articles, ApiTokenService $tokens): JsonResponse
     {
+        $requestedState = ArticleWorkflow::normalizeState(
+            trim((string) $request->input('status', 'draft')),
+            trim((string) $request->input('review_status', 'pending'))
+        );
+        if (
+            $requestedState['status'] === 'published'
+            && ! $tokens->tokenHasScope($this->auth($request)->token, 'articles:publish')
+        ) {
+            throw new ApiException('forbidden', '创建并直接发布文章需要 articles:publish 权限', 403);
+        }
+
         $cached = IdempotencyService::maybeReplayJson($request, 'POST /articles');
         if ($cached !== null) {
             return $cached;

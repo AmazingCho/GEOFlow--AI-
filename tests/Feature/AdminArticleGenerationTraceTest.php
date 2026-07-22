@@ -51,10 +51,31 @@ class AdminArticleGenerationTraceTest extends TestCase
             'duration_ms' => 1234,
             'meta' => [
                 'generation_trace' => [
-                    'task' => ['id' => (int) $task->id, 'name' => 'Trace Task'],
+                    'task' => ['id' => (int) $task->id, 'name' => 'Trace Task', 'generation_mode' => 'deep'],
                     'title' => ['id' => 9, 'text' => 'Trace Source Title', 'keyword' => 'trace keyword'],
                     'model' => ['id' => 3, 'name' => 'Trace Model'],
                     'prompt' => ['id' => 4, 'name' => 'Trace Prompt', 'type' => 'content'],
+                    'skill_prompt' => ['id' => 5, 'name' => 'Trace Skill', 'type' => 'skill'],
+                    'skill_routing' => [
+                        'mode' => 'auto',
+                        'intent' => 'comparison',
+                        'confidence' => 84,
+                        'status' => 'recommended',
+                        'reason' => 'intent_match',
+                        'resolved_skill_prompt_id' => 5,
+                    ],
+                    'style_prompt' => ['id' => 6, 'name' => 'Trace Style', 'type' => 'style'],
+                    'deep_review' => [
+                        'passed' => false,
+                        'score' => 76,
+                        'issue_codes' => ['insufficient_negative_fit'],
+                        'requires_manual_review' => true,
+                    ],
+                    'prompt_hashes' => [
+                        'master_sha256' => str_repeat('a', 64),
+                        'skill_sha256' => str_repeat('b', 64),
+                        'style_sha256' => str_repeat('c', 64),
+                    ],
                     'knowledge' => [
                         'strategy' => 'chunk_retrieval',
                         'context_length' => 456,
@@ -124,6 +145,33 @@ class AdminArticleGenerationTraceTest extends TestCase
                                 'context_length' => 456,
                             ],
                         ],
+                        [
+                            'name' => 'resolve_skill',
+                            'status' => 'completed',
+                            'meta' => [
+                                'intent' => 'comparison',
+                                'confidence' => 84,
+                            ],
+                        ],
+                        [
+                            'name' => 'deep_plan',
+                            'status' => 'completed',
+                            'meta' => [
+                                'section_count' => 4,
+                                'open_question_count' => 1,
+                                'attempt_count' => 1,
+                                'duration_ms' => 640,
+                            ],
+                        ],
+                        [
+                            'name' => 'deep_final_review',
+                            'status' => 'completed',
+                            'meta' => [
+                                'score' => 76,
+                                'passed' => false,
+                                'issue_codes' => ['insufficient_negative_fit'],
+                            ],
+                        ],
                     ],
                 ],
             ],
@@ -138,7 +186,18 @@ class AdminArticleGenerationTraceTest extends TestCase
             ->assertSee('Trace Task')
             ->assertSee('Trace Source Title')
             ->assertSee('Trace Model')
-            ->assertSee('Trace Knowledge')
+            ->assertSee('Trace Prompt')
+            ->assertSee('Trace Skill')
+            ->assertSee(__('admin.article_edit.generation_trace.skill_routing'))
+            ->assertSee(__('admin.article_edit.generation_trace.skill_modes.auto'))
+            ->assertSee(__('admin.article_edit.generation_trace.skill_reasons.intent_match'))
+            ->assertSee(__('admin.article_edit.generation_trace.generation_mode'))
+            ->assertSee(__('admin.article_edit.generation_trace.generation_modes.deep'))
+            ->assertSee('Trace Style')
+            ->assertSee('aaaaaaaaaaaa')
+            ->assertSee('bbbbbbbbbbbb')
+            ->assertSee('cccccccccccc')
+            ->assertSee('KB #11')
             ->assertSee(__('admin.article_edit.generation_trace.evidence_score'))
             ->assertSee(__('admin.article_edit.generation_trace.rag_explain_hint'))
             ->assertSee(__('admin.article_edit.generation_trace.knowledge_bases_used'))
@@ -146,12 +205,25 @@ class AdminArticleGenerationTraceTest extends TestCase
             ->assertSee(__('admin.article_edit.generation_trace.retrieval_sources.fallback_embedding_hybrid'))
             ->assertSee(__('admin.article_edit.generation_trace.match_reason_labels.keyword_overlap'))
             ->assertSee(__('admin.article_edit.generation_trace.score_components.vector'))
-            ->assertSee('Trace Entity')
-            ->assertSee('Trace Case')
+            ->assertSee('Entity: #5')
+            ->assertSee('Case: #6')
+            ->assertDontSee('Trace Knowledge')
+            ->assertDontSee('Trace knowledge preview')
+            ->assertDontSee('Trace Entity')
+            ->assertDontSee('Trace Case')
             ->assertSee('trace-image.png')
             ->assertSee(__('admin.article_edit.quality.title'))
             ->assertSee(__('admin.article_edit.generation_trace.pipeline'))
             ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.select_sources'))
-            ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.retrieve_context'));
+            ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.retrieve_context'))
+            ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.resolve_skill'))
+            ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.deep_plan'))
+            ->assertSee(__('admin.article_edit.generation_trace.pipeline_steps.deep_final_review'))
+            ->assertSee(__('admin.article_edit.generation_trace.pipeline_meta.section_count'))
+            ->assertSee(__('admin.articles.quality.items.deep_review'))
+            ->assertSee('76 / 100')
+            ->assertDontSee('0/0')
+            ->assertDontSee('admin.article_edit.generation_trace.pipeline_steps.deep_plan')
+            ->assertDontSee('admin.article_edit.generation_trace.generation_modes.deep');
     }
 }

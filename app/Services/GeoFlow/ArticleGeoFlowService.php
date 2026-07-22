@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 class ArticleGeoFlowService
 {
+    public function __construct(private readonly ArticlePublicationGuard $articlePublicationGuard) {}
+
     public function listArticles(int $page = 1, int $perPage = 20, array $filters = []): array
     {
         $page = max(1, $page);
@@ -67,6 +69,12 @@ class ArticleGeoFlowService
         );
         $slug = $normalized['slug'] ?: ArticleWorkflow::generateUniqueSlug($normalized['title']);
         $excerpt = $normalized['excerpt'] !== '' ? $normalized['excerpt'] : mb_substr(strip_tags($normalized['content']), 0, 200);
+
+        if ($workflowState['status'] === 'published') {
+            $this->assertApiPublishable((new Article)->forceFill([
+                'review_status' => $workflowState['review_status'],
+            ]));
+        }
 
         $article = Article::query()->create([
             'title' => $normalized['title'],
@@ -136,15 +144,26 @@ class ArticleGeoFlowService
 
     public function updateArticle(int $articleId, array $data): array
     {
-        $existing = $this->getArticleRecord($articleId);
+        $article = Article::query()->whereKey($articleId)->first();
+        if (! $article) {
+            throw new ApiException('article_not_found', '文章不存在', 404);
+        }
+        $existing = $article->getAttributes();
         $normalized = $this->normalizeUpdateInput($data, $existing);
         if (empty($normalized)) {
             throw new ApiException('validation_failed', '没有可更新的字段', 422);
         }
 
-        $normalized['updated_at'] = now();
+        $contentChanged = (isset($normalized['content']) && $normalized['content'] !== (string) ($existing['content'] ?? ''))
+            || (isset($normalized['title']) && $normalized['title'] !== (string) ($existing['title'] ?? ''));
+        if ($contentChanged) {
+            $normalized['status'] = 'draft';
+            $normalized['review_status'] = 'pending';
+            $normalized['published_at'] = null;
+            $normalized['context_snapshot'] = ArticleWorkflow::contextSnapshotForReviewStatus($article, 'pending');
+        }
 
-        Article::query()->whereKey($articleId)->update($normalized);
+        $article->forceFill($normalized)->save();
 
         return $this->getArticle($articleId);
     }
@@ -179,11 +198,24 @@ class ArticleGeoFlowService
             $article['published_at'] ?? null
         );
 
-        DB::transaction(function () use ($articleId, $workflowState, $reviewStatus, $reviewNote, $auditAdminId) {
+        $candidate = Article::query()->whereKey($articleId)->firstOrFail();
+        $candidate->forceFill(['review_status' => $workflowState['review_status']]);
+        $reviewContextSnapshot = ArticleWorkflow::contextSnapshotForReviewStatus(
+            $candidate,
+            $workflowState['review_status']
+        );
+        $candidate->forceFill(['context_snapshot' => $reviewContextSnapshot]);
+
+        if ($workflowState['status'] === 'published') {
+            $this->assertApiPublishable($candidate);
+        }
+
+        DB::transaction(function () use ($articleId, $workflowState, $reviewStatus, $reviewNote, $auditAdminId, $reviewContextSnapshot) {
             Article::query()->whereKey($articleId)->update([
                 'status' => $workflowState['status'],
                 'review_status' => $workflowState['review_status'],
                 'published_at' => $workflowState['published_at'],
+                'context_snapshot' => json_encode($reviewContextSnapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'updated_at' => now(),
             ]);
 
@@ -200,11 +232,13 @@ class ArticleGeoFlowService
 
     public function publishArticle(int $articleId): array
     {
-        $article = $this->getArticleRecord($articleId);
-        $reviewStatus = $article['review_status'] ?? 'pending';
-        if (! in_array($reviewStatus, ['approved', 'auto_approved'], true)) {
-            throw new ApiException('article_not_publishable', '当前文章状态不允许直接发布', 409);
+        $articleModel = Article::query()->whereKey($articleId)->first();
+        if (! $articleModel) {
+            throw new ApiException('article_not_found', '文章不存在', 404);
         }
+        $this->assertApiPublishable($articleModel);
+        $article = $articleModel->getAttributes();
+        $reviewStatus = (string) ($article['review_status'] ?? 'pending');
 
         $workflowState = ArticleWorkflow::normalizeState(
             'published',
@@ -220,6 +254,17 @@ class ArticleGeoFlowService
         ]);
 
         return $this->getArticle($articleId);
+    }
+
+    private function assertApiPublishable(Article $article): void
+    {
+        try {
+            $this->articlePublicationGuard->assertCanPublish($article);
+        } catch (ArticlePublicationBlockedException $exception) {
+            throw new ApiException('article_not_publishable', $exception->getMessage(), 409, [
+                'reason' => $exception->reasonCode,
+            ]);
+        }
     }
 
     public function trashArticle(int $articleId): array

@@ -2,7 +2,6 @@
 
 namespace App\Services\GeoFlow;
 
-use App\Ai\Agents\MarkdownContentWriterAgent;
 use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\ArticleImage;
@@ -12,20 +11,17 @@ use App\Models\Category;
 use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Models\KnowledgeBase;
-use App\Models\KnowledgeChunk;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\Title;
-use App\Support\GeoFlow\ApiKeyCrypto;
+use App\Support\GeoFlow\ArticleGenerationModes;
+use App\Support\GeoFlow\ArticleSkillIntents;
 use App\Support\GeoFlow\ArticleWorkflow;
 use App\Support\GeoFlow\CaseTypes;
 use App\Support\GeoFlow\EntityTypes;
 use App\Support\GeoFlow\ImageUrlNormalizer;
-use App\Support\GeoFlow\OpenAiRuntimeProvider;
-use Illuminate\Support\Collection;
+use App\Support\GeoFlow\SkillSelectionModes;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Laravel\Ai\Responses\Data\FinishReason;
 use RuntimeException;
 use Throwable;
 
@@ -42,6 +38,14 @@ class WorkerExecutionService
     private array $lastKnowledgeTrace = [];
 
     /**
+     * 完整证据只在当前生成调用的内存中存在，绝不能合并进 generation trace。
+     * null 表示旧调用未提供该契约，空数组表示严格契约下没有可用证据。
+     *
+     * @var list<array<string,mixed>>|null
+     */
+    private ?array $lastEvidencePackage = null;
+
+    /**
      * @var list<array<string,mixed>>
      */
     private array $lastKnowledgeChunkTrace = [];
@@ -51,97 +55,126 @@ class WorkerExecutionService
      */
     private array $lastEntityCaseTrace = ['entities' => [], 'cases' => []];
 
+    /** @var array<string,mixed> */
+    private array $lastSkillRoutingTrace = [];
+
     /**
      * 复用统一 API Key 解密组件，确保 worker 与后台配置端解密行为一致。
      */
     public function __construct(
-        private readonly ApiKeyCrypto $apiKeyCrypto,
+        private readonly ArticleModelCallService $articleModelCallService,
         private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
         private readonly RagRetrievalService $ragRetrievalService,
         private readonly DistributionOrchestrator $distributionOrchestrator,
-        private readonly TagService $tagService
+        private readonly TagService $tagService,
+        private readonly SkillPromptRecommendationService $skillPromptRecommendationService,
+        private readonly DeepArticleGenerationService $deepArticleGenerationService,
+        private readonly ArticleEvidencePackage $articleEvidencePackage,
+        private readonly ArticleGenerationTraceSanitizer $articleGenerationTraceSanitizer,
+        private readonly ArticleGroundingGate $articleGroundingGate,
+        private readonly ArticlePublicationGuard $articlePublicationGuard
     ) {}
 
     /**
      * @return array{article_id:int|null, title:string, message:string, meta:array<string,mixed>}
      */
-    public function executeTask(int $taskId): array
-    {
-        /** @var Task|null $task */
-        $task = Task::query()->find($taskId);
-        if (! $task) {
-            throw new RuntimeException('任务不存在');
-        }
+    public function executeTask(
+        int $taskId,
+        ?callable $executionGuard = null,
+        ?callable $articleCommitRecorder = null
+    ): array {
+        $this->lastKnowledgeTrace = [];
+        $this->lastEvidencePackage = null;
+        $this->lastKnowledgeChunkTrace = [];
+        $this->lastEntityCaseTrace = ['entities' => [], 'cases' => []];
+        $this->lastSkillRoutingTrace = [];
 
-        if (($task->status ?? 'paused') !== 'active' || (int) ($task->schedule_enabled ?? 1) !== 1) {
-            throw new RuntimeException('任务未激活');
-        }
+        try {
+            /** @var Task|null $task */
+            $task = Task::query()->find($taskId);
+            if (! $task) {
+                throw new RuntimeException('任务不存在');
+            }
 
-        $publishResult = $this->publishDueDraftArticle($task);
-        if ($publishResult !== null) {
-            $this->distributionOrchestrator->enqueueForArticle((int) $publishResult['article_id']);
+            if (($task->status ?? 'paused') !== 'active' || (int) ($task->schedule_enabled ?? 1) !== 1) {
+                throw new RuntimeException('任务未激活');
+            }
 
-            return $publishResult;
-        }
+            $publishResult = $this->publishDueDraftArticle($task, $executionGuard, $articleCommitRecorder);
+            if ($publishResult !== null) {
+                $this->distributionOrchestrator->enqueueForArticle((int) $publishResult['article_id']);
 
-        $generationBlockReason = $this->getGenerationBlockReason($task);
-        if ($generationBlockReason !== null) {
+                return $publishResult;
+            }
+
+            $generationBlockReason = $this->getGenerationBlockReason($task);
+            if ($generationBlockReason !== null) {
+                return [
+                    'article_id' => null,
+                    'title' => '',
+                    'message' => $generationBlockReason,
+                    'meta' => [
+                        'task_id' => (int) $task->id,
+                        'action' => 'noop',
+                        'reason' => $generationBlockReason,
+                    ],
+                ];
+            }
+
+            $pipeline = $this->runArticleGenerationPipeline($task);
+            $articleId = $this->persistGeneratedDraft($task, $pipeline, $executionGuard, $articleCommitRecorder);
+            /** @var Title $titleRow */
+            $titleRow = $pipeline['titleRow'];
+            /** @var AiModel $aiModel */
+            $aiModel = $pipeline['aiModel'];
+            /** @var Author|null $author */
+            $author = $pipeline['author'];
+            /** @var Category|null $category */
+            $category = $pipeline['category'];
+
             return [
-                'article_id' => null,
-                'title' => '',
-                'message' => $generationBlockReason,
+                'article_id' => $articleId,
+                'title' => (string) $titleRow->title,
+                'message' => '草稿生成成功',
                 'meta' => [
                     'task_id' => (int) $task->id,
-                    'action' => 'noop',
-                    'reason' => $generationBlockReason,
+                    'action' => 'generate_draft',
+                    'title_id' => (int) $titleRow->id,
+                    'author_id' => $author?->id,
+                    'category_id' => $category?->id,
+                    'knowledge_length' => mb_strlen((string) $pipeline['knowledgeContext'], 'UTF-8'),
+                    'image_count' => count($pipeline['selectedImages']),
+                    'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
+                    'generation_mode' => (string) ($pipeline['generationMode'] ?? ArticleGenerationModes::STANDARD),
+                    'used_model_id' => (int) $aiModel->id,
+                    'used_model_name' => (string) $aiModel->name,
+                    'model_attempts' => $pipeline['generationAttempts'],
+                    'generation_trace' => $this->buildGenerationTrace(
+                        task: $task,
+                        titleRow: $titleRow,
+                        keyword: (string) $pipeline['keyword'],
+                        author: $author,
+                        category: $category,
+                        prompt: $pipeline['prompt'],
+                        skillPrompt: $pipeline['skillPrompt'],
+                        stylePrompt: $pipeline['stylePrompt'],
+                        aiModel: $aiModel,
+                        generationAttempts: $pipeline['generationAttempts'],
+                        knowledgeContext: (string) $pipeline['knowledgeContext'],
+                        selectedImages: $pipeline['selectedImages'],
+                        pipelineSteps: $pipeline['pipelineSteps'],
+                        deepReview: $pipeline['deepReview'] ?? [],
+                        deepRequiresManualReview: (bool) ($pipeline['deepRequiresManualReview'] ?? false),
+                        claimLedger: is_array($pipeline['claimLedger'] ?? null) ? $pipeline['claimLedger'] : [],
+                        claimCoverageStatus: (string) ($pipeline['claimCoverageStatus'] ?? 'not_applicable'),
+                        evidenceSufficiency: (string) ($pipeline['evidenceSufficiency'] ?? 'not_applicable'),
+                        groundingGate: is_array($pipeline['groundingGate'] ?? null) ? $pipeline['groundingGate'] : []
+                    ),
                 ],
             ];
+        } finally {
+            $this->lastEvidencePackage = null;
         }
-
-        $pipeline = $this->runArticleGenerationPipeline($task);
-        $articleId = $this->persistGeneratedDraft($task, $pipeline);
-        /** @var Title $titleRow */
-        $titleRow = $pipeline['titleRow'];
-        /** @var AiModel $aiModel */
-        $aiModel = $pipeline['aiModel'];
-        /** @var Author|null $author */
-        $author = $pipeline['author'];
-        /** @var Category|null $category */
-        $category = $pipeline['category'];
-
-        return [
-            'article_id' => $articleId,
-            'title' => (string) $titleRow->title,
-            'message' => '草稿生成成功',
-            'meta' => [
-                'task_id' => (int) $task->id,
-                'action' => 'generate_draft',
-                'title_id' => (int) $titleRow->id,
-                'author_id' => $author?->id,
-                'category_id' => $category?->id,
-                'knowledge_length' => mb_strlen((string) $pipeline['knowledgeContext'], 'UTF-8'),
-                'image_count' => count($pipeline['selectedImages']),
-                'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
-                'used_model_id' => (int) $aiModel->id,
-                'used_model_name' => (string) $aiModel->name,
-                'model_attempts' => $pipeline['generationAttempts'],
-                'generation_trace' => $this->buildGenerationTrace(
-                    task: $task,
-                    titleRow: $titleRow,
-                    keyword: (string) $pipeline['keyword'],
-                    author: $author,
-                    category: $category,
-                    prompt: $pipeline['prompt'],
-                    skillPrompt: $pipeline['skillPrompt'],
-                    stylePrompt: $pipeline['stylePrompt'],
-                    aiModel: $aiModel,
-                    generationAttempts: $pipeline['generationAttempts'],
-                    knowledgeContext: (string) $pipeline['knowledgeContext'],
-                    selectedImages: $pipeline['selectedImages'],
-                    pipelineSteps: $pipeline['pipelineSteps']
-                ),
-            ],
-        ];
     }
 
     /**
@@ -161,6 +194,12 @@ class WorkerExecutionService
      *   workflow:array{status:string,review_status:string,published_at:null},
      *   aiModel:AiModel,
      *   generationAttempts:list<array<string,mixed>>,
+     *   generationMode:string,
+     *   deepReview:array<string,mixed>,
+     *   deepRequiresManualReview:bool,
+     *   claimLedger:list<array<string,mixed>>,
+     *   claimCoverageStatus:string,
+     *   groundingGate:array<string,mixed>,
      *   selectedImages:list<Image>,
      *   pipelineSteps:list<array<string,mixed>>
      * }
@@ -173,7 +212,6 @@ class WorkerExecutionService
         $author = $this->pickAuthor($task);
         $category = $this->pickCategory($task);
         $prompt = $task->prompt_id ? Prompt::query()->find((int) $task->prompt_id) : null;
-        $skillPrompt = $task->skill_prompt_id ? Prompt::query()->whereKey((int) $task->skill_prompt_id)->where('type', 'skill')->first() : null;
         $stylePrompt = $task->style_prompt_id ? Prompt::query()->whereKey((int) $task->style_prompt_id)->where('type', 'style')->first() : null;
         $keyword = (string) ($titleRow->keyword ?? '');
         $pipelineSteps[] = $this->pipelineStep('select_sources', [
@@ -181,11 +219,36 @@ class WorkerExecutionService
             'author_id' => $author?->id,
             'category_id' => $category?->id,
             'prompt_id' => $prompt?->id,
-            'skill_prompt_id' => $skillPrompt?->id,
+            'skill_selection_mode' => (string) ($task->skill_selection_mode ?? SkillSelectionModes::fromLegacySkillId($task->skill_prompt_id)),
+            'configured_skill_prompt_id' => $task->skill_prompt_id !== null ? (int) $task->skill_prompt_id : null,
             'style_prompt_id' => $stylePrompt?->id,
         ]);
 
-        $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
+        $generationMode = ArticleGenerationModes::normalize($task->generation_mode ?? null) ?? ArticleGenerationModes::STANDARD;
+        $skillResolution = $this->resolveSkillPromptForTitle($task, $titleRow);
+        if ($generationMode === ArticleGenerationModes::DEEP) {
+            $caseStudyBlockReason = $this->deepCaseStudyBlockReason($task, $titleRow, $skillResolution);
+            if ($caseStudyBlockReason !== null) {
+                throw new RuntimeException('Case Study 生成已被证据治理门禁阻止：'.$caseStudyBlockReason);
+            }
+        }
+        /** @var Prompt|null $skillPrompt */
+        $skillPrompt = $skillResolution['prompt'];
+        $pipelineSteps[] = $this->pipelineStep('resolve_skill', [
+            'mode' => $skillResolution['mode'],
+            'intent' => $skillResolution['intent'],
+            'confidence' => $skillResolution['confidence'],
+            'status' => $skillResolution['status'],
+            'reason' => $skillResolution['reason'],
+            'resolved_skill_prompt_id' => $skillPrompt?->id,
+        ]);
+
+        $knowledgeContext = $this->resolveKnowledgeContext(
+            $task,
+            (string) $titleRow->title,
+            $keyword,
+            $generationMode === ArticleGenerationModes::DEEP
+        );
         $pipelineSteps[] = $this->pipelineStep('retrieve_context', [
             'strategy' => (string) ($this->lastKnowledgeTrace['strategy'] ?? 'none'),
             'context_length' => mb_strlen($knowledgeContext, 'UTF-8'),
@@ -193,6 +256,9 @@ class WorkerExecutionService
             'entities' => count($this->lastKnowledgeTrace['entities'] ?? []),
             'cases' => count($this->lastKnowledgeTrace['cases'] ?? []),
         ]);
+        if ($generationMode === ArticleGenerationModes::DEEP && $this->lastEvidencePackage === null) {
+            throw new RuntimeException('深度生成缺少结构化证据包，已在调用模型前停止');
+        }
 
         $composedPromptContent = $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content, $stylePrompt?->content);
         $targetLanguage = $this->determineGenerationLanguage(
@@ -209,17 +275,52 @@ class WorkerExecutionService
             'target_language' => $targetLanguage,
         ]);
 
-        $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
+        $deepReview = [];
+        $deepRequiresManualReview = false;
+        $claimLedger = [];
+        $claimCoverageStatus = 'not_applicable';
+        $evidenceSufficiency = 'not_applicable';
+        $groundingGate = [];
+        if ($generationMode === ArticleGenerationModes::DEEP) {
+            $writingBrief = trim((string) $composedPromptContent);
+            if ($writingBrief === '') {
+                $writingBrief = $targetLanguage === 'zh'
+                    ? '围绕标题回答读者问题，使用已验证证据，明确未知信息，并让文章结构服从实际内容。'
+                    : 'Answer the reader question using verified evidence, qualify unknowns, and let the content determine the structure.';
+            }
+            $generation = $this->deepArticleGenerationService->generate(
+                $task,
+                (string) $titleRow->title,
+                $keyword,
+                $writingBrief,
+                $knowledgeContext,
+                $targetLanguage,
+                $this->lastEvidencePackage,
+                is_string($skillResolution['intent'] ?? null) ? $skillResolution['intent'] : null,
+                $stylePrompt?->content
+            );
+            $pipelineSteps = array_merge($pipelineSteps, $generation['stages'] ?? []);
+            $deepReview = is_array($generation['review'] ?? null) ? $generation['review'] : [];
+            $deepRequiresManualReview = (bool) ($generation['requires_manual_review'] ?? false);
+            $claimLedger = is_array($generation['claim_ledger'] ?? null) ? $generation['claim_ledger'] : [];
+            $claimCoverageStatus = (string) ($generation['claim_coverage_status'] ?? 'not_applicable');
+            $evidenceSufficiency = (string) ($generation['evidence_sufficiency'] ?? 'sufficient');
+            $groundingGate = is_array($generation['grounding_gate'] ?? null) ? $generation['grounding_gate'] : [];
+        } else {
+            $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
+        }
         /** @var AiModel $aiModel */
         $aiModel = $generation['model'];
         $generatedContent = (string) $generation['content'];
         $generationAttempts = is_array($generation['attempts'] ?? null) ? $generation['attempts'] : [];
-        $pipelineSteps[] = $this->pipelineStep('generate_article', [
-            'model_id' => (int) $aiModel->id,
-            'model_name' => (string) $aiModel->name,
-            'content_length' => mb_strlen($generatedContent, 'UTF-8'),
-            'attempts' => count($generationAttempts),
-        ]);
+        if ($generationMode === ArticleGenerationModes::STANDARD) {
+            $pipelineSteps[] = $this->pipelineStep('generate_article', [
+                'model_id' => (int) $aiModel->id,
+                'model_name' => (string) $aiModel->name,
+                'content_length' => mb_strlen($generatedContent, 'UTF-8'),
+                'attempts' => count($generationAttempts),
+            ]);
+        }
 
         $imageResult = $this->insertTaskImagesIntoContent($task, $generatedContent);
         $content = (string) $imageResult['content'];
@@ -228,16 +329,50 @@ class WorkerExecutionService
             'image_count' => count($selectedImages),
             'content_length' => mb_strlen($content, 'UTF-8'),
         ]);
+        $groundingGate = $this->articleGroundingGate->evaluate(
+            $content,
+            is_array($this->lastEvidencePackage) ? $this->lastEvidencePackage : [],
+            [
+                'coverage_status' => $claimCoverageStatus,
+                'evidence_sufficiency' => $evidenceSufficiency,
+            ]
+        );
+        $pipelineSteps[] = $this->pipelineStep('grounding_gate', [
+            'rule_version' => (string) ($groundingGate['rule_version'] ?? ''),
+            'outcome' => (string) ($groundingGate['outcome'] ?? 'pending_review'),
+            'issue_count' => count($groundingGate['issues'] ?? []),
+        ]);
 
         $excerpt = $this->buildExcerpt($content);
+        $resolvedIntent = trim((string) ($skillResolution['intent'] ?? $skillPrompt?->intent_key ?? ''));
+        $titleClassification = $this->skillPromptRecommendationService->classifyTitle(
+            trim((string) $titleRow->title.' '.(string) ($titleRow->keyword ?? ''))
+        );
+        $governanceIntent = $resolvedIntent !== '' ? $resolvedIntent : trim((string) ($titleClassification['intent'] ?? ''));
+        $requiresGovernanceReview = ($skillResolution['status'] ?? '') === 'governance_pending'
+            || in_array($governanceIntent, [ArticleSkillIntents::CASE_STUDY, ArticleSkillIntents::TROUBLESHOOTING], true);
+        $requiresGroundingReview = ($groundingGate['outcome'] ?? 'pending_review') !== 'pass';
         $workflow = [
             'status' => 'draft',
-            'review_status' => (int) ($task->need_review ?? 1) === 1 ? 'pending' : 'approved',
+            'review_status' => (int) ($task->need_review ?? 1) === 1
+                || $deepRequiresManualReview
+                || $requiresGovernanceReview
+                || $requiresGroundingReview
+                ? 'pending'
+                : 'approved',
             'published_at' => null,
         ];
         $pipelineSteps[] = $this->pipelineStep('prepare_draft', [
             'excerpt_length' => mb_strlen($excerpt, 'UTF-8'),
             'review_status' => $workflow['review_status'],
+            'generation_mode' => $generationMode,
+            'deep_issue_codes' => $deepReview['issue_codes'] ?? [],
+            'governance_review_required' => $requiresGovernanceReview,
+            'grounding_review_required' => $requiresGroundingReview,
+            'grounding_outcome' => (string) ($groundingGate['outcome'] ?? 'pending_review'),
+            'claim_coverage_status' => $claimCoverageStatus,
+            'evidence_sufficiency' => $evidenceSufficiency,
+            'claim_count' => count($claimLedger),
         ]);
 
         return [
@@ -256,16 +391,252 @@ class WorkerExecutionService
             'workflow' => $workflow,
             'aiModel' => $aiModel,
             'generationAttempts' => $generationAttempts,
+            'generationMode' => $generationMode,
+            'deepReview' => $deepReview,
+            'deepRequiresManualReview' => $deepRequiresManualReview,
+            'claimLedger' => $claimLedger,
+            'claimCoverageStatus' => $claimCoverageStatus,
+            'evidenceSufficiency' => $evidenceSufficiency,
+            'groundingGate' => $groundingGate,
             'selectedImages' => $selectedImages,
             'pipelineSteps' => $pipelineSteps,
         ];
     }
 
     /**
+     * @return array{prompt:Prompt|null,mode:string,intent:?string,confidence:?int,status:string,reason:string}
+     */
+    private function resolveSkillPromptForTitle(Task $task, Title $titleRow): array
+    {
+        $mode = SkillSelectionModes::normalize($task->skill_selection_mode)
+            ?? SkillSelectionModes::fromLegacySkillId($task->skill_prompt_id);
+        $result = [
+            'prompt' => null,
+            'mode' => $mode,
+            'intent' => null,
+            'confidence' => null,
+            'status' => 'disabled',
+            'reason' => 'skill_disabled',
+        ];
+
+        if ($mode === SkillSelectionModes::NONE) {
+            return $this->rememberSkillRouting($result);
+        }
+
+        if ($mode === SkillSelectionModes::MANUAL) {
+            $prompt = $task->skill_prompt_id
+                ? Prompt::query()->whereKey((int) $task->skill_prompt_id)->where('type', 'skill')->first()
+                : null;
+            $intent = $prompt ? $this->resolveManualSkillIntent($prompt) : null;
+            $result['intent'] = $intent;
+            $governanceReason = $prompt ? $this->skillGovernanceFailureReason($task, $intent) : null;
+            if ($prompt && $intent === null) {
+                $hasSelectedCase = $this->integerList(
+                    preg_split('/\s*,\s*/u', trim((string) ($task->case_filter ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: []
+                ) !== [];
+                if ($hasSelectedCase) {
+                    $governanceReason = 'case_skill_intent_unclassified';
+                } elseif ($this->isDeepGeneration($task)) {
+                    $governanceReason = 'manual_skill_intent_unclassified';
+                }
+            }
+            if ($governanceReason !== null && $this->isDeepGeneration($task)) {
+                $result['status'] = 'blocked';
+                $result['reason'] = $governanceReason;
+
+                return $this->rememberSkillRouting($result);
+            }
+            $result['prompt'] = $prompt;
+            $result['status'] = $prompt
+                ? ($governanceReason !== null ? 'governance_pending' : 'manual')
+                : 'fallback';
+            $result['reason'] = $prompt
+                ? ($governanceReason ?? 'manual_selection')
+                : 'manual_skill_missing';
+
+            return $this->rememberSkillRouting($result);
+        }
+
+        $classificationText = trim((string) $titleRow->title.' '.(string) ($titleRow->keyword ?? ''));
+        $classification = $this->skillPromptRecommendationService->classifyTitle($classificationText);
+        if ($classification === null) {
+            $result['status'] = 'fallback';
+            $result['reason'] = 'low_confidence';
+
+            return $this->rememberSkillRouting($result);
+        }
+
+        $intent = (string) $classification['intent'];
+        $result['intent'] = $intent;
+        $result['confidence'] = (int) $classification['confidence'];
+
+        if (! in_array($intent, ArticleSkillIntents::autoEligible(), true)) {
+            $result['status'] = 'fallback';
+            $result['reason'] = $this->skillGovernanceFailureReason($task, $intent) ?? 'skill_disabled';
+
+            return $this->rememberSkillRouting($result);
+        }
+
+        $governanceReason = $this->skillGovernanceFailureReason($task, $intent);
+        if ($governanceReason !== null && $this->isDeepGeneration($task)) {
+            $result['status'] = 'blocked';
+            $result['reason'] = $governanceReason;
+
+            return $this->rememberSkillRouting($result);
+        }
+
+        $prompt = $this->skillPromptRecommendationService->findSkillPromptForIntent($intent);
+        if ($prompt === null) {
+            $result['status'] = 'fallback';
+            $result['reason'] = 'skill_unconfigured';
+
+            return $this->rememberSkillRouting($result);
+        }
+
+        $result['prompt'] = $prompt;
+        $result['status'] = $governanceReason !== null ? 'governance_pending' : 'recommended';
+        $result['reason'] = $governanceReason ?? 'intent_match';
+
+        return $this->rememberSkillRouting($result);
+    }
+
+    /** @param array{prompt:Prompt|null,mode:string,intent:?string,confidence:?int,status:string,reason:string} $result */
+    private function rememberSkillRouting(array $result): array
+    {
+        $this->lastSkillRoutingTrace = [
+            'mode' => $result['mode'],
+            'intent' => $result['intent'],
+            'confidence' => $result['confidence'],
+            'status' => $result['status'],
+            'reason' => $result['reason'],
+            'resolved_skill_prompt_id' => $result['prompt']?->id,
+        ];
+
+        return $result;
+    }
+
+    /** @param array{prompt:Prompt|null,mode:string,intent:?string,confidence:?int,status:string,reason:string} $skillResolution */
+    private function deepCaseStudyBlockReason(Task $task, Title $titleRow, array $skillResolution): ?string
+    {
+        if (($skillResolution['status'] ?? null) === 'blocked') {
+            return (string) ($skillResolution['reason'] ?? 'skill_governance_blocked');
+        }
+        if (($skillResolution['mode'] ?? null) === SkillSelectionModes::MANUAL
+            && ($skillResolution['prompt'] ?? null) instanceof Prompt
+            && ($skillResolution['intent'] ?? null) === null
+            && $this->integerList(preg_split('/\s*,\s*/u', trim((string) ($task->case_filter ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: []) !== []) {
+            return 'case_skill_intent_unclassified';
+        }
+
+        if (($skillResolution['intent'] ?? null) === ArticleSkillIntents::CASE_STUDY) {
+            return ($skillResolution['status'] ?? '') === 'blocked'
+                ? (string) ($skillResolution['reason'] ?? 'case_publication_approval_missing')
+                : $this->caseStudyGateFailureReason($task);
+        }
+
+        $classification = $this->skillPromptRecommendationService->classifyTitle(
+            trim((string) $titleRow->title.' '.(string) ($titleRow->keyword ?? ''))
+        );
+
+        return ($classification['intent'] ?? null) === ArticleSkillIntents::CASE_STUDY
+            ? $this->caseStudyGateFailureReason($task)
+            : null;
+    }
+
+    private function skillGovernanceFailureReason(Task $task, ?string $intent): ?string
+    {
+        return match ($intent) {
+            ArticleSkillIntents::CASE_STUDY => $this->caseStudyGateFailureReason($task),
+            ArticleSkillIntents::TROUBLESHOOTING => $this->troubleshootingGateFailureReason($task),
+            default => null,
+        };
+    }
+
+    private function isDeepGeneration(Task $task): bool
+    {
+        return (ArticleGenerationModes::normalize($task->generation_mode ?? null) ?? ArticleGenerationModes::STANDARD)
+            === ArticleGenerationModes::DEEP;
+    }
+
+    private function resolveManualSkillIntent(Prompt $prompt): ?string
+    {
+        $intent = ArticleSkillIntents::normalize($prompt->intent_key);
+        if ($intent !== null) {
+            return $intent;
+        }
+
+        if (preg_match('/\Aarticle\.skill\.([a-z_]+)\z/', trim((string) ($prompt->preset_key ?? '')), $matches) === 1) {
+            $intent = ArticleSkillIntents::normalize($matches[1] ?? null);
+            if ($intent !== null) {
+                return $intent;
+            }
+        }
+
+        $name = mb_strtolower(trim((string) $prompt->name), 'UTF-8');
+        if (preg_match('/\b(?:case\s*study|success\s*story)\b|成功故事|(?:客户|成功|项目)?案例(?:文章|研究|写作|故事)/iu', $name) === 1) {
+            return ArticleSkillIntents::CASE_STUDY;
+        }
+        if (preg_match('/\btroubleshoot(?:ing)?\b|故障排查|故障处理/iu', $name) === 1) {
+            return ArticleSkillIntents::TROUBLESHOOTING;
+        }
+
+        return null;
+    }
+
+    private function caseStudyGateFailureReason(Task $task): ?string
+    {
+        $caseIds = $this->integerList(preg_split('/\s*,\s*/u', trim((string) ($task->case_filter ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+        if ($caseIds === []) {
+            return 'case_evidence_missing';
+        }
+
+        $hasStructuredEvidence = CaseRecord::query()
+            ->whereIn('id', $caseIds)
+            ->whereNotNull('solution')
+            ->where('solution', '<>', '')
+            ->where(function ($query): void {
+                $query->where(function ($nested): void {
+                    $nested->whereNotNull('result')->where('result', '<>', '');
+                })->orWhere(function ($nested): void {
+                    $nested->whereNotNull('metrics')->where('metrics', '<>', '');
+                });
+            })
+            ->exists();
+
+        if (! $hasStructuredEvidence) {
+            return 'case_evidence_missing';
+        }
+
+        // The current Case schema cannot prove publication consent or anonymization review.
+        return 'case_publication_approval_missing';
+    }
+
+    private function troubleshootingGateFailureReason(Task $task): ?string
+    {
+        if ((int) ($task->need_review ?? 1) !== 1) {
+            return 'troubleshooting_evidence_missing';
+        }
+
+        $knowledgeBaseIds = $this->integerList($this->lastKnowledgeTrace['knowledge_base_ids'] ?? []);
+        $contextLength = (int) ($this->lastKnowledgeTrace['context_length'] ?? 0);
+
+        if ($knowledgeBaseIds === [] || $contextLength <= 0) {
+            return 'troubleshooting_evidence_missing';
+        }
+
+        // Knowledge sources are not yet classified for operator-safe vs technician-only guidance.
+        return 'troubleshooting_safety_classification_missing';
+    }
+
+    /**
      * @param  array<string,mixed>  $pipeline
      */
-    private function persistGeneratedDraft(Task $task, array $pipeline): int
-    {
+    private function persistGeneratedDraft(
+        Task $task,
+        array $pipeline,
+        ?callable $executionGuard = null,
+        ?callable $articleCommitRecorder = null
+    ): int {
         /** @var Title $titleRow */
         $titleRow = $pipeline['titleRow'];
         /** @var Author|null $author */
@@ -274,14 +645,25 @@ class WorkerExecutionService
         $category = $pipeline['category'];
         $keyword = (string) $pipeline['keyword'];
         $content = (string) $pipeline['content'];
+        if ($this->articleEvidencePackage->containsEvidenceLikeMarker($content)) {
+            throw new RuntimeException('文章包含未清理的证据标记，未保存草稿');
+        }
         $excerpt = (string) $pipeline['excerpt'];
         /** @var array{status:string,review_status:string,published_at:null} $workflow */
         $workflow = $pipeline['workflow'];
         /** @var list<Image> $selectedImages */
         $selectedImages = $pipeline['selectedImages'];
         $contextMetadata = $this->articleContextMetadataFromTrace($this->lastKnowledgeTrace);
+        if (($pipeline['generationMode'] ?? ArticleGenerationModes::STANDARD) === ArticleGenerationModes::DEEP) {
+            $contextMetadata['context_snapshot']['claim_ledger'] = $this->articleGenerationTraceSanitizer
+                ->sanitizeClaimLedger($pipeline['claimLedger'] ?? []);
+            $contextMetadata['context_snapshot']['claim_coverage_status'] = (string) ($pipeline['claimCoverageStatus'] ?? 'not_applicable');
+            $contextMetadata['context_snapshot']['evidence_sufficiency'] = (string) ($pipeline['evidenceSufficiency'] ?? 'sufficient');
+        }
+        $contextMetadata['context_snapshot']['grounding_gate'] = $this->articleGenerationTraceSanitizer
+            ->sanitizeGroundingGate($pipeline['groundingGate'] ?? []);
 
-        return DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages, $contextMetadata): int {
+        return DB::transaction(function () use ($task, $titleRow, $author, $category, $keyword, $content, $excerpt, $workflow, $selectedImages, $contextMetadata, $executionGuard, $articleCommitRecorder): int {
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
@@ -293,6 +675,7 @@ class WorkerExecutionService
             if ($generationBlockReason !== null) {
                 throw new RuntimeException($generationBlockReason);
             }
+            $this->assertExecutionOwnership($executionGuard);
 
             $article = Article::query()->create([
                 'title' => (string) $titleRow->title,
@@ -344,6 +727,7 @@ class WorkerExecutionService
                 $taskUpdate['next_publish_at'] = now()->addSeconds($this->normalizePublishInterval($freshTask));
             }
             Task::query()->whereKey($task->id)->update($taskUpdate);
+            $this->recordCommittedArticle($articleCommitRecorder, (int) $article->id);
 
             return (int) $article->id;
         });
@@ -381,10 +765,19 @@ class WorkerExecutionService
         array $generationAttempts,
         string $knowledgeContext,
         array $selectedImages,
-        array $pipelineSteps = []
+        array $pipelineSteps = [],
+        array $deepReview = [],
+        bool $deepRequiresManualReview = false,
+        array $claimLedger = [],
+        string $claimCoverageStatus = 'not_applicable',
+        string $evidenceSufficiency = 'not_applicable',
+        array $groundingGate = []
     ): array {
         return [
             'version' => 1,
+            'deep_protocol_version' => ArticleGenerationModes::normalize($task->generation_mode ?? null) === ArticleGenerationModes::DEEP
+                ? DeepArticleGenerationService::PROTOCOL_VERSION
+                : null,
             'generated_at' => now()->toDateTimeString(),
             'pipeline' => $pipelineSteps,
             'task' => [
@@ -395,6 +788,8 @@ class WorkerExecutionService
                 'entity_filter' => (string) ($task->entity_filter ?? ''),
                 'image_tag_filter' => (string) ($task->image_tag_filter ?? ''),
                 'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
+                'generation_mode' => ArticleGenerationModes::normalize($task->generation_mode ?? null) ?? ArticleGenerationModes::STANDARD,
+                'skill_selection_mode' => (string) ($task->skill_selection_mode ?? SkillSelectionModes::fromLegacySkillId($task->skill_prompt_id)),
             ],
             'title' => [
                 'id' => (int) $titleRow->id,
@@ -403,9 +798,15 @@ class WorkerExecutionService
             ],
             'author' => $author ? ['id' => (int) $author->id, 'name' => (string) $author->name] : null,
             'category' => $category ? ['id' => (int) $category->id, 'name' => (string) $category->name] : null,
-            'prompt' => $prompt ? ['id' => (int) $prompt->id, 'name' => (string) $prompt->name, 'type' => (string) $prompt->type] : null,
-            'skill_prompt' => $skillPrompt ? ['id' => (int) $skillPrompt->id, 'name' => (string) $skillPrompt->name, 'type' => (string) $skillPrompt->type] : null,
-            'style_prompt' => $stylePrompt ? ['id' => (int) $stylePrompt->id, 'name' => (string) $stylePrompt->name, 'type' => (string) $stylePrompt->type] : null,
+            'prompt' => $this->promptTraceReference($prompt),
+            'skill_prompt' => $this->promptTraceReference($skillPrompt),
+            'skill_routing' => $this->lastSkillRoutingTrace,
+            'style_prompt' => $this->promptTraceReference($stylePrompt),
+            'prompt_hashes' => [
+                'master_sha256' => $this->promptContentHash($prompt),
+                'skill_sha256' => $this->promptContentHash($skillPrompt),
+                'style_sha256' => $this->promptContentHash($stylePrompt),
+            ],
             'language' => [
                 'code' => $this->determineGenerationLanguage((string) $titleRow->title, $keyword, $this->composeMasterAndSkillPrompt($prompt?->content, $skillPrompt?->content)),
             ],
@@ -416,7 +817,20 @@ class WorkerExecutionService
                 'provider' => (string) ($aiModel->provider ?? ''),
             ],
             'model_attempts' => $generationAttempts,
-            'knowledge' => array_merge($this->lastKnowledgeTrace, [
+            'deep_review' => $deepReview === [] ? null : [
+                'passed' => (bool) ($deepReview['passed'] ?? false),
+                'score' => (int) ($deepReview['score'] ?? 0),
+                'issue_codes' => array_values($deepReview['issue_codes'] ?? []),
+                'metrics' => is_array($deepReview['metrics'] ?? null) ? $deepReview['metrics'] : [],
+                'requires_manual_review' => $deepRequiresManualReview,
+            ],
+            'claim_provenance' => [
+                'coverage_status' => $claimCoverageStatus,
+                'evidence_sufficiency' => $evidenceSufficiency,
+                'claim_ledger' => $this->articleGenerationTraceSanitizer->sanitizeClaimLedger($claimLedger),
+            ],
+            'grounding_gate' => $this->articleGenerationTraceSanitizer->sanitizeGroundingGate($groundingGate),
+            'knowledge' => array_merge($this->articleGenerationTraceSanitizer->sanitizeKnowledgeTrace($this->lastKnowledgeTrace), [
                 'context_length' => mb_strlen($knowledgeContext, 'UTF-8'),
             ]),
             'images' => array_map(static fn (Image $image): array => [
@@ -435,7 +849,9 @@ class WorkerExecutionService
      */
     private function articleContextMetadataFromTrace(array $trace): array
     {
-        $package = is_array($trace['context_package'] ?? null) ? $trace['context_package'] : $trace;
+        $package = is_array($trace['context_package'] ?? null)
+            ? $this->articleGenerationTraceSanitizer->sanitizeContextPackage($trace['context_package'])
+            : $this->articleGenerationTraceSanitizer->sanitizeKnowledgeTrace($trace);
 
         return [
             'selected_collection_id' => isset($package['selected_collection_id'])
@@ -512,13 +928,16 @@ class WorkerExecutionService
      *
      * @return array{article_id:int, title:string, message:string, meta:array<string,mixed>}|null
      */
-    private function publishDueDraftArticle(Task $task): ?array
-    {
+    private function publishDueDraftArticle(
+        Task $task,
+        ?callable $executionGuard = null,
+        ?callable $articleCommitRecorder = null
+    ): ?array {
         if ($task->next_publish_at !== null && $task->next_publish_at->greaterThan(now())) {
             return null;
         }
 
-        return DB::transaction(function () use ($task): ?array {
+        return DB::transaction(function () use ($task, $executionGuard, $articleCommitRecorder): ?array {
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
@@ -531,18 +950,31 @@ class WorkerExecutionService
                 return null;
             }
 
-            /** @var Article|null $article */
-            $article = Article::query()
+            $candidateArticleId = Article::query()
                 ->where('task_id', (int) $freshTask->id)
                 ->where('status', 'draft')
                 ->whereIn('review_status', ['approved', 'auto_approved'])
                 ->whereNull('deleted_at')
                 ->orderBy('id')
+                ->value('id');
+            if ($candidateArticleId === null) {
+                return null;
+            }
+            $this->assertExecutionOwnership($executionGuard);
+
+            /** @var Article|null $article */
+            $article = Article::query()
+                ->whereKey((int) $candidateArticleId)
+                ->where('task_id', (int) $freshTask->id)
+                ->where('status', 'draft')
+                ->whereIn('review_status', ['approved', 'auto_approved'])
+                ->whereNull('deleted_at')
                 ->lockForUpdate()
-                ->first(['id', 'title', 'review_status']);
+                ->first(['id', 'title', 'review_status', 'context_snapshot']);
             if (! $article) {
                 return null;
             }
+            $this->articlePublicationGuard->assertCanPublish($article);
 
             $publishScope = (string) ($freshTask->publish_scope ?? 'local_and_distribution');
             $targetStatus = $publishScope === 'distribution_only' ? 'private' : 'published';
@@ -560,6 +992,7 @@ class WorkerExecutionService
                 'next_publish_at' => now()->addSeconds($publishInterval),
                 'updated_at' => now(),
             ]);
+            $this->recordCommittedArticle($articleCommitRecorder, (int) $article->id);
 
             return [
                 'article_id' => (int) $article->id,
@@ -572,6 +1005,20 @@ class WorkerExecutionService
                 ],
             ];
         });
+    }
+
+    private function assertExecutionOwnership(?callable $executionGuard): void
+    {
+        if ($executionGuard !== null && $executionGuard() !== true) {
+            throw new RuntimeException('任务执行所有权已失效，当前 worker 不允许写入业务数据');
+        }
+    }
+
+    private function recordCommittedArticle(?callable $articleCommitRecorder, int $articleId): void
+    {
+        if ($articleCommitRecorder !== null && $articleCommitRecorder($articleId) !== true) {
+            throw new RuntimeException('任务执行结果无法关联当前运行记录，业务写入已回滚');
+        }
     }
 
     /**
@@ -605,146 +1052,13 @@ class WorkerExecutionService
     }
 
     /**
-     * 解析并校验任务绑定的 AI 模型（必须是 active + chat）。
-     */
-    private function resolveAiModel(Task $task): AiModel
-    {
-        $aiModelId = (int) ($task->ai_model_id ?? 0);
-        if ($aiModelId <= 0) {
-            throw new RuntimeException('任务未配置 AI 模型');
-        }
-
-        $aiModel = AiModel::query()
-            ->whereKey($aiModelId)
-            ->where('status', 'active')
-            ->where(function ($query): void {
-                $query->whereNull('model_type')
-                    ->orWhere('model_type', '')
-                    ->orWhere('model_type', 'chat');
-            })
-            ->first();
-
-        if (! $aiModel) {
-            throw new RuntimeException('任务 AI 模型不可用');
-        }
-
-        return $aiModel;
-    }
-
-    /**
-     * 固定模型只尝试主模型；智能切换按 failover_priority 依次尝试其它 active chat 模型。
+     * 保留 Worker 内部入口，实际模型调用由独立服务统一处理。
      *
      * @return array{content:string,model:AiModel,attempts:list<array{model_id:int,model_name:string,status:string,reason:?string}>}
      */
     private function generateContentWithModelSelection(Task $task, string $contentPrompt): array
     {
-        $mode = (string) ($task->model_selection_mode ?? 'fixed');
-        $attempts = [];
-        $lastMessage = '';
-
-        foreach ($this->resolveAiModelCandidates($task) as $candidate) {
-            $unavailableReason = $this->getAiModelUnavailableReason($candidate);
-            if ($unavailableReason !== null) {
-                $attempts[] = $this->buildModelAttempt($candidate, 'skipped', $unavailableReason);
-                $lastMessage = $unavailableReason;
-                if ($mode !== 'smart_failover') {
-                    throw new RuntimeException($unavailableReason);
-                }
-
-                continue;
-            }
-
-            try {
-                $content = $this->generateContent($candidate, $contentPrompt);
-                $attempts[] = $this->buildModelAttempt($candidate, 'success', null);
-
-                return [
-                    'content' => $content,
-                    'model' => $candidate,
-                    'attempts' => $attempts,
-                ];
-            } catch (Throwable $exception) {
-                $lastMessage = trim($exception->getMessage());
-                $attempts[] = $this->buildModelAttempt($candidate, 'failed', $lastMessage);
-
-                if ($mode !== 'smart_failover') {
-                    throw $exception;
-                }
-            }
-        }
-
-        if ($mode === 'smart_failover' && $attempts !== []) {
-            throw new RuntimeException($this->buildFailoverErrorMessage($attempts, $lastMessage));
-        }
-
-        throw new RuntimeException('AI模型不可用或已达每日限制');
-    }
-
-    /**
-     * @return list<AiModel>
-     */
-    private function resolveAiModelCandidates(Task $task): array
-    {
-        $primaryModel = $this->resolveAiModel($task);
-        if (($task->model_selection_mode ?? 'fixed') !== 'smart_failover') {
-            return [$primaryModel];
-        }
-
-        $fallbackModels = AiModel::query()
-            ->whereKeyNot((int) $primaryModel->id)
-            ->where(function ($query): void {
-                $query->whereNull('model_type')
-                    ->orWhere('model_type', '')
-                    ->orWhere('model_type', 'chat');
-            })
-            ->orderBy('failover_priority')
-            ->orderBy('id')
-            ->get()
-            ->all();
-
-        return array_values(array_merge([$primaryModel], $fallbackModels));
-    }
-
-    private function getAiModelUnavailableReason(AiModel $aiModel): ?string
-    {
-        if (($aiModel->status ?? 'inactive') !== 'active') {
-            return 'AI模型不可用或已达每日限制';
-        }
-
-        $dailyLimit = (int) ($aiModel->daily_limit ?? 0);
-        $usedToday = (int) ($aiModel->used_today ?? 0);
-        if ($dailyLimit > 0 && $usedToday >= $dailyLimit) {
-            return 'AI模型不可用或已达每日限制';
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array{model_id:int,model_name:string,status:string,reason:?string}
-     */
-    private function buildModelAttempt(AiModel $aiModel, string $status, ?string $reason): array
-    {
-        return [
-            'model_id' => (int) $aiModel->id,
-            'model_name' => (string) $aiModel->name,
-            'status' => $status,
-            'reason' => $reason,
-        ];
-    }
-
-    /**
-     * @param  list<array{model_id:int,model_name:string,status:string,reason:?string}>  $attempts
-     */
-    private function buildFailoverErrorMessage(array $attempts, string $lastMessage): string
-    {
-        $summaries = [];
-        foreach ($attempts as $attempt) {
-            $reason = trim((string) ($attempt['reason'] ?? ''));
-            $summaries[] = (string) $attempt['model_name'].($reason !== '' ? '（'.$reason.'）' : '');
-        }
-
-        return '智能模型切换已尝试：'.implode('；', $summaries).'。最终失败：'.$lastMessage;
+        return $this->articleModelCallService->generateWithModelSelection($task, $contentPrompt);
     }
 
     private function pickTitle(Task $task): Title
@@ -846,24 +1160,51 @@ class WorkerExecutionService
             $isFallbackPrompt = true;
         }
 
-        $hasExplicitContextVariables = $isFallbackPrompt || $this->promptHasKnownContextVariables($prompt);
+        $prompt = $this->stripReservedPromptPlaceholders($prompt);
+        $explicitContext = [
+            'title' => $isFallbackPrompt || $this->promptHasContextVariable($prompt, 'title'),
+            'keyword' => $isFallbackPrompt || $this->promptHasContextVariable($prompt, 'keyword'),
+            'knowledge' => $this->promptHasContextVariable($prompt, 'knowledge'),
+        ];
         $renderedPrompt = $this->renderPromptTemplate($prompt, [
             'title' => $title,
             'keyword' => $keyword,
             'knowledge' => $knowledgeContext,
         ]);
 
-        if (! $hasExplicitContextVariables) {
-            $renderedPrompt = $this->appendSmartPromptContext($renderedPrompt, $title, $keyword, $knowledgeContext, $targetLanguage);
+        if (! $explicitContext['title'] || ! $explicitContext['keyword'] || ! $explicitContext['knowledge']) {
+            $renderedPrompt = $this->appendSmartPromptContext(
+                $renderedPrompt,
+                $title,
+                $keyword,
+                $knowledgeContext,
+                $targetLanguage,
+                ! $explicitContext['title'],
+                ! $explicitContext['keyword'],
+                ! $explicitContext['knowledge']
+            );
         }
 
         return trim($renderedPrompt)."\n\n".$this->finalPromptInstruction($targetLanguage);
     }
 
-    private function promptHasKnownContextVariables(string $prompt): bool
+    private function promptHasContextVariable(string $prompt, string $name): bool
     {
-        return preg_match('/\{\{\s*(title|keyword|knowledge)\s*\}\}/iu', $prompt) === 1
-            || preg_match('/\{\{#if\s+(title|keyword|knowledge)\s*\}\}/iu', $prompt) === 1;
+        $quotedName = preg_quote($name, '/');
+
+        return preg_match('/\{\{\s*'.$quotedName.'\s*\}\}/iu', $prompt) === 1
+            || preg_match('/\{\{#if\s+'.$quotedName.'\s*\}\}/iu', $prompt) === 1;
+    }
+
+    private function stripReservedPromptPlaceholders(string $prompt): string
+    {
+        foreach (['language', 'audience', 'SkillPrompt'] as $name) {
+            $quotedName = preg_quote($name, '/');
+            $prompt = preg_replace('/\{\{#if\s+'.$quotedName.'\s*\}\}.*?\{\{\/if\}\}/isu', '', $prompt) ?? $prompt;
+            $prompt = preg_replace('/\{\{\s*'.$quotedName.'\s*\}\}/iu', '', $prompt) ?? $prompt;
+        }
+
+        return trim($prompt);
     }
 
     /**
@@ -910,17 +1251,25 @@ class WorkerExecutionService
         return in_array(mb_strtolower($name, 'UTF-8'), ['title', 'keyword', 'knowledge'], true);
     }
 
-    private function appendSmartPromptContext(string $prompt, string $title, string $keyword, string $knowledgeContext, string $targetLanguage): string
-    {
+    private function appendSmartPromptContext(
+        string $prompt,
+        string $title,
+        string $keyword,
+        string $knowledgeContext,
+        string $targetLanguage,
+        bool $includeTitle = true,
+        bool $includeKeyword = true,
+        bool $includeKnowledge = true
+    ): string {
         if ($targetLanguage !== 'zh') {
-            $lines = [
-                'Task context:',
-                '- Article title: '.$title,
-            ];
-            if (trim($keyword) !== '') {
+            $lines = ['Task context:'];
+            if ($includeTitle) {
+                $lines[] = '- Article title: '.$title;
+            }
+            if ($includeKeyword && trim($keyword) !== '') {
                 $lines[] = '- Core keyword: '.$keyword;
             }
-            if (trim($knowledgeContext) !== '') {
+            if ($includeKnowledge && trim($knowledgeContext) !== '') {
                 $lines[] = '- Reference knowledge:';
                 $lines[] = $knowledgeContext;
             }
@@ -928,14 +1277,14 @@ class WorkerExecutionService
             return trim($prompt)."\n\n".implode("\n", $lines);
         }
 
-        $lines = [
-            '【任务上下文】',
-            '- 文章标题：'.$title,
-        ];
-        if (trim($keyword) !== '') {
+        $lines = ['【任务上下文】'];
+        if ($includeTitle) {
+            $lines[] = '- 文章标题：'.$title;
+        }
+        if ($includeKeyword && trim($keyword) !== '') {
             $lines[] = '- 核心关键词：'.$keyword;
         }
-        if (trim($knowledgeContext) !== '') {
+        if ($includeKnowledge && trim($knowledgeContext) !== '') {
             $lines[] = '- 参考知识：';
             $lines[] = $knowledgeContext;
         }
@@ -946,13 +1295,40 @@ class WorkerExecutionService
     private function finalPromptInstruction(string $targetLanguage): string
     {
         $instruction = match ($targetLanguage) {
-            'en' => 'The final article must be written entirely in English. Output only the final article body in Markdown. Do not repeat the prompt or output placeholders.',
-            default => '请直接输出最终中文文章正文（Markdown）。全文必须使用中文，不要重复提示词、不要输出占位符。',
+            'en' => 'The final article must be written entirely in English. Output only the final article body in Markdown. The page template renders the article title. Do not output an H1 heading in the body. Do not repeat the prompt or output placeholders. Let the title, evidence, and reader decision determine the structure; do not force FAQ, table, key takeaways, introduction, or conclusion modules. End with a complete prose sentence, not a heading, list item, table row, colon, or unfinished module. If the output budget is tight, shorten earlier sections instead of starting content you cannot finish.',
+            default => '请直接输出最终中文文章正文（Markdown）。全文必须使用中文。页面模板会显示文章标题，因此正文不要输出 H1 标题。不要重复提示词、不要输出占位符。让标题、证据和读者决策决定文章结构；不要强制加入 FAQ、表格、要点、引言或总结模块。必须以完整的正文句子结束，不能停在标题、列表项、表格行、冒号或未完成模块处。如果输出额度不足，应缩短前文，不能开启无法完成的新内容。',
         };
 
         return $instruction."\n".($targetLanguage === 'zh'
             ? '不要自行插入站内链接；草稿审核页会单独处理内链建议。'
             : 'Do not insert internal links yourself; the draft review page handles internal link suggestions separately.');
+    }
+
+    private function promptContentHash(?Prompt $prompt): ?string
+    {
+        if ($prompt === null) {
+            return null;
+        }
+
+        $content = preg_replace('/\R/u', "\n", trim((string) $prompt->content)) ?? trim((string) $prompt->content);
+
+        return hash('sha256', $content);
+    }
+
+    /** @return array<string,mixed>|null */
+    private function promptTraceReference(?Prompt $prompt): ?array
+    {
+        if ($prompt === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $prompt->id,
+            'name' => (string) $prompt->name,
+            'type' => (string) $prompt->type,
+            'preset_key' => trim((string) ($prompt->preset_key ?? '')) ?: null,
+            'preset_version' => trim((string) ($prompt->preset_version ?? '')) ?: null,
+        ];
     }
 
     private function isLikelyEnglishPrompt(string $prompt): bool
@@ -970,9 +1346,12 @@ class WorkerExecutionService
      * - knowledge_base_id：单个固定知识库；
      * - knowledge_tag_filter：跨所有命中标签的知识库、Entity DB 和 Case DB。
      */
-    private function resolveKnowledgeContext(Task $task, string $title, string $keyword): string
+    private function resolveKnowledgeContext(Task $task, string $title, string $keyword, bool $generationSafeOnly = false): string
     {
         $result = $this->ragRetrievalService->retrieveForTask($task, $title, $keyword);
+        $this->lastEvidencePackage = array_key_exists('evidence_package', $result)
+            ? (is_array($result['evidence_package']) ? array_values($result['evidence_package']) : [])
+            : null;
         $trace = is_array($result['trace'] ?? null) ? $result['trace'] : [];
         $this->lastKnowledgeChunkTrace = is_array($trace['chunks'] ?? null) ? $trace['chunks'] : [];
         $this->lastEntityCaseTrace = [
@@ -980,6 +1359,16 @@ class WorkerExecutionService
             'cases' => is_array($trace['cases'] ?? null) ? $trace['cases'] : [],
         ];
         $this->lastKnowledgeTrace = $trace;
+
+        if ($generationSafeOnly) {
+            if (! array_key_exists('generation_context', $result)
+                || ! is_string($result['generation_context'])
+                || trim($result['generation_context']) === '') {
+                throw new RuntimeException('深度生成缺少安全证据上下文，已在调用模型前停止');
+            }
+
+            return $result['generation_context'];
+        }
 
         return (string) ($result['context'] ?? '');
     }
@@ -1370,113 +1759,7 @@ class WorkerExecutionService
      */
     private function generateContent(AiModel $aiModel, string $contentPrompt): string
     {
-        $providerUrl = OpenAiRuntimeProvider::resolveChatBaseUrl((string) ($aiModel->api_url ?? ''));
-        if ($providerUrl === '') {
-            throw new RuntimeException('AI 模型 API 地址为空');
-        }
-
-        $apiKey = $this->decryptApiKey((string) ($aiModel->getRawOriginal('api_key') ?? ''));
-        if ($apiKey === '') {
-            throw new RuntimeException('AI 模型密钥为空');
-        }
-
-        $driver = OpenAiRuntimeProvider::resolveChatDriver($providerUrl, (string) ($aiModel->model_id ?? ''));
-        $providerName = OpenAiRuntimeProvider::registerProvider('worker', $driver, $providerUrl, $apiKey);
-        $agent = new MarkdownContentWriterAgent(maxTokens: $this->resolveMaxTokens($aiModel));
-
-        try {
-            $response = $agent->prompt($contentPrompt, [], $providerName, (string) ($aiModel->model_id ?? ''));
-        } catch (Throwable $exception) {
-            throw new RuntimeException('AI 生成失败: '.OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl), 0, $exception);
-        }
-
-        $rawContent = (string) ($response->text ?? '');
-        $content = OpenAiRuntimeProvider::normalizeGeneratedText($rawContent);
-        if ($content === '') {
-            if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
-                throw new RuntimeException('AI 返回空流式响应，未生成正文内容，请重试或检查模型流式输出兼容性');
-            }
-
-            throw new RuntimeException('AI返回空正文');
-        }
-
-        $this->warnIfContentLooksTruncated($content, $aiModel, $response);
-
-        AiModel::query()->whereKey((int) $aiModel->id)->update([
-            'used_today' => DB::raw('COALESCE(used_today,0)+1'),
-            'total_used' => DB::raw('COALESCE(total_used,0)+1'),
-            'updated_at' => now(),
-        ]);
-
-        return $content;
-    }
-
-    private function resolveMaxTokens(AiModel $aiModel): int
-    {
-        $configured = (int) ($aiModel->max_tokens ?? 0);
-        if ($configured > 0) {
-            return $configured;
-        }
-
-        return max(256, (int) config('geoflow.content_max_tokens', 8192));
-    }
-
-    private function warnIfContentLooksTruncated(string $content, AiModel $aiModel, mixed $response): void
-    {
-        $finishReason = $this->responseFinishReason($response);
-        $signals = [];
-
-        if ($finishReason === FinishReason::Length) {
-            $signals[] = 'finish_reason_length';
-        }
-
-        $trimmed = rtrim($content);
-        if ($trimmed !== '' && substr_count($trimmed, '```') % 2 === 1) {
-            $signals[] = 'unclosed_code_fence';
-        }
-
-        if (
-            mb_strlen($trimmed, 'UTF-8') > 500
-            && preg_match('/[。！？.!?）\]\)"\'`》]$/u', $trimmed) !== 1
-        ) {
-            $signals[] = 'unfinished_sentence';
-        }
-
-        if ($signals === []) {
-            return;
-        }
-
-        Log::warning('GEOFlow article generation may be truncated.', [
-            'ai_model_id' => (int) $aiModel->id,
-            'model_id' => (string) ($aiModel->model_id ?? ''),
-            'max_tokens' => $this->resolveMaxTokens($aiModel),
-            'finish_reason' => $finishReason instanceof FinishReason ? $finishReason->value : null,
-            'content_length' => mb_strlen($trimmed, 'UTF-8'),
-            'signals' => $signals,
-        ]);
-    }
-
-    private function responseFinishReason(mixed $response): ?FinishReason
-    {
-        $steps = $response->steps ?? null;
-        $lastStep = null;
-
-        if ($steps instanceof Collection) {
-            $lastStep = $steps->last();
-        } elseif (is_array($steps) && $steps !== []) {
-            $lastStep = end($steps);
-        }
-
-        $finishReason = $lastStep->finishReason ?? null;
-        if ($finishReason instanceof FinishReason) {
-            return $finishReason;
-        }
-
-        if (is_string($finishReason)) {
-            return FinishReason::tryFrom($finishReason);
-        }
-
-        return null;
+        return $this->articleModelCallService->generate($aiModel, $contentPrompt);
     }
 
     /**
@@ -1492,14 +1775,6 @@ class WorkerExecutionService
         }
 
         return mb_substr($plain, 0, 180);
-    }
-
-    /**
-     * 兼容 enc:v1 历史格式解密 API Key。
-     */
-    private function decryptApiKey(string $storedApiKey): string
-    {
-        return $this->apiKeyCrypto->decrypt($storedApiKey);
     }
 
     /**
