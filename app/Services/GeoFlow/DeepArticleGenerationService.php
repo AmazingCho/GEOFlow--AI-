@@ -73,7 +73,9 @@ class DeepArticleGenerationService
                 false,
                 2048
             ),
-            $callCount
+            $callCount,
+            $attempts,
+            $stages
         );
         try {
             $plan = $this->outputValidator->validatePlan(
@@ -111,7 +113,9 @@ class DeepArticleGenerationService
                     false,
                     2048
                 ),
-                $callCount
+                $callCount,
+                $attempts,
+                $stages
             );
             try {
                 $plan = $this->outputValidator->validatePlan(
@@ -152,22 +156,27 @@ class DeepArticleGenerationService
                 $this->promptBuilder->draft($title, $keyword, $writingBrief, $knowledgeContext, $targetLanguage, $plan, $allowedEvidenceIds),
                 true
             ),
-            $callCount
+            $callCount,
+            $attempts,
+            $stages
         );
         $content = trim((string) $draftResult['content']);
-        $claimAnalysis = $this->articleEvidencePackage->validateAndStripMarkers($content, $evidencePackage);
-        $claimAnalysis['evidence_sufficiency'] = $plan['evidence_sufficiency'];
-        $groundingGate = $this->groundingGate->evaluate($claimAnalysis['content'], $evidencePackage, $claimAnalysis);
-        $this->assertGroundingGateAllowsDeepDraft($groundingGate);
+        [$claimAnalysis, $groundingGate] = $this->inspectGeneratedContent(
+            $content,
+            $evidencePackage,
+            (string) $plan['evidence_sufficiency'],
+            $draftResult,
+            'deep_draft',
+            ArticleGenerationStage::Draft,
+            [
+                'evidence_sha256' => $evidenceHash,
+                'plan_sha256' => $this->structuredHash($plan),
+            ],
+            $stages,
+            $attempts
+        );
         /** @var AiModel $articleModel */
         $articleModel = $draftResult['model'];
-        $this->rememberStage($stages, $attempts, 'deep_draft', $draftResult, [
-            'evidence_sha256' => $evidenceHash,
-            'plan_sha256' => $this->structuredHash($plan),
-            'claim_coverage_status' => $claimAnalysis['coverage_status'],
-            'unmarked_claim_count' => $claimAnalysis['unmarked_claim_count'],
-            'marker_normalization_count' => $claimAnalysis['marker_normalization_count'],
-        ]);
 
         $reviewResult = $this->call(
             $task,
@@ -177,7 +186,9 @@ class DeepArticleGenerationService
                 false,
                 2048
             ),
-            $callCount
+            $callCount,
+            $attempts,
+            $stages
         );
         $review = $this->outputValidator->validateReview($this->structuredContent($reviewResult));
         $this->rememberStage($stages, $attempts, 'deep_review', $reviewResult, $this->reviewStageMeta($review, $evidenceHash));
@@ -206,22 +217,27 @@ class DeepArticleGenerationService
                 $this->promptBuilder->revision($title, $keyword, $writingBrief, $knowledgeContext, $targetLanguage, $plan, $content, $review, $allowedEvidenceIds),
                 true
             ),
-            $callCount
+            $callCount,
+            $attempts,
+            $stages
         );
         $content = trim((string) $revisionResult['content']);
-        $claimAnalysis = $this->articleEvidencePackage->validateAndStripMarkers($content, $evidencePackage);
-        $claimAnalysis['evidence_sufficiency'] = $plan['evidence_sufficiency'];
-        $groundingGate = $this->groundingGate->evaluate($claimAnalysis['content'], $evidencePackage, $claimAnalysis);
-        $this->assertGroundingGateAllowsDeepDraft($groundingGate);
+        [$claimAnalysis, $groundingGate] = $this->inspectGeneratedContent(
+            $content,
+            $evidencePackage,
+            (string) $plan['evidence_sufficiency'],
+            $revisionResult,
+            'deep_revision',
+            ArticleGenerationStage::Revision,
+            [
+                'evidence_sha256' => $evidenceHash,
+                'review_sha256' => $this->structuredHash($review),
+                'requested_issue_codes' => $review['issue_codes'],
+            ],
+            $stages,
+            $attempts
+        );
         $articleModel = $revisionResult['model'];
-        $this->rememberStage($stages, $attempts, 'deep_revision', $revisionResult, [
-            'evidence_sha256' => $evidenceHash,
-            'review_sha256' => $this->structuredHash($review),
-            'requested_issue_codes' => $review['issue_codes'],
-            'claim_coverage_status' => $claimAnalysis['coverage_status'],
-            'unmarked_claim_count' => $claimAnalysis['unmarked_claim_count'],
-            'marker_normalization_count' => $claimAnalysis['marker_normalization_count'],
-        ]);
 
         $finalReviewResult = $this->call(
             $task,
@@ -231,13 +247,22 @@ class DeepArticleGenerationService
                 false,
                 2048
             ),
-            $callCount
+            $callCount,
+            $attempts,
+            $stages
         );
         $finalReview = $this->outputValidator->validateReview($this->structuredContent($finalReviewResult));
         $this->rememberStage($stages, $attempts, 'deep_final_review', $finalReviewResult, $this->reviewStageMeta($finalReview, $evidenceHash));
 
         if (! $finalReview['passed'] && $this->outputValidator->hasBlockingIssues($finalReview)) {
-            throw new RuntimeException('深度生成终审发现阻断级安全或隐私问题，未保存草稿');
+            throw new ArticleContentBlockedException(
+                'final_review_blocked',
+                ArticleGenerationStage::FinalReview,
+                self::PROTOCOL_VERSION,
+                $attempts,
+                $stages,
+                '深度生成终审发现阻断级安全或隐私问题，未保存草稿'
+            );
         }
 
         return $this->result(
@@ -258,17 +283,62 @@ class DeepArticleGenerationService
     }
 
     /** @return array<string,mixed> */
-    private function call(Task $task, ArticleModelCallRequest $request, int &$callCount): array
-    {
+    private function call(
+        Task $task,
+        ArticleModelCallRequest $request,
+        int &$callCount,
+        array $priorAttempts,
+        array $priorStages
+    ): array {
         if ($callCount >= self::MAX_CALLS) {
-            throw new RuntimeException('深度生成已达到单篇最多 6 次模型调用上限');
+            $stageName = 'deep_'.$request->stage->value;
+            $failedStages = $priorStages;
+            $failedStages[] = [
+                'name' => $stageName,
+                'status' => 'failed',
+                'meta' => $this->attemptSummary([], ['reason' => 'provider_attempt_budget_exhausted']),
+            ];
+
+            throw new ArticleProviderFailureException(
+                $request->stage,
+                self::PROTOCOL_VERSION,
+                $priorAttempts,
+                $failedStages
+            );
         }
 
-        $result = $this->modelCallService->generateStageWithModelSelection(
-            $task,
-            $request,
-            self::MAX_CALLS - $callCount
-        );
+        try {
+            $result = $this->modelCallService->generateStageWithModelSelection(
+                $task,
+                $request,
+                self::MAX_CALLS - $callCount
+            );
+        } catch (ArticleModelSelectionException $exception) {
+            $stageName = 'deep_'.$request->stage->value;
+            $stageAttempts = array_map(
+                static fn (array $attempt): array => array_merge($attempt, ['stage' => $stageName]),
+                $exception->attempts
+            );
+            $providerAttempts = collect($stageAttempts)->filter(
+                static fn (mixed $attempt): bool => is_array($attempt)
+                    && in_array(($attempt['status'] ?? null), ['success', 'failed'], true)
+            )->count();
+            $callCount += max(1, $providerAttempts);
+            $failedStages = $priorStages;
+            $failedStages[] = [
+                'name' => $stageName,
+                'status' => 'failed',
+                'meta' => $this->attemptSummary($stageAttempts, ['reason' => 'provider_failure']),
+            ];
+
+            throw new ArticleProviderFailureException(
+                $request->stage,
+                self::PROTOCOL_VERSION,
+                array_merge($priorAttempts, $stageAttempts),
+                $failedStages
+            );
+        }
+
         $providerAttempts = collect($result['attempts'] ?? [])->filter(
             static fn (mixed $attempt): bool => is_array($attempt)
                 && in_array(($attempt['status'] ?? null), ['success', 'failed'], true)
@@ -286,6 +356,80 @@ class DeepArticleGenerationService
         }
 
         return (string) ($result['content'] ?? '');
+    }
+
+    /**
+     * @param  array<string,mixed>  $evidencePackage
+     * @param  array<string,mixed>  $stageResult
+     * @param  array<string,mixed>  $baseMeta
+     * @param  list<array<string,mixed>>  $stages
+     * @param  list<array<string,mixed>>  $attempts
+     * @return array{array<string,mixed>,array<string,mixed>}
+     */
+    private function inspectGeneratedContent(
+        string $content,
+        array $evidencePackage,
+        string $evidenceSufficiency,
+        array $stageResult,
+        string $stageName,
+        ArticleGenerationStage $stage,
+        array $baseMeta,
+        array &$stages,
+        array &$attempts
+    ): array {
+        try {
+            $claimAnalysis = $this->articleEvidencePackage->validateAndStripMarkers($content, $evidencePackage);
+        } catch (ArticleEvidenceMarkerException) {
+            $this->rememberStage($stages, $attempts, $stageName, $stageResult, array_merge($baseMeta, [
+                'reason' => 'evidence_reference_blocked',
+            ]), 'failed');
+
+            throw new ArticleContentBlockedException(
+                'evidence_reference_blocked',
+                $stage,
+                self::PROTOCOL_VERSION,
+                $attempts,
+                $stages,
+                '文章证据引用无效，未保存草稿'
+            );
+        } catch (InvalidArgumentException) {
+            $this->rememberStage($stages, $attempts, $stageName, $stageResult, array_merge($baseMeta, [
+                'reason' => 'protected_evidence_blocked',
+            ]), 'failed');
+
+            throw new ArticleContentBlockedException(
+                'protected_evidence_blocked',
+                $stage,
+                self::PROTOCOL_VERSION,
+                $attempts,
+                $stages,
+                '文章包含受限证据内容，未保存草稿'
+            );
+        }
+
+        $claimAnalysis['evidence_sufficiency'] = $evidenceSufficiency;
+        $groundingGate = $this->groundingGate->evaluate($claimAnalysis['content'], $evidencePackage, $claimAnalysis);
+        $isBlocked = ($groundingGate['outcome'] ?? null) === 'blocked';
+        $this->rememberStage($stages, $attempts, $stageName, $stageResult, array_merge($baseMeta, [
+            'claim_coverage_status' => $claimAnalysis['coverage_status'],
+            'unmarked_claim_count' => $claimAnalysis['unmarked_claim_count'],
+            'marker_normalization_count' => $claimAnalysis['marker_normalization_count'],
+            'grounding_outcome' => (string) ($groundingGate['outcome'] ?? 'pending_review'),
+            'reason' => $isBlocked ? 'grounding_blocked' : null,
+        ]), $isBlocked ? 'failed' : 'completed');
+
+        if ($isBlocked) {
+            throw new ArticleContentBlockedException(
+                'grounding_blocked',
+                $stage,
+                self::PROTOCOL_VERSION,
+                $attempts,
+                $stages,
+                '深度生成被确定性事实或安全门禁阻止，未保存草稿'
+            );
+        }
+
+        return [$claimAnalysis, $groundingGate];
     }
 
     /** @return list<array{code:string,path:string,expected:string}> */
@@ -319,23 +463,31 @@ class DeepArticleGenerationService
         $attempts = is_array($result['attempts'] ?? null) ? $result['attempts'] : [];
         foreach ($attempts as $attempt) {
             if (is_array($attempt)) {
-                $allAttempts[] = array_merge(['stage' => $name], $attempt);
+                $allAttempts[] = array_merge($attempt, ['stage' => $name]);
             }
         }
 
         $stages[] = [
             'name' => $name,
             'status' => $status,
-            'meta' => array_merge([
+            'meta' => array_merge($this->attemptSummary($attempts), [
                 'model_id' => (int) ($result['model']->id ?? 0),
-                'attempt_count' => count($attempts),
-                'duration_ms' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['duration_ms'] ?? 0) : 0),
-                'prompt_tokens' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['prompt_tokens'] ?? 0) : 0),
-                'completion_tokens' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['completion_tokens'] ?? 0) : 0),
                 'output_sha256' => hash('sha256', (string) ($result['content'] ?? '')),
                 'output_length' => mb_strlen((string) ($result['content'] ?? ''), 'UTF-8'),
             ], $meta),
         ];
+    }
+
+    /** @param list<array<string,mixed>> $attempts @param array<string,mixed> $meta */
+    private function attemptSummary(array $attempts, array $meta = []): array
+    {
+        return array_merge([
+            'attempt_count' => count($attempts),
+            'duration_ms' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['duration_ms'] ?? 0) : 0),
+            'prompt_tokens' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['prompt_tokens'] ?? 0) : 0),
+            'completion_tokens' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['completion_tokens'] ?? 0) : 0),
+            'reasoning_tokens' => (int) collect($attempts)->sum(fn (mixed $attempt): int => is_array($attempt) ? (int) ($attempt['reasoning_tokens'] ?? 0) : 0),
+        ], $meta);
     }
 
     /** @param array<string,mixed> $review @return array<string,mixed> */
@@ -380,14 +532,6 @@ class DeepArticleGenerationService
             'grounding_gate' => $groundingGate,
             'call_count' => $callCount,
         ];
-    }
-
-    /** @param array<string,mixed> $gate */
-    private function assertGroundingGateAllowsDeepDraft(array $gate): void
-    {
-        if (($gate['outcome'] ?? null) === 'blocked') {
-            throw new RuntimeException('深度生成被确定性事实或安全门禁阻止，未保存草稿');
-        }
     }
 
     /** @param array<string,mixed> $plan */

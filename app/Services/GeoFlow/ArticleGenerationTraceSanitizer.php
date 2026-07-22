@@ -181,7 +181,7 @@ final class ArticleGenerationTraceSanitizer
             'context_length', 'chunks', 'entities', 'cases', 'prompt_length', 'content_length',
             'attempts', 'image_count', 'excerpt_length', 'section_count', 'open_question_count',
             'attempt_count', 'duration_ms', 'prompt_tokens', 'completion_tokens', 'output_length',
-            'unmarked_claim_count', 'marker_normalization_count', 'claim_count', 'issue_count',
+            'reasoning_tokens', 'unmarked_claim_count', 'marker_normalization_count', 'claim_count', 'issue_count',
         ] as $key) {
             $value = $this->nonNegativeInteger($meta[$key] ?? null);
             if ($value !== null) {
@@ -522,13 +522,13 @@ final class ArticleGenerationTraceSanitizer
     {
         $safe = [];
 
-        foreach (['job_type', 'action', 'model_selection_mode', 'generation_mode', 'safe_mode', 'source', 'dispatch_state', 'generation_outcome', 'protocol_stage'] as $key) {
+        foreach (['job_type', 'action', 'model_selection_mode', 'generation_mode', 'safe_mode', 'source', 'dispatch_state', 'generation_outcome', 'protocol_stage', 'failure_class', 'content_block_reason'] as $key) {
             $value = $this->machineCode($meta[$key] ?? null);
             if ($value !== null) {
                 $safe[$key] = $value;
             }
         }
-        if (in_array(($meta['terminal_reason'] ?? null), ['insufficient_evidence', 'protocol_failure'], true)) {
+        if (in_array(($meta['terminal_reason'] ?? null), ['insufficient_evidence', 'protocol_failure', 'content_blocked', 'provider_failure'], true)) {
             $safe['terminal_reason'] = $meta['terminal_reason'];
         }
         $protocolVersion = $this->safeIdentifier($meta['protocol_version'] ?? null);

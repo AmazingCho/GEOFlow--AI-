@@ -331,6 +331,36 @@ class JobQueueErrorSanitizationTest extends TestCase
         $this->assertSame('failed', data_get($run->meta, 'dispatch_state'));
     }
 
+    public function test_failed_callback_without_an_exception_still_releases_the_job_state(): void
+    {
+        Queue::fake();
+        $task = Task::query()->create([
+            'name' => 'Null callback failure task',
+            'status' => 'active',
+            'schedule_enabled' => 1,
+        ]);
+        $dispatchToken = '67676767-6767-4767-8767-676767676767';
+        $run = TaskRun::query()->create([
+            'task_id' => $task->id,
+            'status' => 'pending',
+            'meta' => [
+                'attempt_count' => 0,
+                'max_attempts' => 1,
+                'dispatch_token' => $dispatchToken,
+                'dispatch_state' => 'dispatched',
+                'available_at' => now()->subMinute()->toDateTimeString(),
+            ],
+        ]);
+
+        (new ProcessGeoFlowTaskJob((int) $run->id, $dispatchToken))->failed();
+
+        $run->refresh();
+        $this->assertSame('failed', $run->status);
+        $this->assertSame(1, data_get($run->meta, 'attempt_count'));
+        $this->assertSame('failed', data_get($run->meta, 'dispatch_state'));
+        $this->assertMatchesRegularExpression('/错误指纹：[a-f0-9]{12}/', (string) $run->error_message);
+    }
+
     public function test_duplicate_delivery_failure_cannot_take_over_another_workers_running_claim(): void
     {
         Queue::fake();

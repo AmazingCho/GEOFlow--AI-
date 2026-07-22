@@ -44,7 +44,7 @@
 | Skill 真实模型评估与发布门禁 | Phase 8.1 已完成，结论 No-Go | 第二轮 DeepSeek V4 Pro 已完成 24 篇固定对照、自动检查与匿名 PM 盲审；Style 可辨认，但事实支持、自然结构和 Case/Troubleshooting 高风险门禁未全部通过。文章 ID 81-104 仅作为待审核草稿保留，未发布或分发 |
 | V2 Master / 七类 Skill 源码契约 | V2.1 基线已冻结；V2.2 未获发布批准 | V2.1 的八份原始内容已从历史执行记录恢复并通过 SHA-256 核对；V2.2 候选只存在源码中，尚未 apply。Seeder 仍不会静默覆盖管理员修改 |
 | 去模板化与深度生成 | 本地功能完成，真实评估 No-Go | V2.2 Prompt 减法、四个可选 Style、`standard|deep` 双模式、冻结证据的 plan/draft/review/单次修正流水线、反模板评估与文章页追踪均已完成。V2.3.1 本地候选新增 `sufficient / limited / insufficient` 证据充足度、真实 provider 六次预算、limited 可执行防扩写门禁、修订绑定人工审批和全写入路径重审。331 tests / 2357 assertions 通过，独立复审无剩余 P0/P1。最终一组 Application 付费门禁共记录 4 次成功 provider 响应，但 control/candidate 都在修复后的 plan 校验阶段失败、没有生成正文，匿名 PM 盲审判定 No-Go；候选 Prompt 未 apply。当前本地 Docker 已挂载优化源码，仅用于开发验证。详见 `ARTICLE_V23_GROUNDING_GOVERNANCE_IMPLEMENTATION_REPORT.md` |
-| Deep Protocol V2.4 结构化重构 | Phase 0-5 已完成 | Plan/Review 专用结构化 Agent、Plan V2 单一未知信息表达、聚合违规、一次有界修复、协议失败不重试及后台安全状态已落地；30/30 离线矩阵和 227 tests / 1177 assertions 通过。未执行付费 Phase 6，不宣称文章质量已提升。详见 `ARTICLE_DEEP_PROTOCOL_V2_IMPLEMENTATION_REPORT.md` |
+| Deep Protocol V2.4 结构化重构 | Phase 0-5 + P0 加固已冻结候选 | 候选 Tag 为 `deep-protocol-v2.4-p0-candidate-20260722`。Plan/Review 专用结构化 Agent、Plan V2 单一聚合校验、一次有界修复和六种生成结果已落地；内容门禁不重试，模型故障遵循队列预算并保留安全 attempt 审计。P0 聚焦回归 141 tests / 757 assertions；全量 873 passed / 5823 assertions，另有 2 个既有文案基线失败。未执行付费 Phase 6，不宣称文章质量已提升。详见 `ARTICLE_DEEP_PROTOCOL_V2_IMPLEMENTATION_REPORT.md` 与 `ARTICLE_DEEP_PROTOCOL_V2_CANDIDATE_MANIFEST.md` |
 | 写作风格 Style Prompt 轻量版 | 已完成核心功能 | 任务支持可选 `style_prompt_id`；提示词页可管理 `type=style`；创建任务页手动选择 Style Prompt；Worker 按 Master -> Skill -> Writing Style 拼接，Style 不参与语言判断；本阶段不包含 URL 抓取、自动风格识别或作者仿写 |
 | 轻量 CRM 阶段 1 | 已完成 | 新增客户、内部负责人、跟进记录，客户可关联 Collection |
 | 轻量 CRM 阶段 2 | 已完成 | 新增询盘管理，支持 AI 需求识别并关联 Entity、知识库、Case、Tag |
@@ -96,11 +96,11 @@
 
 最近已通过的核心测试包括：
 
-- Deep Protocol V2.4 Phase 0-5 离线验收：30/30 协议矩阵符合预期，聚合违规、一次修复耗尽、队列不重试、追踪隐私、Standard 兼容与发布保护共 227 tests / 1177 assertions 通过；未调用付费模型。
+- Deep Protocol V2.4 Phase 0-5 + P0 离线验收：30/30 协议矩阵保持通过；新增六种结果、类型化 provider/content 失败、单一 Plan 校验源、队列重试边界和任务页完整状态。P0 聚焦回归 141 tests / 757 assertions；未调用付费模型。
 
 - V2.2 Phase 8.1 真实模型评估：24/24 篇成功生成，26 次请求中 2 次长度截断被拒绝并重试；已知使用 115,134 tokens。自动门禁和 PM 发布门禁均判定 `No-Go`，候选 Prompt、Docker 与发布状态未改变。
 - V2.2 去模板化与深度生成最终定向回归：158 tests / 1518 assertions；覆盖 Prompt/Skill 契约、任务/API 兼容、统一模型调用、深度流水线、反模板评估、质量评分和生成追踪，并验证 Case Study 即使深度审核通过仍保持 `pending` 人工治理状态。
-- 完整 Laravel 套件：586 passed / 4509 assertions；另有 2 个不涉及本轮源码的历史文案基线失败（欢迎页旧标题、基础素材页旧作者入口）。
+- 完整 Laravel 套件：873 passed / 5823 assertions；另有 2 个不涉及本轮源码的历史文案基线失败（欢迎页旧标题、基础素材页旧作者入口）。
 - 隔离 PostgreSQL Prompt 只读预演未写入数据库，plan fingerprint 为 `114f792c48d1733c3d7d4f35be32bd9b490c87c340af772c35f098ebee0c7f7a`，发现 `article.style.technical_clarity` 本地内容冲突，正式业务库发布前需重新 preview 并人工决策。
 - 创建/编辑任务和文章详情已在 1440x1000、390x844 下检查；无横向溢出、原始翻译键或控制台错误，深度审核卡正确显示实际审核分。
 

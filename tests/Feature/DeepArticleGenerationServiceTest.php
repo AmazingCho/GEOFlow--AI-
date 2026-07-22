@@ -4,12 +4,16 @@ namespace Tests\Feature;
 
 use App\Models\AiModel;
 use App\Models\Task;
+use App\Services\GeoFlow\ArticleContentBlockedException;
 use App\Services\GeoFlow\ArticleEvidencePackage;
 use App\Services\GeoFlow\ArticleGenerationProtocolException;
 use App\Services\GeoFlow\ArticleInsufficientEvidenceException;
 use App\Services\GeoFlow\ArticleModelCallRequest;
 use App\Services\GeoFlow\ArticleModelCallService;
+use App\Services\GeoFlow\ArticleModelSelectionException;
+use App\Services\GeoFlow\ArticleProviderFailureException;
 use App\Services\GeoFlow\DeepArticleGenerationService;
+use App\Support\GeoFlow\ArticleGenerationStage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
 use Tests\TestCase;
@@ -165,18 +169,71 @@ class DeepArticleGenerationServiceTest extends TestCase
                 $this->modelResult("The system handles 500 kg.\n<!-- evidence:{$evidence['id']} -->", $model),
             );
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('确定性事实或安全门禁');
+        try {
+            app(DeepArticleGenerationService::class)->generate(
+                $task,
+                'Evidence-aware article',
+                'evidence governance',
+                'Use verified evidence.',
+                $this->evidenceContext($evidence),
+                'en',
+                [$evidence]
+            );
+            $this->fail('The deterministic blocker must become a typed terminal outcome.');
+        } catch (ArticleContentBlockedException $exception) {
+            $this->assertSame('grounding_blocked', $exception->reasonCode);
+            $this->assertSame(ArticleGenerationStage::Draft, $exception->stage);
+            $this->assertCount(2, $exception->attempts);
+            $this->assertSame(['deep_plan', 'deep_draft'], array_column($exception->stages, 'name'));
+            $this->assertSame('failed', $exception->stages[1]['status']);
+        }
+    }
 
-        app(DeepArticleGenerationService::class)->generate(
-            $task,
-            'Evidence-aware article',
-            'evidence governance',
-            'Use verified evidence.',
-            $this->evidenceContext($evidence),
-            'en',
-            [$evidence]
-        );
+    public function test_provider_failure_after_a_valid_plan_preserves_prior_and_failed_attempts(): void
+    {
+        $task = new Task(['generation_mode' => 'deep']);
+        $model = $this->model();
+        $evidence = $this->evidence();
+        $failedAttempt = [
+            'model_id' => (int) $model->id,
+            'model_name' => (string) $model->name,
+            'status' => 'failed',
+            'reason' => 'AI 生成失败',
+            'duration_ms' => 25,
+            'finish_reason' => null,
+            'prompt_tokens' => 35,
+            'completion_tokens' => 0,
+            'reasoning_tokens' => 0,
+        ];
+        $this->mock(ArticleModelCallService::class)
+            ->shouldReceive('generateStageWithModelSelection')
+            ->twice()
+            ->andReturnUsing(function (Task $receivedTask, ArticleModelCallRequest $request) use ($evidence, $model, $failedAttempt): array {
+                if ($request->stage === ArticleGenerationStage::Plan) {
+                    return $this->modelResult(json_encode($this->validPlan($evidence['id'])), $model);
+                }
+
+                throw new ArticleModelSelectionException($request->stage, [$failedAttempt], '模型服务异常');
+            });
+
+        try {
+            app(DeepArticleGenerationService::class)->generate(
+                $task,
+                'Evidence-aware article',
+                'evidence governance',
+                'Use verified evidence.',
+                $this->evidenceContext($evidence),
+                'en',
+                [$evidence]
+            );
+            $this->fail('The provider failure must carry the full Deep attempt history.');
+        } catch (ArticleProviderFailureException $exception) {
+            $this->assertSame(ArticleGenerationStage::Draft, $exception->stage);
+            $this->assertCount(2, $exception->attempts);
+            $this->assertSame(['success', 'failed'], array_column($exception->attempts, 'status'));
+            $this->assertSame(['deep_plan', 'deep_draft'], array_column($exception->stages, 'name'));
+            $this->assertSame('failed', $exception->stages[1]['status']);
+        }
     }
 
     public function test_insufficient_evidence_stops_after_planning_without_drafting(): void
@@ -527,6 +584,50 @@ class DeepArticleGenerationServiceTest extends TestCase
             array_column($result['stages'], 'name')
         );
         $this->assertStringContainsString('Revised', $result['content']);
+    }
+
+    public function test_provider_attempt_budget_exhaustion_before_final_review_uses_provider_failure_contract(): void
+    {
+        $task = new Task(['generation_mode' => 'deep']);
+        $model = $this->model();
+        $evidence = $this->evidence();
+        $invalidPlan = $this->validPlan($evidence['id']);
+        unset($invalidPlan['answer_mode']);
+        $planResult = $this->modelResult(json_encode($invalidPlan), $model);
+        $failedAttempt = $planResult['attempts'][0];
+        $failedAttempt['status'] = 'failed';
+        $failedAttempt['finish_reason'] = null;
+        $planResult['attempts'] = [$failedAttempt, $planResult['attempts'][0]];
+
+        $this->mock(ArticleModelCallService::class)
+            ->shouldReceive('generateStageWithModelSelection')
+            ->times(5)
+            ->andReturn(
+                $planResult,
+                $this->modelResult(json_encode($this->validPlan($evidence['id'])), $model),
+                $this->modelResult($this->completeDraft('Initial', $evidence['id']), $model),
+                $this->modelResult(json_encode($this->review(false, 70, ['weak_evidence_link'])), $model),
+                $this->modelResult($this->completeDraft('Revised', $evidence['id']), $model)
+            );
+
+        try {
+            app(DeepArticleGenerationService::class)->generate(
+                $task,
+                'Evidence-aware article',
+                'evidence governance',
+                'Use verified evidence.',
+                $this->evidenceContext($evidence),
+                'en',
+                [$evidence]
+            );
+            $this->fail('The exhausted provider-attempt budget must not become a generic retry failure.');
+        } catch (ArticleProviderFailureException $exception) {
+            $this->assertSame(ArticleGenerationStage::FinalReview, $exception->stage);
+            $this->assertCount(6, $exception->attempts);
+            $this->assertSame('deep_final_review', data_get($exception->stages, '5.name'));
+            $this->assertSame('failed', data_get($exception->stages, '5.status'));
+            $this->assertSame('provider_attempt_budget_exhausted', data_get($exception->stages, '5.meta.reason'));
+        }
     }
 
     public function test_failed_first_review_gets_one_revision_and_second_failure_forces_manual_review(): void

@@ -35,6 +35,12 @@
         if ($terminalReason === 'protocol_failure') {
             return ['label' => __('admin.tasks.failure.protocol_failure'), 'detail' => __('admin.tasks.failure.protocol_failure_detail'), 'tone' => 'amber'];
         }
+        if ($terminalReason === 'content_blocked') {
+            return ['label' => __('admin.tasks.failure.content_blocked'), 'detail' => __('admin.tasks.failure.content_blocked_detail'), 'tone' => 'red'];
+        }
+        if ($terminalReason === 'provider_failure') {
+            return ['label' => __('admin.tasks.failure.provider_failure'), 'detail' => __('admin.tasks.failure.provider_failure_detail'), 'tone' => 'red'];
+        }
         if ($message === '') {
             return ['label' => __('admin.tasks.failure.execution_failed'), 'detail' => '', 'tone' => 'red'];
         }
@@ -124,7 +130,18 @@
                             @php
                                 $failureInfo = $describeTaskFailure($task['batch_error_message'] ?? '', $task['batch_terminal_reason'] ?? '');
                                 $failureClasses = $getFailureToneClasses($failureInfo['tone']);
-                                $hasVisibleFailure = !empty($task['batch_error_message']) && in_array($task['batch_status'], ['failed', 'cancelled'], true);
+                                $hasVisibleFailure = in_array($task['latest_job_status'] ?? '', ['failed', 'cancelled'], true)
+                                    && (!empty($task['batch_error_message']) || !empty($task['batch_terminal_reason']));
+                                $generationOutcome = (string) ($task['batch_generation_outcome'] ?? '');
+                                $visibleOutcome = match ($generationOutcome) {
+                                    'draft_ready' => ['label' => __('admin.tasks.outcome.draft_ready'), 'class' => 'border-emerald-200 bg-emerald-50 text-emerald-700'],
+                                    'draft_review_required' => ['label' => __('admin.tasks.outcome.draft_review_required'), 'class' => 'border-amber-200 bg-amber-50 text-amber-700'],
+                                    'insufficient_evidence' => ['label' => __('admin.tasks.failure.insufficient_evidence'), 'class' => 'border-amber-200 bg-amber-50 text-amber-700'],
+                                    'protocol_failure' => ['label' => __('admin.tasks.failure.protocol_failure'), 'class' => 'border-amber-200 bg-amber-50 text-amber-700'],
+                                    'content_blocked' => ['label' => __('admin.tasks.failure.content_blocked'), 'class' => 'border-red-200 bg-red-50 text-red-700'],
+                                    'provider_failure' => ['label' => __('admin.tasks.failure.provider_failure'), 'class' => 'border-red-200 bg-red-50 text-red-700'],
+                                    default => null,
+                                };
                             @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="px-5 py-4 align-top">
@@ -182,6 +199,13 @@
                                     <div id="task-drafts-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.draft_articles', ['count' => (int) ($task['draft_articles'] ?? 0)]) }}</div>
                                     <div class="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-gray-200">
                                         <div id="task-progress-{{ (int) $task['id'] }}" class="h-full rounded-full bg-blue-600" style="width: {{ $progressPercent }}%"></div>
+                                    </div>
+                                    <div id="task-generation-outcome-{{ (int) $task['id'] }}" class="mt-2 {{ $visibleOutcome === null ? 'hidden' : '' }}">
+                                        @if($visibleOutcome !== null)
+                                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium {{ $visibleOutcome['class'] }}">
+                                                {{ $visibleOutcome['label'] }}
+                                            </span>
+                                        @endif
                                     </div>
                                     @if($taskDistributionBadge !== null)
                                         <div class="mt-2">
@@ -451,7 +475,18 @@ function normalizeRuntimeError(message) { return String(message || '').trim(); }
 function getFailureMeta(terminalReason = '') {
     if (terminalReason === 'insufficient_evidence') return {label: TASK_I18N.insufficientEvidence, chipClasses: 'bg-amber-50 text-amber-700 border-amber-200', detailClasses: 'text-amber-700'};
     if (terminalReason === 'protocol_failure') return {label: TASK_I18N.protocolFailure, chipClasses: 'bg-amber-50 text-amber-700 border-amber-200', detailClasses: 'text-amber-700'};
+    if (terminalReason === 'content_blocked') return {label: TASK_I18N.contentBlocked, chipClasses: 'bg-red-50 text-red-700 border-red-200', detailClasses: 'text-red-700'};
+    if (terminalReason === 'provider_failure') return {label: TASK_I18N.providerFailure, chipClasses: 'bg-red-50 text-red-700 border-red-200', detailClasses: 'text-red-700'};
     return {label: TASK_I18N.recentFailed, chipClasses: 'bg-red-50 text-red-700 border-red-200', detailClasses: 'text-red-700'};
+}
+function getGenerationOutcomeMeta(generationOutcome = '') {
+    if (generationOutcome === 'draft_ready') return {label: TASK_I18N.draftReady, classes: 'border-emerald-200 bg-emerald-50 text-emerald-700'};
+    if (generationOutcome === 'draft_review_required') return {label: TASK_I18N.draftReviewRequired, classes: 'border-amber-200 bg-amber-50 text-amber-700'};
+    if (generationOutcome === 'insufficient_evidence') return {label: TASK_I18N.insufficientEvidence, classes: 'border-amber-200 bg-amber-50 text-amber-700'};
+    if (generationOutcome === 'protocol_failure') return {label: TASK_I18N.protocolFailure, classes: 'border-amber-200 bg-amber-50 text-amber-700'};
+    if (generationOutcome === 'content_blocked') return {label: TASK_I18N.contentBlocked, classes: 'border-red-200 bg-red-50 text-red-700'};
+    if (generationOutcome === 'provider_failure') return {label: TASK_I18N.providerFailure, classes: 'border-red-200 bg-red-50 text-red-700'};
+    return null;
 }
 function formatTaskDateTime(value) {
     if (!value) return '';
@@ -475,7 +510,10 @@ function updateBatchStatus(task) {
             const failureMeta = getFailureMeta(task.batch_terminal_reason || '');
             statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex items-center justify-center rounded-full border px-2 py-1 ${failureMeta.chipClasses}">${escapeHtml(failureMeta.label)}</span>${errorMessage ? `<div class="mx-auto max-w-[220px] break-words leading-5 ${failureMeta.detailClasses}">${escapeHtml(truncateText(errorMessage, 60))}</div>` : ''}</div>`;
         } else if (task.batch_status === 'completed') {
-            statusDiv.innerHTML = `<span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">${escapeHtml(TASK_I18N.completed)}</span>`;
+            const outcomeMeta = getGenerationOutcomeMeta(task.batch_generation_outcome || '');
+            const label = outcomeMeta ? outcomeMeta.label : TASK_I18N.completed;
+            const classes = outcomeMeta ? outcomeMeta.classes : 'border-emerald-200 bg-emerald-50 text-emerald-600';
+            statusDiv.innerHTML = `<span class="rounded-full border px-2 py-1 text-xs ${classes}">${escapeHtml(label)}</span>`;
         } else if (task.batch_status === 'waiting') {
             const nextRunAt = formatTaskDateTime(task.next_run_at || '');
             statusDiv.innerHTML = `<div class="flex flex-col gap-1 text-xs"><span class="inline-flex w-fit items-center rounded-full border px-2 py-1 bg-slate-50 text-slate-700 border-slate-200">${escapeHtml(TASK_I18N.waiting)}</span>${nextRunAt ? `<div class="text-gray-500">${escapeHtml(TASK_I18N.nextRunAt.replace('__TIME__', nextRunAt))}</div>` : ''}</div>`;
@@ -523,6 +561,7 @@ function updateTaskCounters(task) {
     const publishedEl = document.getElementById(`task-published-${task.id}`);
     const draftsEl = document.getElementById(`task-drafts-${task.id}`);
     const progressEl = document.getElementById(`task-progress-${task.id}`);
+    const generationOutcomeEl = document.getElementById(`task-generation-outcome-${task.id}`);
     const loopEl = document.getElementById(`task-loop-${task.id}`);
     const publishIntervalEl = document.getElementById(`task-publish-interval-${task.id}`);
     const createdCount = Number(task.created_count || task.total_articles || 0);
@@ -539,6 +578,13 @@ function updateTaskCounters(task) {
     if (progressEl) {
         const percent = Math.max(0, Math.min(100, Math.floor((createdCount / articleLimit) * 100)));
         progressEl.style.width = `${percent}%`;
+    }
+    if (generationOutcomeEl) {
+        const outcomeMeta = getGenerationOutcomeMeta(task.batch_generation_outcome || '');
+        generationOutcomeEl.classList.toggle('hidden', outcomeMeta === null);
+        generationOutcomeEl.innerHTML = outcomeMeta
+            ? `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${outcomeMeta.classes}">${escapeHtml(outcomeMeta.label)}</span>`
+            : '';
     }
     if (loopEl) {
         loopEl.textContent = TASK_I18N.loopTimesLabel.replace('__COUNT__', String(Number(task.loop_count || 0)));

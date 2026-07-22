@@ -7,6 +7,7 @@ use App\Models\AiModel;
 use App\Models\Task;
 use App\Services\GeoFlow\ArticleModelCallRequest;
 use App\Services\GeoFlow\ArticleModelCallService;
+use App\Services\GeoFlow\ArticleModelSelectionException;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\ArticleGenerationStage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -121,6 +122,31 @@ class WorkerExecutionServiceMaxTokensTest extends TestCase
         Http::assertSent(fn ($request): bool => data_get($request->data(), 'response_format.type') === 'json_object'
             && ($request['max_tokens'] ?? null) === 2048
             && str_contains((string) data_get($request->data(), 'messages.0.content'), 'structured planning stage'));
+    }
+
+    public function test_missing_model_is_reported_as_a_typed_provider_selection_failure(): void
+    {
+        $task = Task::query()->create([
+            'name' => 'Missing model task',
+            'model_selection_mode' => 'fixed',
+        ]);
+
+        try {
+            app(ArticleModelCallService::class)->generateStageWithModelSelection(
+                $task,
+                new ArticleModelCallRequest(
+                    ArticleGenerationStage::Plan,
+                    'Return a plan.',
+                    false,
+                    2048
+                )
+            );
+            $this->fail('A missing model must use the provider failure contract.');
+        } catch (ArticleModelSelectionException $exception) {
+            $this->assertSame(ArticleGenerationStage::Plan, $exception->stage);
+            $this->assertSame([], $exception->attempts);
+            $this->assertStringNotContainsString('api', strtolower($exception->getMessage()));
+        }
     }
 
     public function test_worker_rejects_length_limited_output_but_counts_the_completed_provider_call(): void
@@ -291,6 +317,42 @@ class WorkerExecutionServiceMaxTokensTest extends TestCase
         $this->assertSame(1, (int) $primary->fresh()->used_today);
         $this->assertSame(1, (int) $second->fresh()->used_today);
         $this->assertSame(0, (int) $third->fresh()->used_today);
+    }
+
+    public function test_fixed_model_failure_preserves_the_failed_provider_attempt_and_usage(): void
+    {
+        Http::fake([
+            'https://ai.test/v1/chat/completions' => Http::response([
+                'model' => 'deepseek-chat',
+                'choices' => [[
+                    'message' => ['content' => str_repeat('Incomplete fixed output. ', 30)],
+                    'finish_reason' => 'length',
+                ]],
+                'usage' => [
+                    'prompt_tokens' => 41,
+                    'completion_tokens' => 73,
+                ],
+            ]),
+        ]);
+        $model = $this->createChatModel();
+        $task = Task::query()->create([
+            'name' => 'Fixed provider audit test',
+            'ai_model_id' => $model->id,
+            'model_selection_mode' => 'fixed',
+        ]);
+
+        try {
+            app(ArticleModelCallService::class)->generateWithModelSelection($task, 'Write an article.');
+            $this->fail('The fixed provider failure must retain its safe attempt metadata.');
+        } catch (ArticleModelSelectionException $exception) {
+            $this->assertSame(ArticleGenerationStage::Draft, $exception->stage);
+            $this->assertCount(1, $exception->attempts);
+            $this->assertSame('failed', $exception->attempts[0]['status']);
+            $this->assertSame('length', $exception->attempts[0]['finish_reason']);
+            $this->assertSame(41, $exception->attempts[0]['prompt_tokens']);
+            $this->assertSame(73, $exception->attempts[0]['completion_tokens']);
+            $this->assertNull($exception->getPrevious());
+        }
     }
 
     public function test_provider_exception_does_not_echo_prompt_api_key_or_private_evidence(): void

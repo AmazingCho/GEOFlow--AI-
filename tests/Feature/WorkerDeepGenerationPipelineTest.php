@@ -64,6 +64,7 @@ class WorkerDeepGenerationPipelineTest extends TestCase
             json_encode($result['meta'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)
         );
         $this->assertSame('deep', data_get($result, 'meta.generation_mode'));
+        $this->assertSame('draft_ready', data_get($result, 'meta.generation_outcome'));
         $this->assertSame('deep-v2.4-structured-plan-1', data_get($result, 'meta.generation_trace.deep_protocol_version'));
         $this->assertSame(
             ['deep_plan', 'deep_draft', 'deep_review'],
@@ -99,6 +100,7 @@ class WorkerDeepGenerationPipelineTest extends TestCase
         $this->assertSame('pending_review', data_get($article->context_snapshot, 'grounding_gate.outcome'));
         $this->assertSame('limited', data_get($result, 'meta.generation_trace.claim_provenance.evidence_sufficiency'));
         $this->assertTrue((bool) data_get($result, 'meta.generation_trace.deep_review.requires_manual_review'));
+        $this->assertSame('draft_review_required', data_get($result, 'meta.generation_outcome'));
     }
 
     public function test_deep_model_requests_use_only_generation_safe_context(): void
@@ -940,7 +942,86 @@ class WorkerDeepGenerationPipelineTest extends TestCase
         $this->assertStringNotContainsString('test-key', $persistedJson);
         $this->assertStringNotContainsString($this->privateEvidenceCanary, $apiJson);
         $this->assertMatchesRegularExpression('/[a-f0-9]{12}/', (string) $run->error_message);
+        $this->assertSame('pending', $run->status);
+        $this->assertSame('provider_retrying', data_get($run->meta, 'generation_outcome'));
+        $this->assertNull(data_get($run->meta, 'terminal_reason'));
+        $this->assertSame(1, data_get($run->meta, 'provider_attempt_count'));
+        $this->assertSame('deep_plan', data_get($run->meta, 'model_attempts.0.stage'));
+        $this->assertSame('failed', data_get($run->meta, 'model_attempts.0.status'));
         $this->assertDatabaseCount('articles', 0);
+    }
+
+    public function test_content_blocker_is_terminal_without_queue_retry_and_preserves_safe_attempts(): void
+    {
+        Queue::fake();
+        [$task] = $this->task();
+        $this->fakeFrozenEvidence();
+        Http::fake([
+            'https://ai.test/v1/chat/completions' => Http::sequence()
+                ->push($this->completion(json_encode($this->plan())))
+                ->push($this->completion("The system handles 500 kg.\n<!-- evidence:{$this->evidenceId} -->")),
+        ]);
+        $run = TaskRun::query()->create([
+            'task_id' => (int) $task->id,
+            'status' => 'pending',
+            'meta' => [
+                'job_type' => 'generate_article',
+                'attempt_count' => 0,
+                'max_attempts' => 3,
+                'payload' => [],
+            ],
+        ]);
+
+        (new ProcessGeoFlowTaskJob((int) $run->id))->handle(
+            app(JobQueueService::class),
+            app(WorkerExecutionService::class)
+        );
+
+        $run->refresh();
+        $this->assertSame('failed', $run->status);
+        $this->assertSame('content_blocked', data_get($run->meta, 'terminal_reason'));
+        $this->assertSame('content_blocked', data_get($run->meta, 'generation_outcome'));
+        $this->assertSame('grounding_blocked', data_get($run->meta, 'content_block_reason'));
+        $this->assertSame(2, data_get($run->meta, 'provider_attempt_count'));
+        $this->assertSame(['deep_plan', 'deep_draft'], array_column(data_get($run->meta, 'model_attempts', []), 'stage'));
+        $this->assertCount(2, Http::recorded());
+        Queue::assertNotPushed(ProcessGeoFlowTaskJob::class);
+        $this->assertDatabaseCount('articles', 0);
+    }
+
+    public function test_provider_failure_becomes_terminal_after_the_queue_budget_is_exhausted(): void
+    {
+        Queue::fake();
+        [$task] = $this->task();
+        $this->fakeFrozenEvidence();
+        Http::fake([
+            'https://ai.test/v1/chat/completions' => function () {
+                throw new RuntimeException('Authorization: Bearer test-key '.$this->privateEvidenceCanary);
+            },
+        ]);
+        $run = TaskRun::query()->create([
+            'task_id' => (int) $task->id,
+            'status' => 'pending',
+            'meta' => [
+                'job_type' => 'generate_article',
+                'attempt_count' => 0,
+                'max_attempts' => 1,
+                'payload' => [],
+            ],
+        ]);
+
+        (new ProcessGeoFlowTaskJob((int) $run->id))->handle(
+            app(JobQueueService::class),
+            app(WorkerExecutionService::class)
+        );
+
+        $run->refresh();
+        $this->assertSame('failed', $run->status);
+        $this->assertSame('provider_failure', data_get($run->meta, 'terminal_reason'));
+        $this->assertSame('provider_failure', data_get($run->meta, 'generation_outcome'));
+        $this->assertSame(1, data_get($run->meta, 'provider_attempt_count'));
+        $this->assertSame('failed', data_get($run->meta, 'model_attempts.0.status'));
+        Queue::assertNotPushed(ProcessGeoFlowTaskJob::class);
     }
 
     public function test_insufficient_evidence_stops_job_without_retrying_or_exposing_raw_questions(): void

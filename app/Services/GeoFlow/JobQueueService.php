@@ -498,6 +498,14 @@ class JobQueueService
             $attemptCount = (int) ($runMeta['attempt_count'] ?? 0) + 1;
             $maxAttempts = max(1, (int) ($runMeta['max_attempts'] ?? 3));
             $shouldRetry = $retryable && $attemptCount < $maxAttempts;
+            if (($failureMeta['failure_class'] ?? null) === 'provider_failure') {
+                $failureMeta['generation_outcome'] = $shouldRetry ? 'provider_retrying' : 'provider_failure';
+                if ($shouldRetry) {
+                    unset($failureMeta['terminal_reason']);
+                } else {
+                    $failureMeta['terminal_reason'] = 'provider_failure';
+                }
+            }
             $nextAvailableAt = now()->addSeconds(max(1, $retryDelaySeconds));
             $newMeta = array_merge($runMeta, [
                 'attempt_count' => $attemptCount,

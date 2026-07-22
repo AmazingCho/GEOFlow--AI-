@@ -299,6 +299,7 @@ class TaskMonitoringQueryService
                 'batch_status' => $batchStatus,
                 'batch_error_message' => $batchErrorMessage,
                 'batch_terminal_reason' => (string) ($latestRunMeta['terminal_reason'] ?? ''),
+                'batch_generation_outcome' => (string) ($latestRunMeta['generation_outcome'] ?? ''),
                 'batch_last_run' => $task->last_run_at?->toDateTimeString(),
                 'last_error_at' => $task->last_error_at?->toDateTimeString(),
                 'next_run_at' => $task->next_run_at?->toDateTimeString(),

@@ -107,7 +107,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + 轻�
 - 知识库重复与冲突检测已完成报告和 proposal 闭环；重复项归档需要确认文本，应用后只改 `inactive` 并可回滚；自动合并正文和冲突优先级仲裁仍未开放。
 - 旧文章可能没有完整生成 trace，因此文章编辑页不一定显示生成来源。
 - Skill Prompt 标题意图智能推荐已实现规则版；尚未接入 AI Intent Classification，人工覆盖入口必须保留。
-- V2.3.1 稀疏证据本地修复已完成，但最终一组 Application control/candidate 付费门禁仍为 No-Go：两边都在 plan 修复后违反结构协议，没有文章正文。下一步先零成本修正 `article_angle` 事实承载和 open-question 协议，再申请新的独立付费门禁；12 篇定向对照、24 篇盲审和 Style matrix 继续冻结，候选 Prompt 不得 apply 或进入生产发布。
+- V2.3.1 最终付费门禁仍为 No-Go；其 `article_angle` 和 open-question 双重协议问题已由 Deep Protocol V2.4 的新 Plan 结构替代。V2.4 Phase 0-5 与零成本 P0 加固已冻结为 `deep-protocol-v2.4-p0-candidate-20260722`；当前下一步只能由用户明确批准一个有硬预算的 Phase 6 协议可用性测试。执行前必须读取 `ARTICLE_DEEP_PROTOCOL_V2_CANDIDATE_MANIFEST.md`，不要恢复旧协议、自动循环付费审核，或把协议通过等同于文章质量通过。
 - URL 采集和手动 AI 分析仍依赖模型返回质量；表格保真规则已增强，但复杂表格仍建议人工复核。
 - 不同素材自动 tag 推荐已移除，若后续重新加入，应先确认不会增加误标签和无效标签。
 - CRM 已实现订单、售后工单、跟进记录多端时间线和单据 PDF 下载；单据审批和邮件发送尚未实现。

@@ -41,6 +41,7 @@ Collection + Entity + Case + Knowledge Base + Tag + RAG + Quality Review + Light
 
 - 主线阶段 1-7 已完成核心功能。
 - Article V2.3.1 本地治理代码已通过 331 tests / 2357 assertions 和独立复审；最终一组付费 Application 门禁的两个变体都在 plan 校验阶段失败、未产出正文，真实发布结论仍是 No-Go，候选 Prompt 未 apply。
+- Deep Protocol V2.4 的 Phase 0-5 与零成本 P0 加固已冻结为候选 `deep-protocol-v2.4-p0-candidate-20260722`：Plan 使用单一聚合校验源，任务运行明确记录 `draft_ready / draft_review_required / insufficient_evidence / protocol_failure / content_blocked / provider_failure` 六种结果；下一步只能在明确批准后按候选清单执行有预算上限的 Phase 6 协议可用性测试，不能直接宣称写作质量提升。
 - Collection、Entity、Case、RAG、质量评分、Prompt Skill v1、URL 智能采集增强已落地。
 - 轻量 CRM 已形成 V2 销售链：客户、多联系人、询盘、商机、活动、待办、单据、订单、售后和内容候选串联。
 - CRM 业务对象使用软删除归档；归档客户不会级联删除询盘、单据、订单和售后记录。

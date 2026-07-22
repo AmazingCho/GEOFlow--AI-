@@ -9,8 +9,10 @@ This document tracks user-facing updates in the public repository. For future Gi
 - Split planning, review, and Markdown writing into dedicated agent responsibilities.
 - Replaced duplicated Plan fields with typed answer mode, supported sections, exact evidence mapping, and categorized verification items.
 - Aggregate all safe contract violations, allow one bounded repair, and terminate repair exhaustion as non-retryable `protocol_failure` while preserving safe usage audit data.
-- Added clear task-list labels for insufficient evidence and protocol failure without exposing raw Plan, Prompt, or evidence content.
-- Offline Phase 0-5 qualification passed 30/30 matrix cases and 227 tests / 1177 assertions. No paid model call was made; Phase 6 still requires separate approval.
+- Added typed provider and content-blocking failures: provider outages follow the existing queue budget with safe attempt metadata, while deterministic content/evidence/privacy blockers terminate without another paid retry.
+- The task list now exposes six controlled outcomes: draft ready, manual review required, insufficient evidence, protocol failure, content blocked, and provider failure. Raw Plan, Prompt, evidence, and provider secrets remain hidden.
+- Consolidated schema, evidence-reference, state-consistency, and specific-claim validation into one aggregated Plan rule source.
+- Phase 0-5 + P0 qualification keeps the 30/30 offline matrix. The P0 focused suite passed 141 tests / 757 assertions; the full suite passed 873 tests / 5823 assertions with two pre-existing copy-baseline failures. The candidate is frozen as `deep-protocol-v2.4-p0-candidate-20260722` with a reproducibility manifest; no paid model call was made and Phase 6 still requires separate approval.
 
 ### V2.3 Grounding Gate and Deep-Protocol Validation
 

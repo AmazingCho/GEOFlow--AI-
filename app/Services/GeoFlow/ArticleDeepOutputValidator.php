@@ -56,126 +56,30 @@ class ArticleDeepOutputValidator
         if ($violations !== []) {
             throw new ArticlePlanValidationException($violations);
         }
-        $readerQuestion = $this->requiredString($plan, 'reader_question', 2000);
         $evidenceSufficiency = strtolower(trim((string) ($plan['evidence_sufficiency'] ?? '')));
-        if (! in_array($evidenceSufficiency, self::EVIDENCE_SUFFICIENCY, true)) {
-            throw new InvalidArgumentException('策划结果 evidence_sufficiency 必须是 sufficient、limited 或 insufficient');
-        }
-
         $answerMode = strtolower(trim((string) ($plan['answer_mode'] ?? '')));
-        if (! in_array($answerMode, self::ANSWER_MODES, true)) {
-            throw new InvalidArgumentException('策划结果 answer_mode 无效');
-        }
-
-        if (! is_array($plan['supported_sections'] ?? null)) {
-            throw new InvalidArgumentException('策划结果 supported_sections 必须是数组');
-        }
-
-        $supportedSections = [];
-        foreach (array_values($plan['supported_sections']) as $index => $section) {
-            if (! is_array($section)) {
-                throw new InvalidArgumentException('策划结果 supported_sections.'.($index + 1).' 必须是对象');
-            }
-
-            $supportType = trim((string) ($section['support_type'] ?? ''));
-            if (! in_array($supportType, self::SUPPORT_TYPES, true)) {
-                throw new InvalidArgumentException('策划结果 supported_sections.'.($index + 1).' 的 support_type 无效');
-            }
-
-            $evidenceRefs = $this->stringList($section['evidence_refs'] ?? [], 50, 240);
-            if ($supportType === 'evidence' && $evidenceRefs === []) {
-                throw new InvalidArgumentException('策划结果 supported_sections.'.($index + 1).' 的 evidence_refs 不能为空');
-            }
-            if ($supportType === 'general_explanation' && $evidenceRefs !== []) {
-                throw new InvalidArgumentException('策划结果 general_explanation 不应声称具体证据引用');
-            }
-            $this->assertAllowedEvidenceRefs($evidenceRefs, $allowedEvidenceLookup, 'supported_sections.'.($index + 1));
-
-            $purpose = $this->requiredString($section, 'purpose', 1200);
-            if ($supportType === 'general_explanation' && $this->containsSpecificClaim($purpose)) {
-                throw new InvalidArgumentException('策划结果 general_explanation 不得承载具体产品事实或结果声明');
-            }
-
-            $supportedSections[] = [
-                'purpose' => $purpose,
-                'support_type' => $supportType,
-                'evidence_refs' => $evidenceRefs,
-            ];
-        }
-
-        if (! is_array($plan['evidence_mapping'] ?? null)) {
-            throw new InvalidArgumentException('策划结果 evidence_mapping 必须是数组');
-        }
-        $evidenceMapping = [];
-        foreach (array_values($plan['evidence_mapping']) as $index => $mapping) {
-            if (! is_array($mapping)) {
-                throw new InvalidArgumentException('策划结果 evidence_mapping.'.($index + 1).' 必须是对象');
-            }
-            $evidenceRefs = $this->stringList($mapping['evidence_refs'] ?? [], 50, 240);
-            if ($evidenceRefs === []) {
-                throw new InvalidArgumentException('策划结果 evidence_mapping.'.($index + 1).' 的 evidence_refs 不能为空');
-            }
-            $this->assertAllowedEvidenceRefs($evidenceRefs, $allowedEvidenceLookup, 'evidence_mapping.'.($index + 1));
-            $evidenceMapping[] = [
-                'claim_scope' => $this->requiredString($mapping, 'claim_scope', 1000),
-                'evidence_refs' => $evidenceRefs,
-            ];
-        }
-
-        $optionalModules = $this->stringList($plan['optional_modules'] ?? [], 20, 500);
-        foreach ($optionalModules as $optionalModule) {
-            if ($this->containsSpecificClaim($optionalModule)) {
-                throw new InvalidArgumentException('策划结果 optional_modules 只能包含模块名称，不得承载具体事实');
-            }
-        }
-
-        if (! is_array($plan['verification_items'] ?? null)) {
-            throw new InvalidArgumentException('策划结果 verification_items 必须是数组');
-        }
-        $verificationItems = [];
-        foreach (array_values($plan['verification_items']) as $index => $item) {
-            if (! is_array($item)) {
-                throw new InvalidArgumentException('策划结果 verification_items.'.($index + 1).' 必须是对象');
-            }
-            $category = strtolower(trim((string) ($item['category'] ?? '')));
-            if (! in_array($category, self::VERIFICATION_CATEGORIES, true)) {
-                throw new InvalidArgumentException('策划结果 verification_items.'.($index + 1).' 的 category 无效');
-            }
-            if (! is_bool($item['required_for_draft'] ?? null)) {
-                throw new InvalidArgumentException('策划结果 verification_items.'.($index + 1).' 的 required_for_draft 必须是布尔值');
-            }
-            $verificationItems[] = [
-                'question' => $this->requiredString($item, 'question', 1000),
-                'category' => $category,
-                'required_for_draft' => $item['required_for_draft'],
-            ];
-        }
-
-        if ($evidenceSufficiency === 'sufficient'
-            && ($supportedSections === [] || $evidenceMapping === [] || $answerMode === 'stop')) {
-            throw new InvalidArgumentException('策划结果 sufficient 必须包含可写结构和证据映射，且 answer_mode 不能为 stop');
-        }
-        if ($evidenceSufficiency === 'limited'
-            && ($supportedSections === [] || $evidenceMapping === [] || ! in_array($answerMode, ['conditional', 'evidence_limited'], true))) {
-            throw new InvalidArgumentException('策划结果 limited 必须包含可写结构和证据映射，并使用 conditional 或 evidence_limited');
-        }
-        if ($evidenceSufficiency === 'insufficient') {
-            $requiredItems = array_filter(
-                $verificationItems,
-                static fn (array $item): bool => $item['required_for_draft'] === true
-            );
-            if ($answerMode !== 'stop' || $requiredItems === []) {
-                throw new InvalidArgumentException('策划结果 insufficient 必须使用 answer_mode=stop 并提供至少一项起草前必须确认的 verification_items');
-            }
-        }
+        $supportedSections = array_map(fn (array $section): array => [
+            'purpose' => mb_substr(trim((string) $section['purpose']), 0, 1200, 'UTF-8'),
+            'support_type' => trim((string) $section['support_type']),
+            'evidence_refs' => $this->stringList($section['evidence_refs'], 50, 240),
+        ], array_values($plan['supported_sections']));
+        $evidenceMapping = array_map(fn (array $mapping): array => [
+            'claim_scope' => mb_substr(trim((string) $mapping['claim_scope']), 0, 1000, 'UTF-8'),
+            'evidence_refs' => $this->stringList($mapping['evidence_refs'], 50, 240),
+        ], array_values($plan['evidence_mapping']));
+        $verificationItems = array_map(static fn (array $item): array => [
+            'question' => mb_substr(trim((string) $item['question']), 0, 1000, 'UTF-8'),
+            'category' => strtolower(trim((string) $item['category'])),
+            'required_for_draft' => $item['required_for_draft'],
+        ], array_values($plan['verification_items']));
 
         return [
-            'reader_question' => $readerQuestion,
+            'reader_question' => mb_substr(trim((string) $plan['reader_question']), 0, 2000, 'UTF-8'),
             'answer_mode' => $answerMode,
             'evidence_sufficiency' => $evidenceSufficiency,
             'supported_sections' => $supportedSections,
             'evidence_mapping' => $evidenceMapping,
-            'optional_modules' => $optionalModules,
+            'optional_modules' => $this->stringList($plan['optional_modules'], 20, 500),
             'unsupported_claims_to_avoid' => $this->stringList($plan['unsupported_claims_to_avoid'] ?? [], 50, 1000),
             'verification_items' => $verificationItems,
         ];
@@ -308,17 +212,6 @@ class ArticleDeepOutputValidator
         return $decoded;
     }
 
-    /** @param array<string,mixed> $data */
-    private function requiredString(array $data, string $field, int $maxLength): string
-    {
-        $value = trim((string) ($data[$field] ?? ''));
-        if ($value === '') {
-            throw new InvalidArgumentException('结构化输出字段 '.$field.' 不能为空');
-        }
-
-        return mb_substr($value, 0, $maxLength, 'UTF-8');
-    }
-
     /** @return list<string> */
     private function stringList(mixed $value, int $maxItems, int $maxLength): array
     {
@@ -387,6 +280,17 @@ class ArticleDeepOutputValidator
             if (! in_array($supportType, self::SUPPORT_TYPES, true)) {
                 $add($violations, 'schema.invalid_enum', $path.'.support_type', 'evidence|general_explanation');
             }
+            if ($supportType === 'general_explanation' && $this->containsSpecificClaim((string) ($section['purpose'] ?? ''))) {
+                $add(
+                    $violations,
+                    'content.specific_claim_forbidden',
+                    $path.'.purpose',
+                    'general_explanation must not contain product-specific facts, measurements, or performance claims'
+                );
+            }
+            if (! is_array($section['evidence_refs'] ?? null)) {
+                $add($violations, 'schema.invalid_type', $path.'.evidence_refs', 'array');
+            }
             $refs = is_array($section['evidence_refs'] ?? null) ? array_values($section['evidence_refs']) : [];
             if ($supportType === 'evidence' && $refs === []) {
                 $add($violations, 'evidence.reference_required', $path.'.evidence_refs', 'at least one exact allowlisted evidence ID');
@@ -397,6 +301,39 @@ class ArticleDeepOutputValidator
             foreach ($refs as $refIndex => $reference) {
                 if (! is_string($reference) || ! isset($allowedEvidenceLookup[$reference])) {
                     $add($violations, 'evidence.unknown_reference', $path.'.evidence_refs['.$refIndex.']', 'exact allowlisted evidence ID');
+                }
+            }
+        }
+
+        $optionalModules = $plan['optional_modules'] ?? null;
+        if (! is_array($optionalModules)) {
+            $add($violations, 'schema.invalid_type', '$.optional_modules', 'array');
+            $optionalModules = [];
+        }
+        foreach (array_values($optionalModules) as $moduleIndex => $module) {
+            $path = '$.optional_modules['.$moduleIndex.']';
+            if (! is_string($module) || trim($module) === '') {
+                $add($violations, 'schema.invalid_type', $path, 'non-empty string');
+
+                continue;
+            }
+            if ($this->containsSpecificClaim($module)) {
+                $add(
+                    $violations,
+                    'content.specific_claim_forbidden',
+                    $path,
+                    'optional module names must not contain product-specific facts, measurements, or performance claims'
+                );
+            }
+        }
+
+        $unsupportedClaims = $plan['unsupported_claims_to_avoid'] ?? null;
+        if (! is_array($unsupportedClaims)) {
+            $add($violations, 'schema.invalid_type', '$.unsupported_claims_to_avoid', 'array');
+        } else {
+            foreach (array_values($unsupportedClaims) as $claimIndex => $claim) {
+                if (! is_string($claim) || trim($claim) === '') {
+                    $add($violations, 'schema.invalid_type', '$.unsupported_claims_to_avoid['.$claimIndex.']', 'non-empty string');
                 }
             }
         }
@@ -415,6 +352,9 @@ class ArticleDeepOutputValidator
             }
             if (trim((string) ($mapping['claim_scope'] ?? '')) === '') {
                 $add($violations, 'schema.required', $path.'.claim_scope', 'non-empty string');
+            }
+            if (! is_array($mapping['evidence_refs'] ?? null)) {
+                $add($violations, 'schema.invalid_type', $path.'.evidence_refs', 'array');
             }
             $refs = is_array($mapping['evidence_refs'] ?? null) ? array_values($mapping['evidence_refs']) : [];
             if ($refs === []) {
@@ -495,24 +435,6 @@ class ArticleDeepOutputValidator
             || preg_match('/(?:该|本|这台|这款|这个|所选|我们的|一台|每台|每个|任一)(?:设备|机器|机型|系统|装置|产品|型号).{0,40}(?:采用|使用|支持|提供|包含|配备|运行|实现|适合|处理|兼容|(?:可以|能够|能)[\p{Han}]{1,12})/u', $text) === 1;
     }
 
-    private function containsTrailingSpecificClaim(string $text): bool
-    {
-        $asciiPosition = mb_strpos($text, '?', 0, 'UTF-8');
-        $cjkPosition = mb_strpos($text, '？', 0, 'UTF-8');
-        $positions = array_filter(
-            [$asciiPosition, $cjkPosition],
-            static fn (int|false $position): bool => $position !== false
-        );
-        if ($positions === []) {
-            return false;
-        }
-
-        $firstQuestionMark = min($positions);
-        $trailing = trim(mb_substr($text, $firstQuestionMark + 1, null, 'UTF-8'));
-
-        return $trailing !== '' && $this->containsSpecificClaim($trailing);
-    }
-
     private function normalizeRenderedText(string $text): string
     {
         $text = preg_replace('/!\[([^\]]*)\]\([^\r\n)]*\)/u', '$1', $text) ?? $text;
@@ -525,25 +447,5 @@ class ArticleDeepOutputValidator
         $text = str_replace(['**', '__', '~~', '`', '*', '_'], '', $text);
 
         return trim((string) preg_replace('/\s+/u', ' ', $text));
-    }
-
-    private function isOpenQuestion(string $text): bool
-    {
-        $text = trim($text);
-        if (preg_match('/[?？]/u', $text) === 1) {
-            return preg_match('/\A(?:can|could|would|should|does|do|did|is|are|was|were|has|have|will|may|might|what|which|who|where|when|why|how|whether|是否|能否|可否|有没有|什么|哪个|哪些|谁|哪里|何时|为什么|为何|如何|多(?:少|大|长|高|宽))\b/iu', $text) === 1;
-        }
-
-        return preg_match('/\b(?:ask|check|clarify|confirm|determine|explore|investigate|verify)\b.*\b(?:if|whether|what|which|how|why|when|where)\b|(?:是否|能否|如何|为什么|为何|什么|哪(?:个|些)?|待确认|需确认|有待验证)/iu', $text) === 1;
-    }
-
-    /** @param list<string> $references @param array<string,bool> $allowedLookup */
-    private function assertAllowedEvidenceRefs(array $references, array $allowedLookup, string $path): void
-    {
-        foreach ($references as $reference) {
-            if (! isset($allowedLookup[$reference])) {
-                throw new InvalidArgumentException('策划结果 '.$path.' 的 evidence_refs 包含未知引用');
-            }
-        }
     }
 }

@@ -57,14 +57,28 @@ class ArticleModelCallService
         $attempts = [];
         $lastMessage = '';
 
+        try {
+            $candidates = $this->resolveAiModelCandidates($task);
+        } catch (Throwable) {
+            throw new ArticleModelSelectionException(
+                $request->stage,
+                [],
+                'AI模型不可用或未配置'
+            );
+        }
+
         $providerAttemptCount = 0;
-        foreach ($this->resolveAiModelCandidates($task) as $candidate) {
+        foreach ($candidates as $candidate) {
             $unavailableReason = $this->getAiModelUnavailableReason($candidate);
             if ($unavailableReason !== null) {
                 $attempts[] = $this->buildModelAttempt($candidate, 'skipped', $unavailableReason);
                 $lastMessage = $unavailableReason;
                 if ($mode !== 'smart_failover') {
-                    throw new RuntimeException($unavailableReason);
+                    throw new ArticleModelSelectionException(
+                        $request->stage,
+                        $this->stageAttempts($attempts, $request->stage),
+                        $unavailableReason
+                    );
                 }
 
                 continue;
@@ -84,7 +98,7 @@ class ArticleModelCallService
                     'content' => $result['content'],
                     'structured' => $result['structured'],
                     'model' => $candidate,
-                    'attempts' => $attempts,
+                    'attempts' => $this->stageAttempts($attempts, $request->stage),
                 ];
             } catch (Throwable $exception) {
                 $lastMessage = trim($exception->getMessage());
@@ -94,16 +108,28 @@ class ArticleModelCallService
                 $attempts[] = $this->buildModelAttempt($candidate, 'failed', $lastMessage, $metadata);
 
                 if ($mode !== 'smart_failover') {
-                    throw $exception;
+                    throw new ArticleModelSelectionException(
+                        $request->stage,
+                        $this->stageAttempts($attempts, $request->stage),
+                        $lastMessage !== '' ? $lastMessage : '模型服务异常'
+                    );
                 }
             }
         }
 
         if ($mode === 'smart_failover' && $attempts !== []) {
-            throw new RuntimeException($this->buildFailoverErrorMessage($attempts, $lastMessage));
+            throw new ArticleModelSelectionException(
+                $request->stage,
+                $this->stageAttempts($attempts, $request->stage),
+                $this->buildFailoverErrorMessage($attempts, $lastMessage)
+            );
         }
 
-        throw new RuntimeException('AI模型不可用或已达每日限制');
+        throw new ArticleModelSelectionException(
+            $request->stage,
+            $this->stageAttempts($attempts, $request->stage),
+            'AI模型不可用或已达每日限制'
+        );
     }
 
     public function generate(AiModel $aiModel, string $prompt, bool $validateArticleCompleteness = true): string
@@ -281,6 +307,18 @@ class ArticleModelCallService
             'completion_tokens',
             'reasoning_tokens',
         ])));
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $attempts
+     * @return list<array<string,mixed>>
+     */
+    private function stageAttempts(array $attempts, ArticleGenerationStage $stage): array
+    {
+        return array_map(
+            static fn (array $attempt): array => array_merge($attempt, ['stage' => $stage->value]),
+            $attempts
+        );
     }
 
     /** @param list<array{model_id:int,model_name:string,status:string,reason:?string}> $attempts */

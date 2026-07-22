@@ -131,6 +131,9 @@ class WorkerExecutionService
             $author = $pipeline['author'];
             /** @var Category|null $category */
             $category = $pipeline['category'];
+            $generationOutcome = data_get($pipeline, 'workflow.review_status') === 'approved'
+                ? 'draft_ready'
+                : 'draft_review_required';
 
             return [
                 'article_id' => $articleId,
@@ -146,6 +149,7 @@ class WorkerExecutionService
                     'image_count' => count($pipeline['selectedImages']),
                     'model_selection_mode' => (string) ($task->model_selection_mode ?? 'fixed'),
                     'generation_mode' => (string) ($pipeline['generationMode'] ?? ArticleGenerationModes::STANDARD),
+                    'generation_outcome' => $generationOutcome,
                     'used_model_id' => (int) $aiModel->id,
                     'used_model_name' => (string) $aiModel->name,
                     'model_attempts' => $pipeline['generationAttempts'],

@@ -96,6 +96,83 @@ class AdminTasksPageTest extends TestCase
             ->assertDontSee('$.answer_mode');
     }
 
+    public function test_task_list_distinguishes_content_and_provider_failures(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_outcome_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-outcome@example.com',
+            'display_name' => 'Tasks Outcome Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        foreach ([
+            'content_blocked' => 'Content blocked task',
+            'provider_failure' => 'Provider failure task',
+        ] as $outcome => $name) {
+            $task = Task::query()->create([
+                'name' => $name,
+                'status' => $outcome === 'content_blocked' ? 'paused' : 'active',
+            ]);
+            TaskRun::query()->create([
+                'task_id' => (int) $task->id,
+                'status' => 'failed',
+                'error_message' => $name,
+                'meta' => [
+                    'terminal_reason' => $outcome,
+                    'generation_outcome' => $outcome,
+                ],
+            ]);
+        }
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.index'))
+            ->assertOk()
+            ->assertSee(__('admin.tasks.failure.content_blocked'))
+            ->assertSee(__('admin.tasks.failure.content_blocked_detail'))
+            ->assertSee(__('admin.tasks.failure.provider_failure'))
+            ->assertSee(__('admin.tasks.failure.provider_failure_detail'));
+    }
+
+    public function test_task_list_distinguishes_ready_and_review_required_drafts(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'tasks_success_outcome_admin',
+            'password' => 'secret-123',
+            'email' => 'tasks-success-outcome@example.com',
+            'display_name' => 'Tasks Success Outcome Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        foreach ([
+            'draft_ready' => 'Ready draft task',
+            'draft_review_required' => 'Review draft task',
+        ] as $outcome => $name) {
+            $task = Task::query()->create(['name' => $name, 'status' => 'active']);
+            TaskRun::query()->create([
+                'task_id' => (int) $task->id,
+                'status' => 'completed',
+                'meta' => ['generation_outcome' => $outcome],
+            ]);
+        }
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.tasks.index'))
+            ->assertOk()
+            ->assertSee(__('admin.tasks.outcome.draft_ready'))
+            ->assertSee(__('admin.tasks.outcome.draft_review_required'))
+            ->assertViewHas('tasks', static function (array $tasks): bool {
+                $outcomes = collect($tasks)
+                    ->pluck('batch_generation_outcome')
+                    ->filter()
+                    ->sort()
+                    ->values()
+                    ->all();
+
+                return $outcomes === ['draft_ready', 'draft_review_required'];
+            });
+    }
+
     public function test_authenticated_admin_can_open_task_create_page(): void
     {
         $admin = Admin::query()->create([

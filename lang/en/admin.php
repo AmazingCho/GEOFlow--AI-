@@ -533,6 +533,10 @@ return [
             'updated_at' => 'Updated At',
             'task_prefix' => 'Task',
         ],
+        'outcome' => [
+            'draft_ready' => 'Draft ready',
+            'draft_review_required' => 'Manual review required',
+        ],
         'failure' => [
             'empty_content' => 'Empty body blocked',
             'empty_content_detail' => 'The model returned an empty body. The system marked this run as failed and skipped saving.',
@@ -550,6 +554,10 @@ return [
             'insufficient_evidence_detail' => 'The selected sources cannot support a responsible draft yet. Add the requested source information before running again.',
             'protocol_failure' => 'Generation protocol error',
             'protocol_failure_detail' => 'The plan failed structured validation twice. The run stopped without automatic retry; check model compatibility or select another model.',
+            'content_blocked' => 'Content blocked by safety checks',
+            'content_blocked_detail' => 'The system found unsupported evidence claims or unsafe content. The run stopped without automatic retry; review the source material, title, or generation requirements before running it again.',
+            'provider_failure' => 'Model service failure',
+            'provider_failure_detail' => 'The model service did not complete generation within the allowed retry budget. Check the model configuration or service status, then retry later.',
         ],
     ],
     'articles' => [

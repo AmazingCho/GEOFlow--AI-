@@ -5,8 +5,11 @@ namespace App\Jobs;
 use App\Models\Task;
 use App\Models\TaskRun;
 use App\Models\WorkerHeartbeat;
+use App\Services\GeoFlow\ArticleContentBlockedException;
 use App\Services\GeoFlow\ArticleGenerationProtocolException;
 use App\Services\GeoFlow\ArticleInsufficientEvidenceException;
+use App\Services\GeoFlow\ArticleModelSelectionException;
+use App\Services\GeoFlow\ArticleProviderFailureException;
 use App\Services\GeoFlow\JobQueueService;
 use App\Services\GeoFlow\WorkerExecutionService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -122,6 +125,7 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
             if ($this->shouldCancel($taskId, $message)) {
                 $queueService->cancelJob($this->taskRunId, $taskId, '管理员手动停止', $claimToken);
             } else {
+                [$retryable, $failureMeta] = $this->failurePolicy($exception);
                 $queueService->failJob(
                     $this->taskRunId,
                     $taskId,
@@ -129,16 +133,8 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
                     $durationMs,
                     60,
                     $claimToken,
-                    ! ($exception instanceof ArticleInsufficientEvidenceException || $exception instanceof ArticleGenerationProtocolException),
-                    $exception instanceof ArticleInsufficientEvidenceException
-                        ? [
-                            'terminal_reason' => 'insufficient_evidence',
-                            'generation_outcome' => 'insufficient_evidence',
-                            'missing_information_categories' => $exception->categoryCodes,
-                        ]
-                        : ($exception instanceof ArticleGenerationProtocolException
-                            ? $this->protocolFailureMeta($exception)
-                            : [])
+                    $retryable,
+                    $failureMeta
                 );
             }
         } finally {
@@ -171,23 +167,16 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
             $transitionToken = ($run->status ?? '') === 'running'
                 ? $this->resolveClaimToken($queueService)
                 : $this->dispatchToken;
-            $isInsufficientEvidence = $exception instanceof ArticleInsufficientEvidenceException;
-            $isProtocolFailure = $exception instanceof ArticleGenerationProtocolException;
+            [$retryable, $failureMeta] = $this->failurePolicy($exception);
             $queueService->failJob(
                 (int) $run->id,
                 (int) $run->task_id,
-                $isInsufficientEvidence ? $message : '队列中断: '.$message,
+                $retryable ? '队列中断: '.$message : $message,
                 0,
                 60,
                 $transitionToken,
-                ! ($isInsufficientEvidence || $isProtocolFailure),
-                $isInsufficientEvidence
-                    ? [
-                        'terminal_reason' => 'insufficient_evidence',
-                        'generation_outcome' => 'insufficient_evidence',
-                        'missing_information_categories' => $exception->categoryCodes,
-                    ]
-                    : ($isProtocolFailure ? $this->protocolFailureMeta($exception) : [])
+                $retryable,
+                $failureMeta
             );
         } catch (Throwable) {
             // 避免失败回调自身再抛错导致 Horizon 日志刷屏
@@ -210,10 +199,84 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
             : (string) Str::uuid();
     }
 
+    /** @return array{0:bool,1:array<string,mixed>} */
+    private function failurePolicy(?Throwable $exception): array
+    {
+        if ($exception instanceof ArticleInsufficientEvidenceException) {
+            return [false, [
+                'terminal_reason' => 'insufficient_evidence',
+                'generation_outcome' => 'insufficient_evidence',
+                'missing_information_categories' => $exception->categoryCodes,
+            ]];
+        }
+        if ($exception instanceof ArticleGenerationProtocolException) {
+            return [false, $this->protocolFailureMeta($exception)];
+        }
+        if ($exception instanceof ArticleContentBlockedException) {
+            return [false, $this->contentBlockedMeta($exception)];
+        }
+        if ($exception instanceof ArticleProviderFailureException || $exception instanceof ArticleModelSelectionException) {
+            return [true, $this->providerFailureMeta($exception)];
+        }
+
+        return [true, []];
+    }
+
     /** @return array<string,mixed> */
     private function protocolFailureMeta(ArticleGenerationProtocolException $exception): array
     {
-        $attempts = collect($exception->attempts)
+        $attempts = $this->safeAttempts($exception->attempts);
+
+        return [
+            'terminal_reason' => 'protocol_failure',
+            'generation_outcome' => 'protocol_failure',
+            'protocol_version' => $exception->protocolVersion,
+            'protocol_stage' => $exception->stage->value,
+            'protocol_violation_count' => count($exception->violations),
+            'protocol_violation_codes' => array_values(array_unique(array_column($exception->violations, 'code'))),
+            'protocol_violation_paths' => array_values(array_unique(array_column($exception->violations, 'path'))),
+            'provider_attempt_count' => count($attempts),
+            'model_attempts' => $attempts,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function contentBlockedMeta(ArticleContentBlockedException $exception): array
+    {
+        $attempts = $this->safeAttempts($exception->attempts);
+
+        return [
+            'terminal_reason' => 'content_blocked',
+            'generation_outcome' => 'content_blocked',
+            'protocol_version' => $exception->protocolVersion,
+            'protocol_stage' => $exception->stage->value,
+            'content_block_reason' => $exception->reasonCode,
+            'provider_attempt_count' => count($attempts),
+            'model_attempts' => $attempts,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function providerFailureMeta(ArticleProviderFailureException|ArticleModelSelectionException $exception): array
+    {
+        $attempts = $this->safeAttempts($exception->attempts);
+        $meta = [
+            'failure_class' => 'provider_failure',
+            'protocol_stage' => $exception->stage->value,
+            'provider_attempt_count' => count($attempts),
+            'model_attempts' => $attempts,
+        ];
+        if ($exception instanceof ArticleProviderFailureException) {
+            $meta['protocol_version'] = $exception->protocolVersion;
+        }
+
+        return $meta;
+    }
+
+    /** @param list<array<string,mixed>> $attempts @return list<array<string,mixed>> */
+    private function safeAttempts(array $attempts): array
+    {
+        return collect($attempts)
             ->filter(static fn (mixed $attempt): bool => is_array($attempt))
             ->map(static fn (array $attempt): array => Arr::only($attempt, [
                 'stage',
@@ -228,18 +291,6 @@ class ProcessGeoFlowTaskJob implements ShouldQueue
             ]))
             ->values()
             ->all();
-
-        return [
-            'terminal_reason' => 'protocol_failure',
-            'generation_outcome' => 'protocol_failure',
-            'protocol_version' => $exception->protocolVersion,
-            'protocol_stage' => $exception->stage->value,
-            'protocol_violation_count' => count($exception->violations),
-            'protocol_violation_codes' => array_values(array_unique(array_column($exception->violations, 'code'))),
-            'protocol_violation_paths' => array_values(array_unique(array_column($exception->violations, 'path'))),
-            'provider_attempt_count' => count($attempts),
-            'model_attempts' => $attempts,
-        ];
     }
 
     private function resolveClaimToken(JobQueueService $queueService): string

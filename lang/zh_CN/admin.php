@@ -533,6 +533,10 @@ return [
             'updated_at' => '更新时间',
             'task_prefix' => '任务',
         ],
+        'outcome' => [
+            'draft_ready' => '草稿可用',
+            'draft_review_required' => '需要人工审核',
+        ],
         'failure' => [
             'empty_content' => '空正文已拦截',
             'empty_content_detail' => '模型返回空正文，系统已判失败，未保存文章。',
@@ -550,6 +554,10 @@ return [
             'insufficient_evidence_detail' => '当前素材不足以负责任地起草文章，请先补充页面提示的资料。',
             'protocol_failure' => '生成协议异常',
             'protocol_failure_detail' => '策划结果两次未通过结构校验，系统已停止且不会自动重试。可检查模型兼容性或改用其他模型。',
+            'content_blocked' => '内容已被安全门禁拦截',
+            'content_blocked_detail' => '系统发现不受证据支持或存在安全风险的内容，已停止且不会自动重试。请检查素材、标题或生成要求后再运行。',
+            'provider_failure' => '模型服务异常',
+            'provider_failure_detail' => '模型服务在允许的重试次数内仍未完成生成。请检查模型配置、服务状态，或稍后重新执行。',
         ],
     ],
     'articles' => [

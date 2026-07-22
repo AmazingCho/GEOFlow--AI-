@@ -159,6 +159,34 @@ class ArticleDeepOutputValidatorTest extends TestCase
         }
     }
 
+    public function test_plan_semantic_claim_violations_use_the_same_aggregated_contract(): void
+    {
+        $plan = $this->validPlan();
+        $plan['supported_sections'][0] = [
+            'purpose' => 'MX-200 supports 30 kg loads.',
+            'support_type' => 'general_explanation',
+            'evidence_refs' => [],
+        ];
+        $plan['optional_modules'] = ['MX-200 guarantees 20% faster output.'];
+
+        try {
+            app(ArticleDeepOutputValidator::class)->validatePlan(
+                $plan,
+                ['KB:12:CHUNK:3:0123456789abcdef']
+            );
+            $this->fail('Semantic claim violations must be aggregated for the repair prompt.');
+        } catch (ArticlePlanValidationException $exception) {
+            $this->assertSame([
+                'content.specific_claim_forbidden',
+                'content.specific_claim_forbidden',
+            ], array_column($exception->violations, 'code'));
+            $this->assertSame([
+                '$.supported_sections[0].purpose',
+                '$.optional_modules[0]',
+            ], array_column($exception->violations, 'path'));
+        }
+    }
+
     public function test_plan_normalizes_enum_casing_without_changing_meaning(): void
     {
         $plan = $this->validPlan();
