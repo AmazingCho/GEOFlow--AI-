@@ -36,6 +36,7 @@
 - [知识库治理与 RAG 检索使用说明](../功能说明文档/04-知识库治理与RAG检索使用说明.md)
 - [创建任务与生成流程使用说明](../功能说明文档/05-创建任务与生成流程使用说明.md)
 - [Prompt / Skill / Style System V2.2](./PROMPT_SKILL_SYSTEM.md)
+- [Article Prompt V2.4 部署状态](./ARTICLE_PROMPT_V24_DEPLOYMENT_STATUS.md)
 - [V2.2 去模板化与深度生成实施报告](./ARTICLE_DETEMPLATED_DEEP_GENERATION_IMPLEMENTATION_REPORT.md)
 - [文章质量评分与审核使用说明](../功能说明文档/06-文章质量评分与审核使用说明.md)
 - [素材管理与关联使用说明](../功能说明文档/07-素材管理与关联使用说明.md)
@@ -89,6 +90,8 @@
 - 文章创建/编辑页已接入 Vditor Markdown 编辑器，可复制 Markdown 或公众号/微信格式 HTML。
 - 网站设置页已有模板工厂 / 站点模板复刻入口；当前本地浏览器后台入口优先使用 `/admin`。
 - Codex 业务录入助手 API Phase 0-6 已完成核心功能：只读上下文搜索、AI 录入草稿箱、草稿预检、后台审核应用、知识库/Case 内容候选、本地调用脚本和基础治理提醒均已落地；仍不要新增绕过草稿箱的直接写入捷径。
-- 文章 V2.2 去模板化与 `standard|deep` 双模式已完成本地实现和 UI 验证，但真实模型盲审、业务库 Prompt apply 与实际 Docker 切换尚未批准，当前仍是 No-Go 候选。
+- 文章 V2.4 Master 与 Intent Skill 已按用户决定同步到 Docker 业务库：Master 和
+  大部分 Skill 为 `2.4.0`，Technical 为 `2.4.1`。后续通过真实任务人工审核，
+  不代表批准跳过事实审核或自动发布，也不要自动恢复付费 A/B 循环。
 - 上游 System Update Center 准备度补丁尚未接入，后续应单独规划。
 - 上游选择性采纳的新主计划已保存；禁止直接 merge `upstream/main`，阶段 1-3 为优先主线，后续按计划文件中的断点继续。
