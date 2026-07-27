@@ -221,6 +221,7 @@ class CrmQuoteController extends Controller
                 'buyer_address' => (string) ($quote->buyer_address ?? ''),
                 'buyer_country' => (string) ($quote->buyer_country ?? ''),
                 'document_language' => (string) ($quote->document_language ?? 'en'),
+                'document_date' => ($quote->document_date ?? $quote->created_at)?->format('Y-m-d') ?? now()->toDateString(),
                 'currency' => (string) ($quote->currency ?? 'USD'),
                 'trade_term' => (string) ($quote->trade_term ?? ''),
                 'port_of_loading' => (string) ($quote->port_of_loading ?? ''),
@@ -234,6 +235,8 @@ class CrmQuoteController extends Controller
                 'lead_time' => (string) ($quote->lead_time ?? ''),
                 'warranty_terms' => (string) ($quote->warranty_terms ?? ''),
                 'installation_terms' => (string) ($quote->installation_terms ?? ''),
+                'packing_terms' => (string) ($quote->packing_terms ?? ''),
+                'deposit_percent' => (int) ($quote->deposit_percent ?? 60),
                 'status' => (string) ($quote->status ?? 'draft'),
                 'notes' => (string) ($quote->notes ?? ''),
                 'internal_notes' => (string) ($quote->internal_notes ?? ''),
@@ -302,7 +305,7 @@ class CrmQuoteController extends Controller
         $data = $request->validate(['document_type' => ['required', 'string', Rule::in(self::DOCUMENT_TYPES)]]);
         $targetType = (string) $data['document_type'];
         $copy = $source->replicate(['quote_no', 'document_type', 'status', 'revision', 'created_at', 'updated_at']);
-        $copy->fill(['quote_no' => $this->generateQuoteNo(), 'document_type' => $targetType, 'source_quote_id' => $source->id, 'title' => ($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title, 'status' => 'draft', 'revision' => 1]);
+        $copy->fill(['quote_no' => $this->generateQuoteNo(), 'document_type' => $targetType, 'document_date' => now()->toDateString(), 'source_quote_id' => $source->id, 'title' => ($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title, 'status' => 'draft', 'revision' => 1]);
         $copy->save();
         foreach ($source->items as $item) {
             $newItem = $item->replicate(['quote_id', 'created_at', 'updated_at']);
@@ -554,6 +557,7 @@ class CrmQuoteController extends Controller
             'buyer_address' => ['nullable', 'string', 'max:10000'],
             'buyer_country' => ['nullable', 'string', 'max:100'],
             'document_language' => ['nullable', 'string', Rule::in(CrmDocumentLocale::supported())],
+            'document_date' => ['nullable', 'date'],
             'currency' => ['nullable', 'string', 'max:10'],
             'trade_term' => ['nullable', 'string', 'max:80'],
             'port_of_loading' => ['nullable', 'string', 'max:200'],
@@ -658,6 +662,10 @@ class CrmQuoteController extends Controller
                 is_string($payload['document_language'] ?? null) ? $payload['document_language'] : null,
                 'en',
             ),
+            'document_date' => $payload['document_date']
+                ?? $quote?->document_date?->format('Y-m-d')
+                ?? $quote?->created_at?->format('Y-m-d')
+                ?? now()->toDateString(),
             'currency' => strtoupper(trim((string) ($payload['currency'] ?? 'USD'))) ?: 'USD',
             'trade_term' => trim((string) ($payload['trade_term'] ?? '')),
             'port_of_loading' => trim((string) ($payload['port_of_loading'] ?? '')),
@@ -671,6 +679,10 @@ class CrmQuoteController extends Controller
             'lead_time' => trim((string) ($payload['lead_time'] ?? '')),
             'warranty_terms' => trim((string) ($payload['warranty_terms'] ?? '')),
             'installation_terms' => trim((string) ($payload['installation_terms'] ?? '')),
+            'packing_terms' => trim((string) ($payload['packing_terms'] ?? '')),
+            'deposit_percent' => array_key_exists('deposit_percent', $payload)
+                ? (int) $payload['deposit_percent']
+                : (int) ($quote?->deposit_percent ?? 60),
             'status' => (string) ($payload['status'] ?? 'draft'),
             'notes' => trim((string) ($payload['notes'] ?? '')),
             'internal_notes' => trim((string) ($payload['internal_notes'] ?? '')),
@@ -921,6 +933,7 @@ class CrmQuoteController extends Controller
             'buyer_address' => '',
             'buyer_country' => '',
             'document_language' => 'en',
+            'document_date' => now()->toDateString(),
             'currency' => 'USD',
             'trade_term' => '',
             'port_of_loading' => '',
@@ -1289,7 +1302,7 @@ class CrmQuoteController extends Controller
 
         $row = 4;
         $sheet->setCellValue("A{$row}", $label('document_no', 'Document No.').': '.$quote->quote_no);
-        $sheet->setCellValue("C{$row}", $label('date', 'Date').': '.CrmDocumentLocale::formatDate($quote->created_at, $documentLanguage));
+        $sheet->setCellValue("C{$row}", $label('date', 'Date').': '.CrmDocumentLocale::formatDate($quote->document_date ?? $quote->created_at, $documentLanguage));
         $row++;
 
         $sheet->setCellValue("A{$row}", $label('buyer', 'Buyer').': '.($quote->buyer_company ?: $quote->customer?->company_name ?: $quote->customer?->name ?? ''));

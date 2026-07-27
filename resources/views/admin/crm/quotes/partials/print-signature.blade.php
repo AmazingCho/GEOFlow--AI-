@@ -4,7 +4,7 @@
         <div class="sig-title">{{ $label('seller', 'Seller') }}</div>
         <div class="sig-kv">
             <div>{{ $label('name', 'Name') }}:</div><div>{{ $quote->owner ?: '_______________' }}</div>
-            <div>{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->created_at) ?: '_______________' }}</div>
+            <div>{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->document_date ?? $quote->created_at) ?: '_______________' }}</div>
         </div>
     </div>
     @if ($documentKind === 'invoice')

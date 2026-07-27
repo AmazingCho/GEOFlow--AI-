@@ -75,14 +75,19 @@
                     <h2 class="text-base font-semibold text-gray-900"><i data-lucide="info" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>基础信息</h2>
                     <p class="mt-0.5 text-sm text-gray-500">业务容器会限制客户、询盘、Entity 和图库候选范围。</p>
                 </div>
-                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                    <div>
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-12">
+                    <div class="lg:col-span-6">
                         <label class="mb-2 block text-sm font-medium text-gray-700">标题 <span class="text-red-500">*</span></label>
                         <input type="text" name="title" required maxlength="200" value="{{ old('title', (string) ($quoteForm['title'] ?? '')) }}" class="{{ $inputClass }}">
                     </div>
-                    <div>
+                    <div class="lg:col-span-3">
                         <label class="mb-2 block text-sm font-medium text-gray-700">单据号</label>
                         <input type="text" name="quote_no" maxlength="80" value="{{ old('quote_no', (string) ($quoteForm['quote_no'] ?? '')) }}" class="{{ $inputClass }}" placeholder="留空自动生成">
+                    </div>
+                    <div class="lg:col-span-3">
+                        <label class="mb-2 block text-sm font-medium text-gray-700">单据日期 <span class="text-red-500">*</span></label>
+                        <input type="date" name="document_date" required value="{{ old('document_date', (string) ($quoteForm['document_date'] ?? now()->toDateString())) }}" class="{{ $inputClass }}">
+                        <p class="mt-1 text-xs leading-5 text-gray-500">用于打印和导出，不会修改系统创建记录。</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 gap-5 lg:grid-cols-12 mt-4">

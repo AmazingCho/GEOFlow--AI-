@@ -21,15 +21,15 @@
         <div class="{{ $documentKind === 'packing_list' ? 'doc-meta-wide' : 'doc-meta' }}">
             @if ($documentKind === 'packing_list')
                 <div class="label">{{ $label('packing_no', 'Packing No.') }}:</div><div class="value">{{ $quote->quote_no }}</div>
-                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->created_at) }}</div>
+                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->document_date ?? $quote->created_at) }}</div>
                 <div class="label">{{ $label('invoice_no', 'Invoice No.') }}:</div><div>{{ $quote->quote_no }}</div>
             @elseif ($documentKind === 'invoice')
                 <div class="label">{{ $label('invoice_no', 'Invoice No.') }}:</div><div class="value">{{ $quote->quote_no }}</div>
-                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->created_at) }}</div>
+                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->document_date ?? $quote->created_at) }}</div>
                 <div class="label">{{ $label('currency', 'Currency') }}:</div><div>{{ $quote->currency }}</div>
             @else
                 <div class="label">{{ $label('number', 'No.') }}:</div><div class="value">{{ $quote->quote_no }}</div>
-                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->created_at) }}</div>
+                <div class="label">{{ $label('date', 'Date') }}:</div><div>{{ $formatDate($quote->document_date ?? $quote->created_at) }}</div>
                 @if ((string) ($quote->valid_until ?? '') !== '')<div class="label">{{ $label('valid_until', 'Valid Until') }}:</div><div>{{ $formatDate($quote->valid_until) }}</div>@endif
                 <div class="label">{{ $label('currency', 'Currency') }}:</div><div>{{ $quote->currency }}</div>
             @endif

@@ -160,6 +160,7 @@
                         </div>
                         <div><dt class="text-gray-500">文档类型</dt><dd class="mt-1 font-medium text-gray-900">{{ ['quotation' => '报价单', 'proforma_invoice' => '形式发票', 'invoice' => '正式发票', 'packing_list' => '装箱单', 'contract' => '合同'][$quote->document_type] ?? '报价单' }}</dd></div>
                         <div><dt class="text-gray-500">默认输出语言</dt><dd class="mt-1 font-medium text-gray-900">{{ ($languageOptions ?? [])[$quote->document_language ?? 'en'] ?? 'English' }}</dd></div>
+                        <div><dt class="text-gray-500">单据日期</dt><dd class="mt-1 font-medium text-gray-900">{{ ($quote->document_date ?? $quote->created_at)?->format('Y-m-d') ?? '未设置' }}</dd></div>
                         <div><dt class="text-gray-500">贸易条款</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->trade_term ?: '未设置' }}</dd></div>
                         <div><dt class="text-gray-500">有效期</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->valid_until?->format('Y-m-d') ?? '未设置' }}</dd></div>
                         <div><dt class="text-gray-500">交期</dt><dd class="mt-1 font-medium text-gray-900">{{ $quote->lead_time ?: '未设置' }}</dd></div>
