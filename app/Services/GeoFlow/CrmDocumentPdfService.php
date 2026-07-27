@@ -26,12 +26,15 @@ class CrmDocumentPdfService
         File::put($htmlPath, $this->normalizeHtmlForFileRendering($html));
 
         $process = new Process([
-            env('GEOFLOW_PDF_NODE_BINARY', '/usr/bin/node'),
+            $this->resolveExecutable('GEOFLOW_PDF_NODE_BINARY', ['/usr/local/bin/node', '/usr/bin/node']),
             base_path('scripts/render-crm-document-pdf.mjs'),
             $htmlPath,
             $pdfPath,
         ], base_path(), [
-            'PUPPETEER_EXECUTABLE_PATH' => env('GEOFLOW_PDF_CHROMIUM_BINARY', '/usr/bin/chromium'),
+            'PUPPETEER_EXECUTABLE_PATH' => $this->resolveExecutable(
+                'GEOFLOW_PDF_CHROMIUM_BINARY',
+                ['/usr/bin/chromium-headless-shell', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+            ),
         ]);
         $process->setTimeout((int) env('GEOFLOW_PDF_TIMEOUT', 120));
         $process->run();
@@ -77,5 +80,24 @@ class CrmDocumentPdfService
         $segments = array_map(static fn (string $segment): string => rawurlencode($segment), explode('/', ltrim($path, '/')));
 
         return 'file:///'.implode('/', $segments);
+    }
+
+    /**
+     * @param array<int, string> $candidates
+     */
+    private function resolveExecutable(string $environmentKey, array $candidates): string
+    {
+        $configured = trim((string) env($environmentKey, ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $candidates[0];
     }
 }

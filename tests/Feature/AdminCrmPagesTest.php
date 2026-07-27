@@ -405,6 +405,140 @@ class AdminCrmPagesTest extends TestCase
             ->assertJsonPath('fields.urgency_level', 'high');
     }
 
+    public function test_quote_document_date_can_be_edited_without_changing_audit_created_at(): void
+    {
+        $admin = $this->admin('crm_quote_document_date_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Document Date Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => (int) $customer->id,
+            'quote_no' => 'Q-DATE-001',
+            'title' => 'Editable document date',
+            'document_type' => 'quotation',
+            'document_language' => 'en',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+        $quote->forceFill(['created_at' => '2026-07-01 08:30:00'])->saveQuietly();
+        $originalCreatedAt = $quote->fresh()->created_at?->toDateTimeString();
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]))
+            ->assertOk()
+            ->assertSee('name="document_date"', false)
+            ->assertSee('value="2026-07-01"', false);
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.crm.quotes.update', ['quoteId' => (int) $quote->id]), [
+                'customer_id' => (int) $customer->id,
+                'title' => 'Editable document date',
+                'quote_no' => 'Q-DATE-001',
+                'document_type' => 'quotation',
+                'document_language' => 'en',
+                'document_date' => '2026-06-18',
+                'currency' => 'USD',
+                'status' => 'draft',
+            ])
+            ->assertRedirect(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]));
+
+        $quote->refresh();
+        $this->assertSame('2026-06-18', $quote->document_date?->format('Y-m-d'));
+        $this->assertSame($originalCreatedAt, $quote->created_at?->toDateTimeString());
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', ['quoteId' => (int) $quote->id]))
+            ->assertOk()
+            ->assertSee('Jun 18, 2026');
+    }
+
+    public function test_quote_deposit_percent_and_packing_terms_can_be_updated_and_reloaded(): void
+    {
+        $admin = $this->admin('crm_quote_deposit_percent_admin');
+        $customer = CrmCustomer::query()->create([
+            'company_name' => 'Deposit Percent Buyer',
+            'contact_person' => 'Buyer',
+            'status' => 'active',
+        ]);
+        $quote = CrmQuote::query()->create([
+            'customer_id' => (int) $customer->id,
+            'quote_no' => 'Q-DEPOSIT-001',
+            'title' => 'Editable deposit percent',
+            'document_type' => 'quotation',
+            'document_language' => 'en',
+            'currency' => 'USD',
+            'deposit_percent' => 60,
+            'packing_terms' => 'Old packing terms',
+            'status' => 'draft',
+        ]);
+
+        $basePayload = [
+            'customer_id' => (int) $customer->id,
+            'title' => 'Editable deposit percent',
+            'quote_no' => 'Q-DEPOSIT-001',
+            'document_type' => 'quotation',
+            'document_language' => 'en',
+            'currency' => 'USD',
+            'status' => 'draft',
+        ];
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.crm.quotes.update', ['quoteId' => (int) $quote->id]), array_replace($basePayload, [
+                'deposit_percent' => 100,
+                'packing_terms' => 'Standard export wooden case',
+            ]))
+            ->assertRedirect(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]));
+
+        $quote->refresh();
+        $this->assertSame(100, (int) $quote->deposit_percent);
+        $this->assertSame('Standard export wooden case', (string) $quote->packing_terms);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]))
+            ->assertOk()
+            ->assertSee('name="deposit_percent"', false)
+            ->assertSee('value="100"', false)
+            ->assertSee('value="Standard export wooden case"', false);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', [
+                'quoteId' => (int) $quote->id,
+                'type' => 'proforma_invoice',
+                'language' => 'en',
+            ]))
+            ->assertOk()
+            ->assertSee('Deposit Required (100%)')
+            ->assertDontSee('Balance Before Shipment (0%)');
+
+        $this->actingAs($admin, 'admin')
+            ->put(route('admin.crm.quotes.update', ['quoteId' => (int) $quote->id]), array_replace($basePayload, [
+                'deposit_percent' => 0,
+                'packing_terms' => 'No special packing',
+            ]))
+            ->assertRedirect(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]));
+
+        $quote->refresh();
+        $this->assertSame(0, (int) $quote->deposit_percent);
+        $this->assertSame('No special packing', (string) $quote->packing_terms);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id]))
+            ->assertOk()
+            ->assertSee('value="0"', false);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.crm.quotes.print', [
+                'quoteId' => (int) $quote->id,
+                'type' => 'proforma_invoice',
+                'language' => 'en',
+            ]))
+            ->assertOk()
+            ->assertSee('Deposit Required (0%)')
+            ->assertSee('Balance Before Shipment (100%)');
+    }
+
     public function test_admin_can_create_quote_from_inquiry_and_open_print_page(): void
     {
         $admin = $this->admin('crm_quote_admin');
@@ -1914,11 +2048,12 @@ class AdminCrmPagesTest extends TestCase
     {
         $admin = $this->admin('crm_convert_admin');
         $customer = CrmCustomer::query()->create(['company_name' => 'Convert Buyer', 'contact_person' => 'Buyer', 'status' => 'active']);
-        $quote = CrmQuote::query()->create(['customer_id' => $customer->id, 'quote_no' => 'Q-CONVERT', 'title' => 'Base quotation', 'document_type' => 'quotation', 'currency' => 'USD', 'status' => 'draft']);
+        $quote = CrmQuote::query()->create(['customer_id' => $customer->id, 'quote_no' => 'Q-CONVERT', 'title' => 'Base quotation', 'document_type' => 'quotation', 'document_date' => now()->subMonth()->toDateString(), 'currency' => 'USD', 'status' => 'draft']);
         $quote->items()->create(['item_name' => 'Machine', 'quantity' => 2, 'unit' => 'set', 'unit_price' => 100, 'amount' => 200]);
         $this->actingAs($admin, 'admin')->post(route('admin.crm.quotes.convert', ['quoteId' => $quote->id]), ['document_type' => 'proforma_invoice'])->assertRedirect();
         $copy = CrmQuote::query()->where('source_quote_id', $quote->id)->firstOrFail();
         $this->assertSame('proforma_invoice', $copy->document_type);
+        $this->assertSame(now()->toDateString(), $copy->document_date?->format('Y-m-d'));
         $this->assertNotSame($quote->quote_no, $copy->quote_no);
         $this->assertDatabaseHas('crm_quote_items', ['quote_id' => $copy->id, 'item_name' => 'Machine']);
     }

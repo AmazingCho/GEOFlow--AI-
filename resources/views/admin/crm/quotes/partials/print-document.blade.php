@@ -216,7 +216,8 @@
     $totalItemPages = count($itemPages);
     $finalContentPageCount = $hasSeparateFinalContentPage ? 1 : 0;
     $bankPageCount = $isPI ? 1 : 0;
-    $totalPages = max(1, $totalItemPages + $finalContentPageCount + $bankPageCount);
+    $contractPageCount = $showContract ? 1 : 0;
+    $totalPages = max(1, $totalItemPages + $finalContentPageCount + $bankPageCount + $contractPageCount);
     $pageCountLabel = static fn (int $pageNumber): string => \App\Support\GeoFlow\CrmDocumentLocale::text(
         $documentLanguage,
         'page_of',
@@ -309,6 +310,18 @@
         .remittance-note { margin-top: 14px; padding: 8px 12px; background: #fef9c3; border-radius: 4px; font-size: 11px; color: #854d0e; }
         .declaration { border: 1px solid var(--border); padding: 7px 8px; min-height: 48px; color: var(--muted); font-size: 11.5px; }
         .section { white-space: pre-wrap; color: #374151; font-size: 13px; line-height: 1.75; }
+        body.is-contract-document .page { height: 297mm; min-height: 0; overflow: hidden; }
+        .contract-inline-slot:empty { display: none; }
+        .contract-inline-slot { margin-top: 4px; }
+        .contract-page-body { min-height: 1px; }
+        .contract-term-block { color: #374151; overflow-wrap: anywhere; }
+        .contract-term-section-title h2 { margin-top: 8px; }
+        .contract-term-heading { margin: 8px 0 3px; font-size: 14px; line-height: 1.45; font-weight: 700; }
+        .contract-term-subheading { margin: 6px 0 2px; font-size: 14px; line-height: 1.45; font-weight: 700; }
+        .contract-term-line { margin: 0 0 3px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
+        .contract-term-notice { margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+        .contract-signature-block { margin-top: 8px; }
+        .contract-signature-block .signature { margin-top: 0; }
         .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
         .sig-box { border: 1px solid var(--border); padding: 7px; }
         .sig-title { font-weight: 700; margin-bottom: 6px; }
@@ -345,7 +358,10 @@
         }
     </style>
 </head>
-<body>
+<body
+    @class(['is-contract-document' => $showContract])
+    @if ($showContract) data-contract-pagination-status="pending" @endif
+>
     <div class="topbar" data-preview-toolbar>
         @if (session('error'))
             <div class="print-alert">{{ session('error') }}</div>
@@ -486,7 +502,9 @@
             <table>
                 <tr><td>{{ $label('invoice_total', 'Invoice Total') }}</td><td class="right">{{ $quote->currency }} {{ $money($total) }}</td></tr>
                 <tr><td>{{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'deposit_required', 'Deposit Required (:percent%)', ['percent' => $depositPct]) }}</td><td class="right"><strong>{{ $quote->currency }} {{ $money($depositAmt) }}</strong></td></tr>
-                <tr><td>{{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'balance_before_shipment', 'Balance Before Shipment (:percent%)', ['percent' => $balancePct]) }}</td><td class="right">{{ $quote->currency }} {{ $money($balanceAmt) }}</td></tr>
+                @if ($balancePct > 0)
+                    <tr><td>{{ \App\Support\GeoFlow\CrmDocumentLocale::text($documentLanguage, 'balance_before_shipment', 'Balance Before Shipment (:percent%)', ['percent' => $balancePct]) }}</td><td class="right">{{ $quote->currency }} {{ $money($balanceAmt) }}</td></tr>
+                @endif
             </table>
 
             <div class="remittance-note">
@@ -574,12 +592,48 @@
                 </div>
             </div>
         @endif
+
+        @if ($showContract)
+            @php $contractPageNumber = $totalItemPages + $finalContentPageCount + 1; @endphp
+            <div class="page page-break" data-print-page data-contract-page data-contract-page-template>
+                <div class="header continuation-header">
+                    <div class="brand">
+                        <div>
+                            <div class="company-name">{{ $seller['name'] }}</div>
+                            <div class="muted">{{ $quote->quote_no }}</div>
+                        </div>
+                    </div>
+                    <div class="title-box">
+                        <div class="continuation-kicker" data-contract-page-kicker>
+                            {{ $label('contract_terms_continued', 'Contract terms continued') }}
+                        </div>
+                        <div class="muted continuation-page-count" data-page-count-line>{{ $pageCountLabel($contractPageNumber) }}</div>
+                    </div>
+                </div>
+
+                <div class="contract-page-body" data-contract-page-body>
+                    @include('admin.crm.quotes.partials.print-contract-terms', [
+                        'quote' => $quote,
+                        'label' => $label,
+                        'documentKind' => $documentKind,
+                    ])
+                </div>
+
+                <div class="footer">
+                    <div>{{ $seller['website'] ?: '' }}</div>
+                    <div data-page-label>{{ $pageLabel($contractPageNumber) }}</div>
+                </div>
+            </div>
+        @endif
     @endif
     <script>
         (() => {
             const documentTitle = @json($title);
             const pageTemplate = @json($label('page_of', 'Page :current of :total'));
             const documentPageTemplate = @json($label('document_page_of', ':title · Page :current of :total'));
+            const contractTermsLabel = @json($label('contract_terms', 'Contract Terms'));
+            const contractTermsContinuedLabel = @json($label('contract_terms_continued', 'Contract terms continued'));
+            const isContractDocument = document.body.classList.contains('is-contract-document');
             const safetyGap = 6;
             const interpolate = (template, replacements) => Object.entries(replacements)
                 .reduce((value, [key, replacement]) => value.split(`:${key}`).join(String(replacement)), template);
@@ -652,12 +706,179 @@
                 return true;
             };
 
+            const contractBlocksInOrder = () => Array.from(document.querySelectorAll('[data-contract-block]'))
+                .sort((left, right) => Number(left.dataset.contractOrder || 0) - Number(right.dataset.contractOrder || 0));
+
+            const contractUnits = (blocks) => {
+                const units = [];
+
+                for (let index = 0; index < blocks.length;) {
+                    const keepWithNext = Math.max(0, Number.parseInt(blocks[index].dataset.keepWithNext || '0', 10) || 0);
+                    const unit = blocks.slice(index, Math.min(blocks.length, index + keepWithNext + 1));
+                    units.push(unit);
+                    index += unit.length;
+                }
+
+                return units;
+            };
+
+            const appendContractUnit = (unit, container) => {
+                unit.forEach((block) => container.appendChild(block));
+            };
+
+            const removeContractUnit = (unit) => {
+                unit.forEach((block) => block.remove());
+            };
+
+            const contractDestinationFits = (unit, destination) => {
+                appendContractUnit(unit, destination.container);
+                const lastBlock = unit[unit.length - 1];
+                const fits = lastBlock.getBoundingClientRect().bottom <= availableBottom(destination.page);
+
+                if (!fits) {
+                    removeContractUnit(unit);
+                }
+
+                return fits;
+            };
+
+            const createContractPage = (templatePage, afterPage) => {
+                const page = templatePage.cloneNode(true);
+                page.removeAttribute('data-contract-page-template');
+                page.classList.remove('is-hidden');
+                page.removeAttribute('aria-hidden');
+                page.querySelector('[data-contract-page-body]')?.replaceChildren();
+                afterPage.after(page);
+
+                return {
+                    page,
+                    container: page.querySelector('[data-contract-page-body]'),
+                    type: 'contract',
+                };
+            };
+
+            const updateContractPageKickers = (inlineSlot) => {
+                const hasInlineTerms = Boolean(inlineSlot?.querySelector('[data-contract-block]'));
+                const pages = Array.from(document.querySelectorAll('[data-contract-page]'))
+                    .filter((page) => !page.classList.contains('is-hidden'));
+
+                pages.forEach((page, index) => {
+                    const kicker = page.querySelector('[data-contract-page-kicker]');
+                    if (kicker) {
+                        kicker.textContent = hasInlineTerms || index > 0
+                            ? contractTermsContinuedLabel
+                            : contractTermsLabel;
+                    }
+                });
+            };
+
+            const paginateContractContent = () => {
+                const templatePage = document.querySelector('[data-contract-page-template]');
+                const inlineSlot = document.querySelector('[data-contract-inline-slot]');
+                if (!templatePage) {
+                    return [];
+                }
+
+                const blocks = contractBlocksInOrder();
+                blocks.forEach((block) => block.remove());
+                document.querySelectorAll('[data-contract-page]:not([data-contract-page-template])')
+                    .forEach((page) => page.remove());
+
+                const templateBody = templatePage.querySelector('[data-contract-page-body]');
+                templateBody?.replaceChildren();
+                inlineSlot?.replaceChildren();
+                templatePage.classList.remove('is-hidden');
+                templatePage.removeAttribute('aria-hidden');
+
+                let currentDestination = inlineSlot
+                    ? {
+                        page: inlineSlot.closest('[data-print-page]'),
+                        container: inlineSlot,
+                        type: 'inline',
+                    }
+                    : null;
+                let lastContractPage = templatePage;
+                let templatePageUsed = false;
+                const overflowBlocks = [];
+
+                const nextContractDestination = () => {
+                    if (!templatePageUsed) {
+                        templatePageUsed = true;
+
+                        return {
+                            page: templatePage,
+                            container: templateBody,
+                            type: 'contract',
+                        };
+                    }
+
+                    const destination = createContractPage(templatePage, lastContractPage);
+                    lastContractPage = destination.page;
+
+                    return destination;
+                };
+
+                contractUnits(blocks).forEach((unit) => {
+                    if (currentDestination && contractDestinationFits(unit, currentDestination)) {
+                        return;
+                    }
+
+                    const destinationWasEmpty = currentDestination?.type === 'contract'
+                        && !currentDestination.container.querySelector('[data-contract-block]');
+                    if (destinationWasEmpty) {
+                        appendContractUnit(unit, currentDestination.container);
+                        overflowBlocks.push(...unit);
+
+                        return;
+                    }
+
+                    currentDestination = nextContractDestination();
+                    if (!contractDestinationFits(unit, currentDestination)) {
+                        appendContractUnit(unit, currentDestination.container);
+                        overflowBlocks.push(...unit);
+                    }
+                });
+
+                if (!templatePageUsed) {
+                    templatePage.classList.add('is-hidden');
+                    templatePage.setAttribute('aria-hidden', 'true');
+                }
+
+                updateContractPageKickers(inlineSlot);
+
+                return overflowBlocks;
+            };
+
+            const detectPageOverflow = () => visiblePages().filter((page) => {
+                const footer = page.querySelector(':scope > .footer');
+                const bottom = availableBottom(page);
+
+                return Array.from(page.children).some((element) => {
+                    if (element === footer || element.classList.contains('footer')) {
+                        return false;
+                    }
+
+                    return element.getBoundingClientRect().bottom > bottom + 1;
+                });
+            });
+
             const autoPaginate = () => {
                 document.querySelectorAll('[data-final-content-page]:not(.is-hidden)').forEach((finalPage) => {
                     tryMergeFinalContent(finalPage);
                 });
+
+                const overflowBlocks = isContractDocument ? paginateContractContent() : [];
                 updatePageLabels();
-                window.GeoFlowCrmDocumentPaginationReady = true;
+
+                const overflowingPages = isContractDocument ? detectPageOverflow() : [];
+                const hasOverflow = overflowBlocks.length > 0 || overflowingPages.length > 0;
+                if (isContractDocument) {
+                    document.body.dataset.contractPaginationStatus = hasOverflow ? 'overflow' : 'ready';
+                    document.body.dataset.contractOverflowPages = overflowingPages
+                        .map((page) => visiblePages().indexOf(page) + 1)
+                        .join(',');
+                }
+                window.GeoFlowCrmDocumentPaginationReady = !hasOverflow;
             };
 
             const scheduleAutoPaginate = () => {

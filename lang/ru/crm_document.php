@@ -120,6 +120,7 @@ return array_replace_recursive($english, [
         'balance_before_shipment' => 'Остаток до отгрузки (:percent%)',
         'remittance_note' => 'Укажите :reference в назначении платежа.',
         'contract_terms' => 'Условия контракта',
+        'contract_terms_continued' => 'Продолжение условий контракта',
         'governing_law' => 'Применимое право',
         'dispute_resolution' => 'Разрешение споров',
         'contract_review_notice' => 'Этот шаблон контракта является коммерческим проектом и должен быть проверен перед отправкой.',

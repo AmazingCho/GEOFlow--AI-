@@ -120,6 +120,7 @@ return array_replace_recursive($english, [
         'balance_before_shipment' => '发货前余款 (:percent%)',
         'remittance_note' => '汇款附言中请注明 :reference。',
         'contract_terms' => '合同条款',
+        'contract_terms_continued' => '合同条款续页',
         'governing_law' => '适用法律',
         'dispute_resolution' => '争议解决',
         'contract_review_notice' => '本合同模板仅作为商业草稿，发送前请人工审核。',

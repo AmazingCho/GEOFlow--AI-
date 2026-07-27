@@ -118,6 +118,7 @@ return [
         'balance_before_shipment' => 'Balance Before Shipment (:percent%)',
         'remittance_note' => 'Please include :reference in your remittance reference.',
         'contract_terms' => 'Contract Terms',
+        'contract_terms_continued' => 'Contract terms continued',
         'governing_law' => 'Governing Law',
         'dispute_resolution' => 'Dispute Resolution',
         'contract_review_notice' => 'This contract template is a commercial draft and should be reviewed before sending.',

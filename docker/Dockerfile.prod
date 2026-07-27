@@ -34,6 +34,15 @@ RUN composer dump-autoload \
     --no-scripts \
  && BROADCAST_CONNECTION=null php artisan package:discover --ansi
 
+FROM node:22-bookworm-slim AS document-pdf-runtime
+
+WORKDIR /app
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
 FROM ${PHP_FPM_IMAGE}
 
 WORKDIR /var/www/html
@@ -69,6 +78,16 @@ RUN apt-get update \
     && docker-php-ext-enable redis \
     && rm -rf /var/lib/apt/lists/*
 
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's|mirrors.aliyun.com|deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    elif [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|mirrors.aliyun.com|deb.debian.org|g' /etc/apt/sources.list; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends chromium-headless-shell; \
+    rm -rf /var/lib/apt/lists/*
+
 COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/99-opcache.ini
 COPY docker/php/php-docker-overrides.ini /usr/local/etc/php/conf.d/99-overrides.ini
 COPY docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/zz-geoflow.conf
@@ -77,6 +96,11 @@ COPY docker/entrypoint.prod.sh /usr/local/bin/geoflow-entrypoint-prod
 RUN chmod +x /usr/local/bin/geoflow-entrypoint-prod
 
 COPY --from=vendor /app /var/www/html
+COPY --from=document-pdf-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=document-pdf-runtime /app/node_modules /var/www/html/node_modules
+
+ENV GEOFLOW_PDF_NODE_BINARY=/usr/local/bin/node \
+    GEOFLOW_PDF_CHROMIUM_BINARY=/usr/bin/chromium-headless-shell
 
 ENTRYPOINT ["/usr/local/bin/geoflow-entrypoint-prod"]
 CMD ["php-fpm", "-F"]

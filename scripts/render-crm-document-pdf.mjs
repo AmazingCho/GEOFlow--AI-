@@ -57,6 +57,12 @@ try {
     if (typeof window.GeoFlowCrmDocumentAutoPaginate === 'function') {
       window.GeoFlowCrmDocumentAutoPaginate();
     }
+
+    const contractPaginationStatus = document.body.dataset.contractPaginationStatus;
+    if (contractPaginationStatus === 'overflow') {
+      const pages = document.body.dataset.contractOverflowPages || 'unknown';
+      throw new Error(`Contract pagination overflow detected on logical page(s): ${pages}`);
+    }
   });
   await page.pdf({
     path: pdfPath,

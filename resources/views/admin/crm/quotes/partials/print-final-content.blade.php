@@ -55,14 +55,14 @@
         @endif
     @endif
 
-    @if ($showContract)
-        @include('admin.crm.quotes.partials.print-contract-terms', ['quote' => $quote, 'label' => $label])
-    @endif
-
     @if (!$isInvoice && !$showContract && !$showPrices && (string) ($quote->notes ?? '') !== '')
         <h2>{{ $label('notes', 'Notes') }}</h2>
         <div class="section">{{ $quote->notes }}</div>
     @endif
 
-    @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
+    @if ($showContract)
+        <div class="contract-inline-slot" data-contract-inline-slot></div>
+    @else
+        @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
+    @endif
 @endif

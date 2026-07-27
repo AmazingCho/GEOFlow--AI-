@@ -120,6 +120,7 @@ return array_replace_recursive($english, [
         'balance_before_shipment' => 'Saldo antes del envío (:percent%)',
         'remittance_note' => 'Incluya :reference en el concepto de la transferencia.',
         'contract_terms' => 'Términos del contrato',
+        'contract_terms_continued' => 'Continuación de los términos del contrato',
         'governing_law' => 'Ley aplicable',
         'dispute_resolution' => 'Resolución de disputas',
         'contract_review_notice' => 'Esta plantilla de contrato es un borrador comercial y debe revisarse antes de enviarla.',

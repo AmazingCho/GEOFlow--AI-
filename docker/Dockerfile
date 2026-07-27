@@ -1,4 +1,14 @@
 ARG PHP_CLI_IMAGE=php:8.4-cli-bookworm
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+FROM ${NODE_IMAGE} AS document-pdf-runtime
+
+WORKDIR /app
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM ${PHP_CLI_IMAGE}
 
@@ -41,11 +51,25 @@ RUN apt-get update \
     && docker-php-ext-enable redis \
     && rm -rf /var/lib/apt/lists/*
 
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's|mirrors.aliyun.com|deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    elif [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|mirrors.aliyun.com|deb.debian.org|g' /etc/apt/sources.list; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends chromium-headless-shell; \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=document-pdf-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=document-pdf-runtime /app/node_modules /var/www/html/node_modules
 
 ENV COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_MEMORY_LIMIT=-1 \
-    COMPOSER_PROCESS_TIMEOUT=2000
+    COMPOSER_PROCESS_TIMEOUT=2000 \
+    GEOFLOW_PDF_NODE_BINARY=/usr/local/bin/node \
+    GEOFLOW_PDF_CHROMIUM_BINARY=/usr/bin/chromium-headless-shell
 
 ARG COMPOSER_PACKAGIST_MIRROR=https://mirrors.aliyun.com/composer/
 RUN if [ -n "${COMPOSER_PACKAGIST_MIRROR}" ]; then \
