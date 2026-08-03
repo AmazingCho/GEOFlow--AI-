@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Admin;
 use App\Models\CrmCustomer;
 use App\Models\CrmInquiry;
 use App\Models\CrmOpportunity;
@@ -12,6 +13,7 @@ use App\Models\CrmSellerProfile;
 use App\Models\EntityRecord;
 use App\Models\Image;
 use App\Services\GeoFlow\CrmDocumentPdfService;
+use App\Services\GeoFlow\CrmQuotePackingPlanService;
 use App\Support\AdminWeb;
 use App\Support\GeoFlow\CollectionOptions;
 use App\Support\GeoFlow\CrmDocumentLocale;
@@ -22,6 +24,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -170,8 +173,13 @@ class CrmQuoteController extends Controller
         $this->applySalesChainToQuotePayload($payload);
         $this->validateQuoteItemMaterialScope($payload);
         $items = $this->normalizeItems($payload['items'] ?? [], $request);
-        $quote = CrmQuote::query()->create($this->normalizeQuotePayload($payload, $items));
-        $this->syncItems($quote, $items);
+        $this->validateQuoteItemOwnership(null, $items);
+        $quote = DB::transaction(function () use ($payload, $items): CrmQuote {
+            $quote = CrmQuote::query()->create($this->normalizeQuotePayload($payload, $items));
+            $this->syncItems($quote, $items);
+
+            return $quote;
+        });
 
         return redirect()
             ->route('admin.crm.quotes.show', ['quoteId' => (int) $quote->id])
@@ -181,7 +189,7 @@ class CrmQuoteController extends Controller
     public function show(int $quoteId): View
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image', 'packages.allocations.quoteItem'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
@@ -196,7 +204,10 @@ class CrmQuoteController extends Controller
 
     public function edit(int $quoteId): View
     {
-        $quote = CrmQuote::query()->with(['items.entity', 'items.image'])->whereKey($quoteId)->firstOrFail();
+        $quote = CrmQuote::query()
+            ->with(['items.entity', 'items.image', 'packages.allocations'])
+            ->whereKey($quoteId)
+            ->firstOrFail();
         $collectionId = (int) ($quote->collection_id ?? 0) ?: null;
         $customerId = (int) ($quote->customer_id ?? 0) ?: null;
 
@@ -250,8 +261,12 @@ class CrmQuoteController extends Controller
                 'contract_terms' => (string) ($quote->contract_terms ?? ''),
                 'governing_law' => (string) ($quote->governing_law ?? ''),
                 'dispute_resolution' => (string) ($quote->dispute_resolution ?? ''),
+                'packing_mode' => (string) ($quote->packing_mode ?? 'item_level'),
+                'packing_status' => (string) ($quote->packing_status ?? 'draft'),
+                'packing_invalid_reason' => (string) ($quote->packing_invalid_reason ?? ''),
             ],
             'quoteItems' => $quote->items->map(static fn (CrmQuoteItem $item): array => [
+                'id' => (string) $item->id,
                 'entity_id' => (string) ((int) ($item->entity_id ?? 0) ?: ''),
                 'line_type' => (string) ($item->line_type ?? 'product'),
                 'model' => (string) ($item->model ?? ''),
@@ -271,19 +286,63 @@ class CrmQuoteController extends Controller
                 'package_length' => (string) ($item->package_length ?? ''),
                 'package_width' => (string) ($item->package_width ?? ''),
                 'package_height' => (string) ($item->package_height ?? ''),
+                'packing_exempt' => $item->packing_exempt ? '1' : '0',
+            ])->all(),
+            'quotePackages' => $quote->packages->map(static fn ($package): array => [
+                'package_no' => (string) $package->package_no,
+                'package_type' => (string) ($package->package_type ?? 'wooden_case'),
+                'package_length' => (string) ($package->package_length ?? ''),
+                'package_width' => (string) ($package->package_width ?? ''),
+                'package_height' => (string) ($package->package_height ?? ''),
+                'net_weight' => (string) ($package->net_weight ?? '0'),
+                'gross_weight' => (string) ($package->gross_weight ?? '0'),
+                'volume_cbm' => (string) ($package->volume_cbm ?? ''),
+                'volume_is_manual' => $package->volume_is_manual ? '1' : '0',
+                'notes' => (string) ($package->notes ?? ''),
+                'allocations' => $package->allocations->map(static fn ($allocation): array => [
+                    'quote_item_id' => (string) $allocation->quote_item_id,
+                    'allocated_quantity' => (string) $allocation->allocated_quantity,
+                ])->all(),
             ])->all(),
         ], $collectionId, $customerId));
     }
 
-    public function update(Request $request, int $quoteId): RedirectResponse
+    public function update(Request $request, int $quoteId, CrmQuotePackingPlanService $packingPlans): RedirectResponse
     {
         $quote = CrmQuote::query()->whereKey($quoteId)->firstOrFail();
         $payload = $this->validateQuote($request, $quote);
         $this->applySalesChainToQuotePayload($payload);
         $this->validateQuoteItemMaterialScope($payload);
-        $items = $this->normalizeItems($payload['items'] ?? [], $request);
-        $quote->update($this->normalizeQuotePayload($payload, $items, $quote));
-        $this->syncItems($quote, $items);
+        $hasItemsPayload = $request->exists('items');
+        $items = $hasItemsPayload ? $this->normalizeItems($payload['items'] ?? [], $request) : null;
+        if ($items !== null) {
+            $this->validateQuoteItemOwnership($quote, $items);
+        }
+
+        DB::transaction(function () use ($quote, $payload, $items, $request, $packingPlans): void {
+            $quote->update($this->normalizeQuotePayload($payload, $items ?? $quote->items()->get()->toArray(), $quote));
+            $itemsChanged = false;
+            if ($items !== null) {
+                $itemsChanged = $this->syncItems($quote, $items);
+            }
+
+            $packingAction = (string) ($payload['packing_action'] ?? '');
+            if ($packingAction === 'item_level') {
+                $packingPlans->useItemLevel($quote);
+            } elseif (in_array($packingAction, ['save', 'apply'], true)) {
+                $packingPlans->sync($quote, array_values((array) ($payload['packages'] ?? [])));
+            } elseif ($itemsChanged) {
+                $packingPlans->invalidate($quote, '商品数量、单位或装箱状态发生变化，请重新检查包装方案。');
+            }
+
+            if ($packingAction === 'apply') {
+                $admin = $request->user('admin');
+                if (! $admin instanceof Admin) {
+                    abort(403);
+                }
+                $packingPlans->apply($quote->refresh(), $admin);
+            }
+        });
 
         return redirect()
             ->route('admin.crm.quotes.edit', ['quoteId' => (int) $quote->id])
@@ -305,7 +364,20 @@ class CrmQuoteController extends Controller
         $data = $request->validate(['document_type' => ['required', 'string', Rule::in(self::DOCUMENT_TYPES)]]);
         $targetType = (string) $data['document_type'];
         $copy = $source->replicate(['quote_no', 'document_type', 'status', 'revision', 'created_at', 'updated_at']);
-        $copy->fill(['quote_no' => $this->generateQuoteNo(), 'document_type' => $targetType, 'document_date' => now()->toDateString(), 'source_quote_id' => $source->id, 'title' => ($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title, 'status' => 'draft', 'revision' => 1]);
+        $copy->fill([
+            'quote_no' => $this->generateQuoteNo(),
+            'document_type' => $targetType,
+            'document_date' => now()->toDateString(),
+            'source_quote_id' => $source->id,
+            'title' => ($this->documentTypeOptions()[$targetType] ?? $targetType).' - '.$source->title,
+            'status' => 'draft',
+            'revision' => 1,
+            'packing_mode' => 'item_level',
+            'packing_status' => 'draft',
+            'packing_applied_at' => null,
+            'packing_applied_by_admin_id' => null,
+            'packing_invalid_reason' => '',
+        ]);
         $copy->save();
         foreach ($source->items as $item) {
             $newItem = $item->replicate(['quote_id', 'created_at', 'updated_at']);
@@ -385,7 +457,7 @@ class CrmQuoteController extends Controller
     public function print(int $quoteId, Request $request): View
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image', 'packages.allocations.quoteItem'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
@@ -410,12 +482,23 @@ class CrmQuoteController extends Controller
     public function downloadPdf(int $quoteId, Request $request, CrmDocumentPdfService $pdfService)
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image', 'packages.allocations.quoteItem'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
         $documentType = $this->resolvedDocumentType($request, $quote);
         $documentLanguage = $this->resolvedDocumentLanguage($request, $quote);
+        if ($documentType === 'packing_list'
+            && (string) ($quote->packing_mode ?? 'item_level') === 'package_plan'
+            && (string) ($quote->packing_status ?? 'draft') !== 'applied') {
+            return redirect()
+                ->route('admin.crm.quotes.print', [
+                    'quoteId' => $quote->id,
+                    'type' => 'packing_list',
+                    'language' => $documentLanguage,
+                ])
+                ->with('error', '包装方案尚未应用或已经失效，请先在单据编辑页检查并应用包装方案。');
+        }
         $view = $this->printViewForDocumentType($documentType);
         $fileName = $this->pdfDownloadName($quote, $documentType);
 
@@ -540,6 +623,8 @@ class CrmQuoteController extends Controller
      */
     private function validateQuote(Request $request, ?CrmQuote $quote = null): array
     {
+        $packingRulesEnabled = in_array((string) $request->input('packing_action', ''), ['save', 'apply'], true);
+
         return $request->validate([
             'collection_id' => ['nullable', 'integer', 'min:1', Rule::exists('collections', 'id')],
             'customer_id' => ['required', 'integer', 'min:1', Rule::exists('crm_customers', 'id')],
@@ -585,7 +670,25 @@ class CrmQuoteController extends Controller
             'contract_terms' => ['nullable', 'string', 'max:30000'],
             'governing_law' => ['nullable', 'string', 'max:160'],
             'dispute_resolution' => ['nullable', 'string', 'max:10000'],
+            'packing_mode' => ['nullable', 'string', Rule::in(['item_level', 'package_plan'])],
+            'packing_action' => ['nullable', 'string', Rule::in(['save', 'apply', 'item_level'])],
+            'packages' => [Rule::excludeIf(! $packingRulesEnabled), 'nullable', 'array'],
+            'packages.*.package_no' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'string', 'max:80', 'distinct'],
+            'packages.*.package_type' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'string', Rule::in(['wooden_case', 'carton', 'pallet', 'other'])],
+            'packages.*.package_length' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'gt:0'],
+            'packages.*.package_width' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'gt:0'],
+            'packages.*.package_height' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'gt:0'],
+            'packages.*.net_weight' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'min:0'],
+            'packages.*.gross_weight' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'min:0'],
+            'packages.*.volume_cbm' => [Rule::excludeIf(! $packingRulesEnabled), 'nullable', 'numeric', 'min:0'],
+            'packages.*.volume_is_manual' => [Rule::excludeIf(! $packingRulesEnabled), 'nullable', 'boolean'],
+            'packages.*.notes' => [Rule::excludeIf(! $packingRulesEnabled), 'nullable', 'string', 'max:500'],
+            'packages.*.allocations' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'array', 'min:1'],
+            'packages.*.allocations.*.quote_item_id' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'integer', 'min:1', Rule::exists('crm_quote_items', 'id')],
+            'packages.*.allocations.*.allocated_quantity' => [Rule::excludeIf(! $packingRulesEnabled), 'required', 'numeric', 'gt:0'],
             'items' => ['nullable', 'array'],
+            'items.id' => ['nullable', 'array'],
+            'items.id.*' => ['nullable', 'integer', 'min:1', Rule::exists('crm_quote_items', 'id')],
             'items.entity_id' => ['nullable', 'array'],
             'items.entity_id.*' => ['nullable', 'integer', 'min:1', Rule::exists('entities', 'id')],
             'items.line_type' => ['nullable', 'array'],
@@ -601,13 +704,13 @@ class CrmQuoteController extends Controller
             'items.image_original_name' => ['nullable', 'array'],
             'items.image_original_name.*' => ['nullable', 'string', 'max:200'],
             'items.image_upload' => ['nullable', 'array'],
-            'items.image_upload.*' => ['nullable', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(200)],
+            'items.image_upload.*' => ['nullable', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(2048)],
             'items.item_name' => ['nullable', 'array'],
             'items.item_name.*' => ['nullable', 'string', 'max:200'],
             'items.description' => ['nullable', 'array'],
             'items.description.*' => ['nullable', 'string', 'max:10000'],
             'items.quantity' => ['nullable', 'array'],
-            'items.quantity.*' => ['nullable', 'numeric', 'min:0'],
+            'items.quantity.*' => ['nullable', 'numeric', 'min:0.01'],
             'items.unit' => ['nullable', 'array'],
             'items.unit.*' => ['nullable', 'string', 'max:40'],
             'items.unit_price' => ['nullable', 'array'],
@@ -626,6 +729,8 @@ class CrmQuoteController extends Controller
             'items.package_width.*' => ['nullable', 'numeric', 'min:0'],
             'items.package_height' => ['nullable', 'array'],
             'items.package_height.*' => ['nullable', 'numeric', 'min:0'],
+            'items.packing_exempt' => ['nullable', 'array'],
+            'items.packing_exempt.*' => ['nullable', 'boolean'],
         ]);
     }
 
@@ -823,12 +928,16 @@ class CrmQuoteController extends Controller
             if ($itemName === '') {
                 continue;
             }
-            $quantity = max(0, (float) (($itemsPayload['quantity'][$index] ?? 1) ?: 1));
+            $quantity = max(0, (float) ($itemsPayload['quantity'][$index] ?? 1));
             $unitPrice = max(0, (float) (($itemsPayload['unit_price'][$index] ?? 0) ?: 0));
             $imageId = $this->normalizeNullableId($itemsPayload['image_id'][$index] ?? null);
             $imagePath = trim((string) ($itemsPayload['image_path'][$index] ?? ''));
             $imageOriginalName = trim((string) ($itemsPayload['image_original_name'][$index] ?? ''));
             $uploadedImage = $uploadedImages[$index] ?? null;
+            $imageFieldsProvided = array_key_exists($index, (array) ($itemsPayload['image_id'] ?? []))
+                || array_key_exists($index, (array) ($itemsPayload['image_path'] ?? []))
+                || array_key_exists($index, (array) ($itemsPayload['image_original_name'] ?? []))
+                || $uploadedImage instanceof UploadedFile;
             if ($uploadedImage instanceof UploadedFile && $uploadedImage->isValid()) {
                 $storedImage = $this->storeQuoteUploadedImage($uploadedImage);
                 $imageId = null;
@@ -839,6 +948,8 @@ class CrmQuoteController extends Controller
                 $imageOriginalName = '';
             }
             $rows[] = [
+                'id' => $this->normalizeNullableId($itemsPayload['id'][$index] ?? null),
+                '_preserve_image' => ! $imageFieldsProvided,
                 'entity_id' => $this->normalizeNullableId($itemsPayload['entity_id'][$index] ?? null),
                 'line_type' => $this->normalizeLineType($itemsPayload['line_type'][$index] ?? 'product'),
                 'model' => trim((string) ($itemsPayload['model'][$index] ?? '')),
@@ -860,6 +971,7 @@ class CrmQuoteController extends Controller
                 'package_width' => ((float) ($itemsPayload['package_width'][$index] ?? 0)) > 0 ? (float) ($itemsPayload['package_width'][$index] ?? 0) : null,
                 'package_height' => ((float) ($itemsPayload['package_height'][$index] ?? 0)) > 0 ? (float) ($itemsPayload['package_height'][$index] ?? 0) : null,
                 'sort_order' => count($rows) + 1,
+                'packing_exempt' => (bool) ($itemsPayload['packing_exempt'][$index] ?? false),
             ];
         }
 
@@ -869,11 +981,71 @@ class CrmQuoteController extends Controller
     /**
      * @param  list<array<string, mixed>>  $items
      */
-    private function syncItems(CrmQuote $quote, array $items): void
+    private function syncItems(CrmQuote $quote, array $items): bool
     {
-        $quote->items()->delete();
+        $existingItems = $quote->items()->get()->keyBy('id');
+        $keptIds = [];
+        $packingRelevantChange = false;
+
         foreach ($items as $item) {
-            $quote->items()->create($item);
+            $itemId = (int) ($item['id'] ?? 0);
+            $preserveImage = (bool) ($item['_preserve_image'] ?? false);
+            unset($item['id']);
+            unset($item['_preserve_image']);
+
+            $existingItem = $itemId > 0 ? $existingItems->get($itemId) : null;
+            if ($existingItem instanceof CrmQuoteItem) {
+                $packingRelevantChange = $packingRelevantChange
+                    || (float) $existingItem->quantity !== (float) ($item['quantity'] ?? 0)
+                    || (string) $existingItem->unit !== (string) ($item['unit'] ?? '')
+                    || (bool) $existingItem->packing_exempt !== (bool) ($item['packing_exempt'] ?? false);
+                if ($preserveImage) {
+                    unset($item['image_id'], $item['image_path'], $item['image_original_name']);
+                }
+                $existingItem->update($item);
+                $keptIds[] = (int) $existingItem->id;
+
+                continue;
+            }
+
+            $createdItem = $quote->items()->create($item);
+            $keptIds[] = (int) $createdItem->id;
+            $packingRelevantChange = $packingRelevantChange || ! (bool) $createdItem->packing_exempt;
+        }
+
+        if ($keptIds === []) {
+            $packingRelevantChange = $packingRelevantChange || $existingItems->isNotEmpty();
+            $quote->items()->delete();
+
+            return $packingRelevantChange;
+        }
+
+        $packingRelevantChange = $packingRelevantChange
+            || $existingItems->keys()->diff($keptIds)->isNotEmpty();
+        $quote->items()->whereNotIn('id', $keptIds)->delete();
+
+        return $packingRelevantChange;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     */
+    private function validateQuoteItemOwnership(?CrmQuote $quote, array $items): void
+    {
+        $itemIds = collect($items)
+            ->pluck('id')
+            ->filter(static fn ($id): bool => (int) $id > 0)
+            ->map(static fn ($id): int => (int) $id)
+            ->values();
+
+        if ($itemIds->isEmpty()) {
+            return;
+        }
+
+        if (! $quote || $quote->items()->whereIn('id', $itemIds->all())->count() !== $itemIds->count()) {
+            throw ValidationException::withMessages([
+                'items.id' => '单据明细不属于当前单据，请刷新页面后重试。',
+            ]);
         }
     }
 
@@ -962,6 +1134,9 @@ class CrmQuoteController extends Controller
             'contract_terms' => '',
             'governing_law' => '',
             'dispute_resolution' => '',
+            'packing_mode' => 'item_level',
+            'packing_status' => 'draft',
+            'packing_invalid_reason' => '',
         ];
     }
 
@@ -990,6 +1165,7 @@ class CrmQuoteController extends Controller
             'package_length' => '',
             'package_width' => '',
             'package_height' => '',
+            'packing_exempt' => '0',
         ];
     }
 
@@ -1276,12 +1452,23 @@ class CrmQuoteController extends Controller
     public function downloadExcel(int $quoteId, Request $request)
     {
         $quote = CrmQuote::query()
-            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image'])
+            ->with(['collection', 'customer', 'inquiry.customer.followUps.inquiry', 'opportunity', 'items.entity', 'items.image', 'packages.allocations.quoteItem'])
             ->whereKey($quoteId)
             ->firstOrFail();
 
         $documentType = $this->resolvedDocumentType($request, $quote);
         $documentLanguage = $this->resolvedDocumentLanguage($request, $quote);
+        if ($documentType === 'packing_list'
+            && (string) ($quote->packing_mode ?? 'item_level') === 'package_plan'
+            && (string) ($quote->packing_status ?? 'draft') !== 'applied') {
+            return redirect()
+                ->route('admin.crm.quotes.print', [
+                    'quoteId' => $quote->id,
+                    'type' => 'packing_list',
+                    'language' => $documentLanguage,
+                ])
+                ->with('error', '包装方案尚未应用或已经失效，暂不能导出装箱单 Excel。');
+        }
         $seller = $this->sellerProfile($quote);
         $labels = CrmDocumentLocale::labels($documentLanguage);
         $label = static fn (string $key, string $fallback): string => (string) ($labels[$key] ?? $fallback);
@@ -1317,23 +1504,40 @@ class CrmQuoteController extends Controller
         $row++;
         $showPrices = $documentType !== 'packing_list';
         $showLogistics = $documentType === 'packing_list' || $documentType === 'invoice';
+        $usePackagePlan = $documentType === 'packing_list'
+            && (string) ($quote->packing_mode ?? 'item_level') === 'package_plan'
+            && (string) ($quote->packing_status ?? 'draft') === 'applied'
+            && $quote->packages->isNotEmpty();
 
-        $headers = ['#', $label('item', 'Item'), $label('model', 'Model'), $label('description', 'Description')];
-        if ($showPrices) {
-            $headers[] = $label('qty', 'Qty');
-            $headers[] = $label('unit', 'Unit');
-            $headers[] = $label('unit_price', 'Unit Price');
-            $headers[] = $label('amount', 'Amount');
-        }
-        if ($showLogistics) {
-            $headers[] = $label('package_count', 'Packages');
-            $headers[] = $label('net_weight_short', 'Net Weight (kg)');
-            $headers[] = $label('gross_weight_short', 'Gross Weight (kg)');
-            $headers[] = $label('cbm', 'CBM');
-            $headers[] = $label('package_size_cm', 'Package Size (cm)');
-        }
-        if ($documentType === 'invoice') {
-            $headers[] = $label('hs_code', 'HS Code');
+        if ($usePackagePlan) {
+            $headers = [
+                '#',
+                $label('package_no', 'Package No.'),
+                $label('package_type', 'Type'),
+                $label('description_goods', 'Description of Goods'),
+                $label('net_weight_short', 'Net Weight (kg)'),
+                $label('gross_weight_short', 'Gross Weight (kg)'),
+                $label('package_size_cm', 'Package Size (cm)'),
+                $label('cbm', 'CBM'),
+            ];
+        } else {
+            $headers = ['#', $label('item', 'Item'), $label('model', 'Model'), $label('description', 'Description')];
+            if ($showPrices) {
+                $headers[] = $label('qty', 'Qty');
+                $headers[] = $label('unit', 'Unit');
+                $headers[] = $label('unit_price', 'Unit Price');
+                $headers[] = $label('amount', 'Amount');
+            }
+            if ($showLogistics) {
+                $headers[] = $label('package_count', 'Packages');
+                $headers[] = $label('net_weight_short', 'Net Weight (kg)');
+                $headers[] = $label('gross_weight_short', 'Gross Weight (kg)');
+                $headers[] = $label('cbm', 'CBM');
+                $headers[] = $label('package_size_cm', 'Package Size (cm)');
+            }
+            if ($documentType === 'invoice') {
+                $headers[] = $label('hs_code', 'HS Code');
+            }
         }
 
         $headerStyle = [
@@ -1355,58 +1559,99 @@ class CrmQuoteController extends Controller
         $dataStartRow = $row;
 
         $idx = 1;
-        foreach ($quote->items as $item) {
-            $c = 'A';
-            $sheet->setCellValue("{$c}{$row}", $idx++);
-            $c++;
-            $sheet->setCellValue("{$c}{$row}", $item->item_name ?? '');
-            $c++;
-            $sheet->setCellValue("{$c}{$row}", $item->model ?? '');
-            $c++;
-            $sheet->setCellValue("{$c}{$row}", $item->description ?? '');
-            $c++;
-
-            if ($showPrices) {
-                $sheet->setCellValue("{$c}{$row}", (float) ($item->quantity ?? 0));
-                $c++;
-                $sheet->setCellValue("{$c}{$row}", $item->unit ?? '');
-                $c++;
-                $qty = (float) ($item->quantity ?? 0);
-                $price = (float) ($item->unit_price ?? 0);
-                $sheet->setCellValue("{$c}{$row}", $price);
-                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
-                $c++;
-                $sheet->setCellValue("{$c}{$row}", $qty * $price);
-                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
-                $c++;
-            }
-
-            if ($showLogistics) {
-                $sheet->setCellValue("{$c}{$row}", (int) ($item->package_count ?? 0));
-                $c++;
-                $sheet->setCellValue("{$c}{$row}", (float) ($item->net_weight ?? 0));
-                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
-                $c++;
-                $sheet->setCellValue("{$c}{$row}", (float) ($item->gross_weight ?? 0));
-                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
-                $c++;
-                $sheet->setCellValue("{$c}{$row}", (float) ($item->volume_cbm ?? 0));
-                $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
-                $c++;
-                $dim = '';
-                if ($item->package_length || $item->package_width || $item->package_height) {
-                    $dim = ($item->package_length ?? '-').'x'.($item->package_width ?? '-').'x'.($item->package_height ?? '-').' cm';
+        if ($usePackagePlan) {
+            $packageTypeLabels = [
+                'wooden_case' => $label('package_type_wooden_case', 'Wooden Case'),
+                'carton' => $label('package_type_carton', 'Carton'),
+                'pallet' => $label('package_type_pallet', 'Pallet'),
+                'other' => $label('package_type_other', 'Other'),
+            ];
+            foreach ($quote->packages as $package) {
+                $goods = $package->allocations
+                    ->filter(static fn ($allocation): bool => $allocation->quoteItem !== null)
+                    ->map(static fn ($allocation): string => trim(sprintf(
+                        '%s%s x %s %s',
+                        (string) $allocation->quoteItem->item_name,
+                        trim((string) ($allocation->quoteItem->model ?? '')) !== '' ? ' ('.trim((string) $allocation->quoteItem->model).')' : '',
+                        rtrim(rtrim(number_format((float) $allocation->allocated_quantity, 2, '.', ''), '0'), '.'),
+                        (string) ($allocation->quoteItem->unit ?? ''),
+                    )))
+                    ->implode("\n");
+                $dimensions = implode('x', [
+                    (string) ($package->package_length ?? '-'),
+                    (string) ($package->package_width ?? '-'),
+                    (string) ($package->package_height ?? '-'),
+                ]).' cm';
+                $values = [
+                    $idx++,
+                    (string) $package->package_no,
+                    $packageTypeLabels[(string) $package->package_type] ?? $packageTypeLabels['other'],
+                    $goods,
+                    (float) ($package->net_weight ?? 0),
+                    (float) ($package->gross_weight ?? 0),
+                    $dimensions,
+                    (float) ($package->volume_cbm ?? 0),
+                ];
+                foreach ($values as $offset => $value) {
+                    $sheet->setCellValue(chr(ord('A') + $offset).$row, $value);
                 }
-                $sheet->setCellValue("{$c}{$row}", $dim);
-                $c++;
+                $sheet->getStyle("D{$row}")->getAlignment()->setWrapText(true);
+                $row++;
             }
-
-            if ($documentType === 'invoice') {
-                $sheet->setCellValue("{$c}{$row}", $item->hs_code ?? '');
+        } else {
+            foreach ($quote->items as $item) {
+                $c = 'A';
+                $sheet->setCellValue("{$c}{$row}", $idx++);
                 $c++;
-            }
+                $sheet->setCellValue("{$c}{$row}", $item->item_name ?? '');
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", $item->model ?? '');
+                $c++;
+                $sheet->setCellValue("{$c}{$row}", $item->description ?? '');
+                $c++;
 
-            $row++;
+                if ($showPrices) {
+                    $sheet->setCellValue("{$c}{$row}", (float) ($item->quantity ?? 0));
+                    $c++;
+                    $sheet->setCellValue("{$c}{$row}", $item->unit ?? '');
+                    $c++;
+                    $qty = (float) ($item->quantity ?? 0);
+                    $price = (float) ($item->unit_price ?? 0);
+                    $sheet->setCellValue("{$c}{$row}", $price);
+                    $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                    $c++;
+                    $sheet->setCellValue("{$c}{$row}", $qty * $price);
+                    $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
+                    $c++;
+                }
+
+                if ($showLogistics) {
+                    $sheet->setCellValue("{$c}{$row}", (int) ($item->package_count ?? 0));
+                    $c++;
+                    $sheet->setCellValue("{$c}{$row}", (float) ($item->net_weight ?? 0));
+                    $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                    $c++;
+                    $sheet->setCellValue("{$c}{$row}", (float) ($item->gross_weight ?? 0));
+                    $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                    $c++;
+                    $sheet->setCellValue("{$c}{$row}", (float) ($item->volume_cbm ?? 0));
+                    $sheet->getStyle("{$c}{$row}")->getNumberFormat()->setFormatCode('#,##0.000');
+                    $c++;
+                    $dim = '';
+                    if ($item->package_length || $item->package_width || $item->package_height) {
+                        $dim = ($item->package_length ?? '-').'x'.($item->package_width ?? '-').'x'.($item->package_height ?? '-').' cm';
+                    }
+                    $sheet->setCellValue("{$c}{$row}", $dim);
+                    $c++;
+                }
+
+                if ($documentType === 'invoice') {
+                    $sheet->setCellValue("{$c}{$row}", $item->hs_code ?? '');
+                    $c++;
+                }
+
+                $row++;
+            }
         }
 
         $dataEndRow = $row - 1;

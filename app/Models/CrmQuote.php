@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class CrmQuote extends Model
 {
     use SoftDeletes;
+
     protected $table = 'crm_quotes';
 
     protected $fillable = [
@@ -61,6 +62,11 @@ class CrmQuote extends Model
         'contract_terms',
         'governing_law',
         'dispute_resolution',
+        'packing_mode',
+        'packing_status',
+        'packing_applied_at',
+        'packing_applied_by_admin_id',
+        'packing_invalid_reason',
     ];
 
     protected function casts(): array
@@ -81,6 +87,8 @@ class CrmQuote extends Model
             'grand_total' => 'decimal:2',
             'bank_account_json' => 'array',
             'seller_company_json' => 'array',
+            'packing_applied_at' => 'datetime',
+            'packing_applied_by_admin_id' => 'integer',
         ];
     }
 
@@ -99,13 +107,29 @@ class CrmQuote extends Model
         return $this->belongsTo(CrmInquiry::class, 'inquiry_id');
     }
 
-    public function opportunity(): BelongsTo { return $this->belongsTo(CrmOpportunity::class, 'opportunity_id'); }
-    public function sourceQuote(): BelongsTo { return $this->belongsTo(self::class, 'source_quote_id'); }
-    public function derivedDocuments(): HasMany { return $this->hasMany(self::class, 'source_quote_id'); }
+    public function opportunity(): BelongsTo
+    {
+        return $this->belongsTo(CrmOpportunity::class, 'opportunity_id');
+    }
+
+    public function sourceQuote(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'source_quote_id');
+    }
+
+    public function derivedDocuments(): HasMany
+    {
+        return $this->hasMany(self::class, 'source_quote_id');
+    }
 
     public function items(): HasMany
     {
         return $this->hasMany(CrmQuoteItem::class, 'quote_id')->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function packages(): HasMany
+    {
+        return $this->hasMany(CrmQuotePackage::class, 'quote_id')->orderBy('sort_order')->orderBy('id');
     }
 
     public function salesOrders(): HasMany

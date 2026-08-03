@@ -567,7 +567,8 @@ class AdminCrmPagesTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.quotes.create', ['inquiry_id' => (int) $inquiry->id]))
             ->assertOk()
-            ->assertSee('SJ4060');
+            ->assertSee('SJ4060')
+            ->assertSee('2MB');
 
         Storage::fake('public');
 
@@ -611,7 +612,9 @@ class AdminCrmPagesTest extends TestCase
             ->assertSee('h1 { margin: 0 0 6px; font-size: 24px;', false)
             ->assertSee('SJ4060 System')
             ->assertSee('USD 3,000.00')
-            ->assertDontSee('Shipping Fee');
+            ->assertDontSee('Shipping Fee')
+            ->assertDontSee('Payment Method')
+            ->assertDontSee('Country / Region');
 
         $this->actingAs($admin, 'admin')
             ->get(route('admin.crm.quotes.print', [
@@ -640,7 +643,7 @@ class AdminCrmPagesTest extends TestCase
                     'line_type' => ['product'],
                     'model' => ['SJ4060'],
                     'hs_code' => ['842489'],
-                    'image_upload' => [UploadedFile::fake()->image('sj4060.png', 64, 64)->size(50)],
+                    'image_upload' => [UploadedFile::fake()->image('sj4060.png', 64, 64)->size(2048)],
                     'item_name' => ['SJ4060 Invoice System'],
                     'description' => ['Commercial invoice line.'],
                     'quantity' => [1],
@@ -698,6 +701,8 @@ class AdminCrmPagesTest extends TestCase
                     'branch_code' => 'BRANCH002',
                     'beneficiary' => 'Test Beneficiary',
                     'swift' => 'TESTCNBJ',
+                    'payment_method' => 'T/T',
+                    'country_region' => 'China',
                 ],
                 'total_amount' => 1000,
                 'grand_total' => 1000,
@@ -737,6 +742,10 @@ class AdminCrmPagesTest extends TestCase
                     ->assertSee('BANK001')
                     ->assertSee('Branch Code')
                     ->assertSee('BRANCH002')
+                    ->assertSee('Payment Method')
+                    ->assertSee('T/T')
+                    ->assertSee('Country / Region')
+                    ->assertSee('China')
                     ->assertSee('DOC-TAX-001');
             }
         }

@@ -62,6 +62,7 @@
 | CRM 单据独立转换 | 后台保留，前端收敛 | `source_quote_id` 和转换接口暂保留兼容历史数据；详情页“创建副本”入口已移除，默认通过打印类型切换输出 PI / CI / PL / 合同，避免单据列表重复膨胀 |
 | CRM 单据系统阶段 1 | 已完成 | 报价/发票/装箱/合同基础字段结构、正式发票类型、最终合计和明细扩展字段已补齐 |
 | CRM 单据系统阶段 2-10 | 已完成增强 | 单据表单 UI、项目图片、报价/PI/发票/装箱单/合同分模板打印、卖方信息读取、English / 简体中文 / Русский / Español 四语固定标签与日期输出、测试与文档已补齐；业务录入值保持原文 |
+| CRM Packing List 实际包装方案 | 已完成核心功能 | 支持多商品合箱、单商品拆分到多箱、木箱/纸箱/托盘、数量守恒、无需装箱、草稿/应用/失效生命周期；仅已应用方案进入 PL/PDF/Excel，旧逐行装箱保持兼容 |
 | CRM 卖方常用信息模板 | 已完成核心功能 | 单据卖方信息支持 Seller Company / Bank Account JSON 编辑、格式化、保存常用、导入常用和默认模板 |
 | CRM 询盘与商机边界 | 已完成核心功能 | 询盘状态收敛，一键转商机，商机显示来源询盘上下文，单据支持关联商机 |
 | 关键词和图片库级标签移除 | 已完成 | 只保留标题库库级标签 |
@@ -127,6 +128,7 @@
 - `AdminCrmPagesTest` CRM 阶段 4-7 扩展验证
 - `AdminTasksPageTest` CRM 来源关联回归验证
 - `AdminCrmPagesTest` CRM 单据系统阶段 2-10 扩展验证，覆盖图片字段、PI、装箱单、合同打印页
+- `CrmQuotePackingPlanTest` 18 tests / 100 assertions，覆盖稳定明细 ID、跨单据保护、数量守恒、草稿/应用/失效、删除联动、装箱单输出和分页边界；与 `AdminCrmPagesTest` 联合回归为 61 tests / 611 assertions
 - `AdminCrmPagesTest` CRM 询盘转商机与单据关联商机回归验证
 - `AdminCrmPagesTest` CRM 联系人最小字段创建、活动编辑/软删除、商机待办驱动下一步及空可选字段创建验证，共 16 tests / 146 assertions
 - `CrmPipelineAuditTest` 销售链数据契约与只读审计验证，共 2 tests / 12 assertions

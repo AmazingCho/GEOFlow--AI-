@@ -2,6 +2,18 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-08-03
+
+### Actual Package Plans for Packing Lists
+
+- Added a collapsible package-plan workbench to CRM document editing. Multiple line items may share one wooden case, carton, or pallet, and one item quantity may be split across multiple packages.
+- Package plans store package number, type, dimensions, net and gross weight, CBM, notes, and allocated item quantities. Quantity conservation is enforced, while cross-document items, duplicate items in one package, and packing-exempt items are rejected.
+- Added draft, applied, and invalid lifecycle states. Item quantity, unit, or packing-status changes invalidate an applied plan; deleting an item or marking it packing-exempt removes related allocations and empty packages.
+- Packing List preview, PDF, and Excel use only applied package plans. Draft or invalid plans render a blocking page instead of falling back to potentially misleading legacy item-level packing data. The existing item-level mode remains backward compatible and can be restored explicitly.
+- Added package labels for all four document languages and included package notes, item names, models, quantities, and units in pagination estimates.
+- Increased CRM document item image uploads to 2 MB. Bank details now support `Payment Method` and `Country / Region`, with empty values omitted from printed output.
+- Packing-plan and CRM regression coverage passed with 61 tests / 611 assertions. The final boundary patch also passed 18 focused tests / 100 assertions plus desktop, 390px mobile, applied-print, and blocked-draft visual checks.
+
 ## 2026-07-22
 
 ### Deep Protocol V2.4 structured contract

@@ -5,6 +5,7 @@
         ? route('admin.crm.quotes.update', ['quoteId' => (int) $quoteId])
         : route('admin.crm.quotes.store');
     $emptyRow = [
+        'id' => '',
         'entity_id' => '',
         'line_type' => 'product',
         'model' => '',
@@ -21,6 +22,7 @@
         'net_weight' => '0',
         'gross_weight' => '0',
         'volume_cbm' => '0',
+        'packing_exempt' => '0',
     ];
     $oldItemNames = old('items.item_name');
     if (is_array($oldItemNames)) {
@@ -383,8 +385,11 @@
             <section class="{{ $sectionClass }}">
                 <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
                     <h2 class="text-base font-semibold text-gray-900"><i data-lucide="list" class="mr-2 h-4 w-4 inline-block text-blue-600"></i>明细区域</h2>
-                    <p class="mt-0.5 text-sm text-gray-500">支持动态增删行。图片可选择图库，也可上传 200KB 以内的本地图片。</p>
+                    <p class="mt-0.5 text-sm text-gray-500">支持动态增删行。图片可选择图库，也可上传 2MB 以内的本地图片。</p>
                     <p class="mt-0.5 text-xs text-blue-600" data-logistics-hint>报价单和形式发票阶段无需填写物流字段（HS Code、尺寸、重量等），选择发票/装箱单/合同后自动显示。</p>
+                    @if(!$isEdit)
+                        <p class="mt-1 text-xs text-amber-700">需要合箱或拆分装箱时，请先保存单据；系统生成稳定的明细编号后即可配置包装方案。</p>
+                    @endif
                 </div>
                 <div class="space-y-4" data-crm-quote-items>
                     @foreach ($rows as $index => $row)
@@ -419,6 +424,16 @@
                     ])
                 </template>
             </section>
+
+            @if($isEdit)
+                @include('admin.crm.quotes.partials.packing-workbench', [
+                    'quoteForm' => $quoteForm,
+                    'quoteItems' => $quoteItems ?? [],
+                    'quotePackages' => $quotePackages ?? [],
+                    'sectionClass' => $sectionClass,
+                    'compactInputClass' => $compactInputClass,
+                ])
+            @endif
 
             <section class="{{ $sectionClass }}">
                 <div class="-mx-5 -mt-5 mb-4 rounded-t-lg border-b border-blue-200 bg-blue-50 px-5 py-3">
@@ -495,7 +510,7 @@
             <div class="rounded-lg border border-gray-200 bg-white px-4 py-4 shadow-sm">
                 <div class="flex justify-end gap-3">
                     <a href="{{ route('admin.crm.quotes.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">取消</a>
-                    <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                    <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" data-main-save>
                         <i data-lucide="save" class="mr-2 h-4 w-4"></i>
                         保存单据
                     </button>
@@ -558,12 +573,129 @@
             const template = form.querySelector('[data-crm-quote-row-template]');
             const subtotalEl = form.querySelector('[data-items-subtotal]');
             const grandTotalEl = form.querySelector('[data-grand-total]');
-            const imagePreviewHelpText = '可从图片库选择，或本地上传 200KB 以内图片。';
+            const imagePreviewHelpText = '可从图片库选择，或本地上传 2MB 以内图片。';
             const money = (value) => Number.parseFloat(String(value || '0')) || 0;
             const format = (value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const packingWorkbench = form.querySelector('[data-packing-workbench]');
+            const packageList = packingWorkbench?.querySelector('[data-package-list]');
+            const packageTemplate = packingWorkbench?.querySelector('[data-package-template]');
+            let packageSequence = Date.now();
+            let allocationSequence = Date.now();
+            let packingDirty = false;
 
             const refreshIcons = () => {
                 if (window.lucide) window.lucide.createIcons();
+            };
+
+            const refreshPackageSequences = () => {
+                packageList?.querySelectorAll('[data-package-row]').forEach((row, index) => {
+                    const sequence = row.querySelector('[data-package-sequence]');
+                    if (sequence) sequence.textContent = String(index + 1);
+                });
+                packingWorkbench?.querySelector('[data-package-empty]')?.classList.toggle('hidden', Boolean(packageList?.querySelector('[data-package-row]')));
+            };
+
+            const calculatePackageVolume = (packageRow) => {
+                if (!packageRow || packageRow.querySelector('[data-volume-manual]')?.checked) return;
+                const dimensions = Array.from(packageRow.querySelectorAll('[data-package-dimension]')).map((input) => money(input.value));
+                const volumeInput = packageRow.querySelector('[data-package-volume]');
+                if (!volumeInput || dimensions.length !== 3) return;
+                const volume = dimensions.every((dimension) => dimension > 0)
+                    ? (dimensions[0] * dimensions[1] * dimensions[2]) / 1000000
+                    : 0;
+                volumeInput.value = volume > 0 ? volume.toFixed(3) : '';
+            };
+
+            const updateAllocationSummary = () => {
+                const allocated = {};
+                packageList?.querySelectorAll('[data-allocation-row]').forEach((row) => {
+                    const itemId = String(row.querySelector('select')?.value || '');
+                    const quantity = money(row.querySelector('input[type="number"]')?.value);
+                    if (itemId !== '') allocated[itemId] = (allocated[itemId] || 0) + quantity;
+                });
+                packingWorkbench?.querySelectorAll('[data-allocation-summary-item]').forEach((row) => {
+                    const itemId = String(row.dataset.itemId || '');
+                    const required = money(row.dataset.required);
+                    const current = allocated[itemId] || 0;
+                    const remaining = required - current;
+                    const allocatedEl = row.querySelector('[data-allocated]');
+                    const remainingEl = row.querySelector('[data-remaining]');
+                    if (allocatedEl) allocatedEl.textContent = String(Number(current.toFixed(2)));
+                    if (remainingEl) {
+                        remainingEl.textContent = Math.abs(remaining) < 0.005
+                            ? '已完整分配'
+                            : (remaining > 0 ? `剩余 ${Number(remaining.toFixed(2))}` : `超出 ${Number(Math.abs(remaining).toFixed(2))}`);
+                        remainingEl.className = Math.abs(remaining) < 0.005
+                            ? 'font-semibold text-emerald-700'
+                            : 'font-semibold text-red-700';
+                    }
+                });
+            };
+
+            const refreshAllocationOptionAvailability = () => {
+                const availableItemIds = new Set();
+                rowsContainer?.querySelectorAll('[data-crm-quote-item-row]').forEach((row) => {
+                    const itemId = String(row.dataset.quoteItemId || '').trim();
+                    const isExempt = row.querySelector('[data-packing-exempt-select]')?.value === '1';
+                    if (itemId !== '' && !isExempt) availableItemIds.add(itemId);
+                });
+
+                packageList?.querySelectorAll('[data-package-row]').forEach((packageRow) => {
+                    const allocationRows = Array.from(packageRow.querySelectorAll('[data-allocation-row]'));
+                    const selectedIds = allocationRows
+                        .map((row) => String(row.querySelector('[data-allocation-item-select]')?.value || ''))
+                        .filter(Boolean);
+
+                    allocationRows.forEach((row) => {
+                        const select = row.querySelector('[data-allocation-item-select]');
+                        if (!select) return;
+                        const currentValue = String(select.value || '');
+                        Array.from(select.options).forEach((option) => {
+                            if (!option.value) return;
+                            const selectedElsewhere = option.value !== currentValue && selectedIds.includes(option.value);
+                            option.disabled = !availableItemIds.has(option.value) || selectedElsewhere;
+                        });
+
+                        if (currentValue !== '' && !availableItemIds.has(currentValue)) {
+                            row.remove();
+                        }
+                    });
+
+                    if (!packageRow.querySelector('[data-allocation-row]')) {
+                        packageRow.remove();
+                    }
+                });
+
+                refreshPackageSequences();
+                updateAllocationSummary();
+            };
+
+            const markPackingDirty = () => {
+                packingDirty = true;
+                packingWorkbench?.querySelector('[data-packing-dirty-notice]')?.classList.remove('hidden');
+                updateAllocationSummary();
+            };
+
+            const addAllocation = (packageRow) => {
+                const allocationTemplate = packageRow?.querySelector('[data-allocation-template]');
+                const allocationList = packageRow?.querySelector('[data-allocation-list]');
+                if (!allocationTemplate || !allocationList) return;
+                const html = allocationTemplate.innerHTML.replaceAll('__ALLOCATION_INDEX__', String(allocationSequence++));
+                allocationList.insertAdjacentHTML('beforeend', html.trim());
+                refreshIcons();
+                refreshAllocationOptionAvailability();
+            };
+
+            const addPackage = () => {
+                if (!packageTemplate || !packageList) return;
+                const html = packageTemplate.innerHTML.replaceAll('__PACKAGE_INDEX__', String(packageSequence++));
+                packageList.insertAdjacentHTML('beforeend', html.trim());
+                const packages = packageList.querySelectorAll('[data-package-row]');
+                const packageRow = packages[packages.length - 1];
+                addAllocation(packageRow);
+                refreshPackageSequences();
+                refreshIcons();
+                markPackingDirty();
             };
 
             const profileById = (type, id) => (sellerProfiles[type] || []).find((profile) => String(profile.id) === String(id));
@@ -860,8 +992,30 @@
             });
 
             form.addEventListener('change', (event) => {
+                const hadPackingRowsBeforeChange = Boolean(packageList?.querySelector('[data-package-row]'));
                 if (event.target.matches('[data-quote-image-select]')) {
                     syncQuoteItemImagePreview(event.target.closest('[data-crm-quote-item-row]'));
+                }
+                if (event.target.matches('[data-allocation-item-select], [data-packing-exempt-select]')) {
+                    refreshAllocationOptionAvailability();
+                }
+                if (event.target.matches('[data-volume-manual], [data-package-dimension]')) {
+                    calculatePackageVolume(event.target.closest('[data-package-row]'));
+                }
+                if (event.target.closest('[data-packing-workbench]')) {
+                    markPackingDirty();
+                }
+                if (event.target.matches('[data-packing-exempt-select]')) {
+                    if (hadPackingRowsBeforeChange) markPackingDirty();
+                }
+            });
+
+            form.addEventListener('input', (event) => {
+                if (event.target.matches('[data-package-dimension]')) {
+                    calculatePackageVolume(event.target.closest('[data-package-row]'));
+                }
+                if (event.target.closest('[data-packing-workbench]')) {
+                    markPackingDirty();
                 }
             });
 
@@ -907,21 +1061,65 @@
                 if (!removeButton) return;
                 const rows = rowsContainer.querySelectorAll('[data-crm-quote-item-row]');
                 const row = removeButton.closest('[data-crm-quote-item-row]');
+                const hadPackingRowsBeforeRemoval = Boolean(packageList?.querySelector('[data-package-row]'));
                 if (rows.length <= 1) {
                     row.querySelectorAll('input[type="text"], input[type="number"], input[type="hidden"], input[type="file"], textarea').forEach((input) => {
                         input.value = input.name.includes('[quantity]') ? '1' : (input.name.includes('[unit_price]') ? '0' : '');
                     });
                     row.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
+                    row.dataset.quoteItemId = '';
                 } else {
                     row.remove();
                 }
+                refreshAllocationOptionAvailability();
+                if (hadPackingRowsBeforeRemoval) markPackingDirty();
                 calculate();
+            });
+
+            packingWorkbench?.addEventListener('click', (event) => {
+                if (event.target.closest('[data-add-package]')) {
+                    addPackage();
+                    return;
+                }
+
+                const packageRow = event.target.closest('[data-package-row]');
+                if (event.target.closest('[data-add-allocation]')) {
+                    addAllocation(packageRow);
+                    markPackingDirty();
+                    return;
+                }
+                if (event.target.closest('[data-remove-allocation]')) {
+                    event.target.closest('[data-allocation-row]')?.remove();
+                    refreshAllocationOptionAvailability();
+                    markPackingDirty();
+                    return;
+                }
+                if (event.target.closest('[data-remove-package]')) {
+                    packageRow?.remove();
+                    refreshPackageSequences();
+                    markPackingDirty();
+                }
+            });
+
+            form.addEventListener('submit', (event) => {
+                form.querySelector('[data-generated-packing-action]')?.remove();
+                if (event.submitter?.matches('[data-main-save]') && packingDirty) {
+                    const action = document.createElement('input');
+                    action.type = 'hidden';
+                    action.name = 'packing_action';
+                    action.value = 'save';
+                    action.dataset.generatedPackingAction = '1';
+                    form.appendChild(action);
+                }
             });
 
             collectionSelect?.addEventListener('change', () => {
                 syncQuoteItemResourcesByCollection();
             });
             syncQuoteItemResourcesByCollection();
+            packageList?.querySelectorAll('[data-package-row]').forEach(calculatePackageVolume);
+            refreshPackageSequences();
+            refreshAllocationOptionAvailability();
             calculate();
         });
     </script>

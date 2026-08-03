@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CrmQuoteItem extends Model
 {
@@ -32,6 +33,7 @@ class CrmQuoteItem extends Model
         'package_width',
         'package_height',
         'sort_order',
+        'packing_exempt',
     ];
 
     protected function casts(): array
@@ -51,6 +53,7 @@ class CrmQuoteItem extends Model
             'package_width' => 'decimal:1',
             'package_height' => 'decimal:1',
             'sort_order' => 'integer',
+            'packing_exempt' => 'boolean',
         ];
     }
 
@@ -67,5 +70,10 @@ class CrmQuoteItem extends Model
     public function image(): BelongsTo
     {
         return $this->belongsTo(Image::class, 'image_id');
+    }
+
+    public function packageAllocations(): HasMany
+    {
+        return $this->hasMany(CrmQuotePackageItem::class, 'quote_item_id');
     }
 }

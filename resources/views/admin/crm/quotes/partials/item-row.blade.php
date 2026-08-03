@@ -1,5 +1,6 @@
 @php
     $row = array_replace([
+        'id' => '',
         'entity_id' => '',
         'line_type' => 'product',
         'model' => '',
@@ -16,6 +17,7 @@
         'net_weight' => '0',
         'gross_weight' => '0',
         'volume_cbm' => '0',
+        'packing_exempt' => '0',
     ], $row ?? []);
     $rowIndex = $index ?? null;
     $valueFor = static function (string $field, string $default = '') use ($rowIndex, $row): string {
@@ -34,10 +36,11 @@
     $selectedImageOption = collect($imageOptions ?? [])->firstWhere('id', (int) $imageId);
     $imageUrl = $selectedImageOption['url'] ?? \App\Support\GeoFlow\ImageUrlNormalizer::toPublicUrl($imagePath);
     $imagePreviewLabel = $imageOriginalName !== '' ? $imageOriginalName : (string) ($selectedImageOption['label'] ?? '');
-    $imagePreviewHelp = '可从图片库选择，或本地上传 200KB 以内图片。';
+    $imagePreviewHelp = '可从图片库选择，或本地上传 2MB 以内图片。';
 @endphp
 
-<div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-crm-quote-item-row>
+<div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-crm-quote-item-row data-quote-item-id="{{ $valueFor('id') }}">
+    <input type="hidden" name="items[id][]" value="{{ $valueFor('id') }}">
     <div class="mb-4 flex items-start justify-between gap-3">
         <div>
             <div class="text-sm font-semibold text-gray-900">明细行</div>
@@ -109,7 +112,7 @@
     <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">数量</label>
-            <input type="number" step="0.01" min="0" name="items[quantity][]" value="{{ $valueFor('quantity', '1') }}" class="{{ $compactInputClass }}" data-quote-quantity>
+            <input type="number" step="0.01" min="0.01" name="items[quantity][]" value="{{ $valueFor('quantity', '1') }}" class="{{ $compactInputClass }}" data-quote-quantity>
         </div>
         <div class="lg:col-span-2">
             <label class="mb-1 block text-xs font-medium text-gray-600">单位</label>
@@ -154,6 +157,17 @@
             <label class="mb-1 block text-xs font-medium text-gray-600">HS Code</label>
             <input type="text" name="items[hs_code][]" value="{{ $valueFor('hs_code') }}" class="{{ $compactInputClass }}">
         </div>
+        @if (!empty($row['id']))
+            <div class="lg:col-span-6">
+                <label class="mb-1 block text-xs font-medium text-gray-600">包装方案状态</label>
+                <select name="items[packing_exempt][]" class="{{ $compactInputClass }}" data-packing-exempt-select>
+                    <option value="0" @selected($valueFor('packing_exempt', '0') !== '1')>参与包装方案</option>
+                    <option value="1" @selected($valueFor('packing_exempt', '0') === '1')>无需装箱（服务/虚拟项目）</option>
+                </select>
+            </div>
+        @else
+            <input type="hidden" name="items[packing_exempt][]" value="0">
+        @endif
     </div>
 
 </div>

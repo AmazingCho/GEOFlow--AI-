@@ -22,20 +22,36 @@
     $isInvoice = $documentKind === 'invoice';
     $isPacking = $documentKind === 'packing_list';
     $isPI = $documentKind === 'proforma_invoice';
+    $usePackagePlan = $isPacking
+        && (string) ($quote->packing_mode ?? 'item_level') === 'package_plan'
+        && (string) ($quote->packing_status ?? 'draft') === 'applied'
+        && $quote->packages->isNotEmpty();
+    $packingPlanNotApplied = $isPacking
+        && (string) ($quote->packing_mode ?? 'item_level') === 'package_plan'
+        && (string) ($quote->packing_status ?? 'draft') !== 'applied';
 
     // Compute logistics totals for invoice / packing list
     $totalPackages = 0;
     $totalNetWeight = 0.0;
     $totalGrossWeight = 0.0;
     $totalVolume = 0.0;
-    foreach ($quote->items as $item) {
-        $totalPackages += (int) ($item->package_count ?? 0);
-        $totalNetWeight += (float) ($item->net_weight ?? 0);
-        $totalGrossWeight += (float) ($item->gross_weight ?? 0);
-        $totalVolume += (float) ($item->volume_cbm ?? 0);
+    if ($usePackagePlan) {
+        foreach ($quote->packages as $package) {
+            $totalPackages++;
+            $totalNetWeight += (float) ($package->net_weight ?? 0);
+            $totalGrossWeight += (float) ($package->gross_weight ?? 0);
+            $totalVolume += (float) ($package->volume_cbm ?? 0);
+        }
+    } else {
+        foreach ($quote->items as $item) {
+            $totalPackages += (int) ($item->package_count ?? 0);
+            $totalNetWeight += (float) ($item->net_weight ?? 0);
+            $totalGrossWeight += (float) ($item->gross_weight ?? 0);
+            $totalVolume += (float) ($item->volume_cbm ?? 0);
+        }
     }
 
-    $allItems = $quote->items->values();
+    $allItems = $usePackagePlan ? $quote->packages->values() : $quote->items->values();
     $textLength = static function (mixed $value): int {
         $text = trim(strip_tags((string) $value));
 
@@ -43,7 +59,30 @@
     };
     $itemHasRenderableImage = static fn ($item): bool => (bool) ($item->image || trim((string) ($item->image_path ?? '')) !== '');
     $hasVisibleItemImages = $showImages && $allItems->contains($itemHasRenderableImage);
-    $estimateItemWeight = static function ($item) use ($showImages, $isPacking, $isInvoice, $textLength, $itemHasRenderableImage): int {
+    $estimateItemWeight = static function ($item) use ($showImages, $isPacking, $isInvoice, $textLength, $itemHasRenderableImage, $usePackagePlan): int {
+        if ($usePackagePlan) {
+            $allocationWeight = 0;
+            foreach ($item->allocations as $allocation) {
+                $quoteItem = $allocation->quoteItem;
+                $allocationText = implode(' ', [
+                    (string) ($quoteItem?->item_name ?? ''),
+                    (string) ($quoteItem?->model ?? ''),
+                    (string) ($allocation->allocated_quantity ?? ''),
+                    (string) ($quoteItem?->unit ?? ''),
+                ]);
+                $allocationWeight += 1 + (int) ceil($textLength($allocationText) / 48);
+            }
+
+            $packageText = implode(' ', [
+                (string) ($item->package_no ?? ''),
+                (string) ($item->package_type ?? ''),
+                (string) ($item->notes ?? ''),
+            ]);
+            $packageTextWeight = (int) ceil($textLength($packageText) / 60);
+
+            return max(4, 3 + $allocationWeight + $packageTextWeight);
+        }
+
         $hasImage = $showImages && $itemHasRenderableImage($item);
         $weight = $isPacking ? 3 : ($hasImage ? 5 : ($isInvoice ? 3 : 2));
         $nameLength = $textLength($item->item_name ?? '');
@@ -287,6 +326,9 @@
         .nowrap { white-space: nowrap; }
         .thumb { width: 48px; height: 48px; border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; }
         .product-row { display: flex; gap: 7px; align-items: flex-start; }
+        .package-goods-list { display: grid; gap: 4px; }
+        .package-goods-item { border-bottom: 1px dashed var(--border); padding-bottom: 3px; }
+        .package-goods-item:last-child { border-bottom: 0; padding-bottom: 0; }
         .product-name { font-weight: 700; margin-bottom: 2px; }
         .summary-wrap { display: grid; grid-template-columns: 1fr 250px; gap: 8px; margin-top: 6px; align-items: start; }
         .notes-box { border: 1px solid var(--border); padding: 7px 8px; min-height: 34px; color: var(--muted); font-size: 10.5px; }
@@ -322,6 +364,9 @@
         .contract-term-notice { margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.4; }
         .contract-signature-block { margin-top: 8px; }
         .contract-signature-block .signature { margin-top: 0; }
+        .packing-blocked-panel { margin-top: 22px; border: 1px solid #f59e0b; background: #fffbeb; padding: 18px; color: #92400e; }
+        .packing-blocked-panel h2 { margin: 0 0 8px; border: 0; padding: 0; color: #78350f; }
+        .packing-blocked-panel p { margin: 0; font-size: 13px; line-height: 1.7; }
         .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
         .sig-box { border: 1px solid var(--border); padding: 7px; }
         .sig-title { font-weight: 700; margin-bottom: 6px; }
@@ -366,10 +411,27 @@
         @if (session('error'))
             <div class="print-alert">{{ session('error') }}</div>
         @endif
+        @if($packingPlanNotApplied)
+            <div class="print-alert">包装方案尚未应用或已经失效；正式装箱内容已被阻断，请回到编辑页检查并应用包装方案。</div>
+        @endif
         @include('admin.crm.quotes.partials.print-controls')
     </div>
 
-    @if ($isPI)
+    @if ($packingPlanNotApplied)
+        <div class="page" data-print-page data-packing-print-blocked>
+            @include('admin.crm.quotes.partials.print-header', ['seller' => $seller, 'quote' => $quote, 'title' => $title, 'documentKind' => $documentKind])
+
+            <div class="packing-blocked-panel">
+                <h2>包装方案尚未应用或已经失效</h2>
+                <p>为避免误发旧的逐行装箱数据，本页不会显示或打印正式装箱内容。请返回单据编辑页，检查商品分配、包装尺寸与重量后，点击“应用包装方案”。</p>
+            </div>
+
+            <div class="footer">
+                <div>{{ $seller['website'] ?: '' }}</div>
+                <div>{{ $quote->quote_no }} · BLOCKED</div>
+            </div>
+        </div>
+    @elseif ($isPI)
         {{-- ====== PI ITEM PAGES: Items + Summary on final item page ====== --}}
         @foreach ($itemPages as $pageIndex => $itemPage)
             @php $pageNumber = $pageIndex + 1; @endphp
@@ -483,9 +545,15 @@
                         @if (!empty($bank['swift']))
                             <div class="bank-item"><div class="label">{{ $label('swift', 'SWIFT') }}:</div><div>{{ $bank['swift'] }}</div></div>
                         @endif
+                        @if (!empty($bank['payment_method']))
+                            <div class="bank-item"><div class="label">{{ $label('payment_method', 'Payment Method') }}:</div><div>{{ $bank['payment_method'] }}</div></div>
+                        @endif
                         <div class="bank-item"><div class="label">{{ $label('currency', 'Currency') }}:</div><div>{{ $quote->currency }}</div></div>
                         @if (!empty($bank['bank_address']))
                             <div class="bank-item wide"><div class="label">{{ $label('bank_address', 'Bank Address') }}:</div><div>{{ $bank['bank_address'] }}</div></div>
+                        @endif
+                        @if (!empty($bank['country_region']))
+                            <div class="bank-item wide"><div class="label">{{ $label('country_region', 'Country / Region') }}:</div><div>{{ $bank['country_region'] }}</div></div>
                         @endif
                     </div>
                 </div>
@@ -551,7 +619,11 @@
                     </div>
                 @endif
 
-                @include('admin.crm.quotes.partials.print-items', ['quote' => $quote, 'items' => $itemPage['items'], 'startIndex' => $itemPage['start_index'], 'documentKind' => $documentKind, 'showImages' => $showImages, 'showPrices' => $showPrices, 'isPacking' => $isPacking, 'label' => $label, 'money' => $money, 'weight' => $weight])
+                @if($isPacking && $usePackagePlan)
+                    @include('admin.crm.quotes.partials.print-package-plan-items', ['packages' => $itemPage['items'], 'startIndex' => $itemPage['start_index'], 'label' => $label, 'money' => $money, 'weight' => $weight])
+                @else
+                    @include('admin.crm.quotes.partials.print-items', ['quote' => $quote, 'items' => $itemPage['items'], 'startIndex' => $itemPage['start_index'], 'documentKind' => $documentKind, 'showImages' => $showImages, 'showPrices' => $showPrices, 'isPacking' => $isPacking, 'label' => $label, 'money' => $money, 'weight' => $weight])
+                @endif
 
                 @if ($itemPage['is_final'])
                     <div data-final-content-inline>

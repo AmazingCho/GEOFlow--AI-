@@ -2,7 +2,11 @@
     @include('admin.crm.quotes.partials.print-packing-summary', ['totalPackages' => $totalPackages, 'totalNetWeight' => $totalNetWeight, 'totalGrossWeight' => $totalGrossWeight, 'totalVolume' => $totalVolume])
 
     <h2>{{ $label('notes', 'Notes') }}</h2>
-    <div class="notes-box">{{ $label('packaging_note', 'Package type: Export-grade wooden case. All dimensions and weights are for customs clearance and logistics reference.') }}</div>
+    <div class="notes-box">
+        {{ $usePackagePlan
+            ? $label('packaging_plan_note', 'Packages are grouped by actual case or pallet. Dimensions and weights are for customs clearance and logistics reference.')
+            : $label('packaging_note', 'Package type: Export-grade wooden case. All dimensions and weights are for customs clearance and logistics reference.') }}
+    </div>
 
     @include('admin.crm.quotes.partials.print-signature', ['quote' => $quote, 'label' => $label, 'documentKind' => $documentKind])
 @else
@@ -43,11 +47,17 @@
                         @if (!empty($bank['swift']))
                             <div class="bank-item"><div class="label">{{ $label('swift', 'SWIFT') }}:</div><div>{{ $bank['swift'] }}</div></div>
                         @endif
+                        @if (!empty($bank['payment_method']))
+                            <div class="bank-item"><div class="label">{{ $label('payment_method', 'Payment Method') }}:</div><div>{{ $bank['payment_method'] }}</div></div>
+                        @endif
                         @if (!empty($bank['currency']))
                             <div class="bank-item"><div class="label">{{ $label('currency', 'Currency') }}:</div><div>{{ $bank['currency'] }}</div></div>
                         @endif
                         @if (!empty($bank['bank_address']))
                             <div class="bank-item wide"><div class="label">{{ $label('bank_address', 'Bank Address') }}:</div><div>{{ $bank['bank_address'] }}</div></div>
+                        @endif
+                        @if (!empty($bank['country_region']))
+                            <div class="bank-item wide"><div class="label">{{ $label('country_region', 'Country / Region') }}:</div><div>{{ $bank['country_region'] }}</div></div>
                         @endif
                     </div>
                 </div>
